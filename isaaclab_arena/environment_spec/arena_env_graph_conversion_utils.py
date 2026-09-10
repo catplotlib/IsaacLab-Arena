@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import math
 from functools import partial
+from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.assets.asset import Asset
@@ -47,6 +49,21 @@ def build_arena_env_from_graph_spec(graph_spec: ArenaEnvGraphSpec, enable_camera
         graph_spec: A validated graph spec (asset refs exist, ids unique, etc.).
         enable_cameras: Forwarded to the embodiment so its cameras are added.
     """
+    return build_arena_env_with_assets_from_graph_spec(graph_spec, enable_cameras)[0]
+
+
+def build_arena_env_with_assets_from_graph_spec(
+    graph_spec: ArenaEnvGraphSpec, enable_cameras: bool = False
+) -> tuple[Any, dict[str, Asset]]:
+    """Build an environment and retain the exact graph-node-to-asset mapping for serialization.
+
+    Args:
+        graph_spec: Validated graph specification.
+        enable_cameras: Whether to configure embodiment cameras.
+
+    Returns:
+        Environment description and assets keyed by their source graph node IDs.
+    """
     # Lazy import to avoid pxr early import causing unit test failures.
     from isaaclab_arena.environment_spec.env_cfg_override import apply_env_cfg_override
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -61,7 +78,7 @@ def build_arena_env_from_graph_spec(graph_spec: ArenaEnvGraphSpec, enable_camera
     default_physics_backend = (
         graph_spec.default_physics_backend if graph_spec.default_physics_backend is not None else PhysicsBackend.PHYSX
     )
-    return IsaacLabArenaEnvironment(
+    arena_env = IsaacLabArenaEnvironment(
         name=graph_spec.env_name,
         scene=Scene(assets=scene_assets),
         embodiment=assets_by_node_id[graph_spec.embodiment.id],
@@ -70,6 +87,7 @@ def build_arena_env_from_graph_spec(graph_spec: ArenaEnvGraphSpec, enable_camera
         env_cfg_callback=env_cfg_callback,
         default_physics_backend=default_physics_backend,
     )
+    return arena_env, assets_by_node_id
 
 
 def build_checks_for_placer_params(graph_spec: ArenaEnvGraphSpec) -> ObjectPlacerParams:
@@ -141,17 +159,16 @@ def _scene_already_has_light(graph_spec: ArenaEnvGraphSpec, assets_by_node_id: d
     return False
 
 
-def _prim_path_for_relative(registry_name: str, prim_path: str) -> str:
+def _prim_path_for_relative(parent_name: str, prim_path: str) -> str:
     """Expand a relative prim suffix to the Isaac Lab runtime prim path."""
     if prim_path.startswith("{ENV_REGEX_NS}/"):
         return prim_path
-    return f"{{ENV_REGEX_NS}}/{registry_name}/{prim_path.lstrip('/')}"
+    return f"{{ENV_REGEX_NS}}/{parent_name}/{prim_path.lstrip('/')}"
 
 
 def _instantiate_object_reference(
     ref: ObjectReferenceSpec,
     parent_asset: Asset,
-    background_registry_name: str,
 ) -> ObjectReference:
     """Instantiate a plain or affordance-specific object reference."""
     assert ref.prim_path is not None, "Object reference must have a prim path"
@@ -160,7 +177,7 @@ def _instantiate_object_reference(
 
     common_kwargs = {
         "name": ref.id,
-        "prim_path": _prim_path_for_relative(background_registry_name, ref.prim_path),
+        "prim_path": _prim_path_for_relative(parent_asset.name, ref.prim_path),
         "parent_asset": parent_asset,
         **ref.params,
     }
@@ -175,6 +192,23 @@ def _instantiate_object_reference(
     return _AFFORDANCE_REFERENCE_CLASSES[joint_param_names[0]](**common_kwargs)
 
 
+def _apply_initial_pose(asset: Asset, value: Any) -> None:
+    """Apply a YAML ``params.initial_pose`` through the asset's pose and reset API."""
+    if value is None:
+        return
+    assert isinstance(value, dict), "initial_pose must be a mapping"
+    assert not (set(value) - {"position_xyz", "rotation_xyzw"}), "Unknown initial_pose fields"
+    position = value.get("position_xyz", (0.0, 0.0, 0.0))
+    rotation = value.get("rotation_xyzw", (0.0, 0.0, 0.0, 1.0))
+    for name, values, size in (("position_xyz", position, 3), ("rotation_xyzw", rotation, 4)):
+        assert isinstance(values, (list, tuple)) and len(values) == size, f"{name} needs {size} numbers"
+        assert all(
+            isinstance(v, Real) and not isinstance(v, bool) and math.isfinite(v) for v in values
+        ), f"{name} must contain finite numbers"
+    assert math.isclose(sum(v * v for v in rotation), 1.0, abs_tol=1e-4), "rotation_xyzw must be a unit quaternion"
+    asset.set_initial_pose(Pose(tuple(float(v) for v in position), tuple(float(v) for v in rotation)))
+
+
 def instantiate_assets_from_spec(
     graph_spec: ArenaEnvGraphSpec, asset_registry: Any, enable_cameras: bool = False
 ) -> dict[str, type[Asset]]:
@@ -182,20 +216,28 @@ def instantiate_assets_from_spec(
     assets_by_node_id: dict[str, type[Asset]] = {}
 
     embodiment_params = dict(graph_spec.embodiment.params)
+    embodiment_pose = embodiment_params.pop("initial_pose", None)
     if enable_cameras:
         embodiment_params.setdefault("enable_cameras", True)
     assets_by_node_id[graph_spec.embodiment.id] = asset_registry.get_asset_by_name(graph_spec.embodiment.registry_name)(
         **embodiment_params
     )
 
+    _apply_initial_pose(assets_by_node_id[graph_spec.embodiment.id], embodiment_pose)
+
+    background_params = dict(graph_spec.background.params)
+    background_pose = background_params.pop("initial_pose", None)
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
-        **graph_spec.background.params
+        **background_params
     )
+    _apply_initial_pose(assets_by_node_id[graph_spec.background.id], background_pose)
 
     for obj in graph_spec.objects:
         params = dict(obj.params)
+        initial_pose = params.pop("initial_pose", None)
         params.setdefault("instance_name", obj.id)
         assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
+        _apply_initial_pose(assets_by_node_id[obj.id], initial_pose)
 
     for object_set in graph_spec.object_sets or []:
         assets_by_node_id[object_set.id] = RigidObjectSet(
@@ -209,7 +251,6 @@ def instantiate_assets_from_spec(
         assets_by_node_id[ref.id] = _instantiate_object_reference(
             ref,
             parent_asset=assets_by_node_id[ref.parent_id],
-            background_registry_name=graph_spec.background.registry_name,
         )
 
     return assets_by_node_id
