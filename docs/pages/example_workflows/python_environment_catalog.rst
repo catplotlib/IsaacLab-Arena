@@ -453,7 +453,7 @@ the :doc:`reinforcement_learning/index` workflow.
    * - **Task Class**
      - ``LiftObjectTaskRL`` (minimum_height_to_lift = 0.04, episode_length_s = 5)
    * - **Training Method**
-     - Reinforcement Learning (RSL-RL PPO; ``rl_policy_cfg`` = ``base_rsl_rl_policy:RLPolicyCfg``)
+     - Trained in Isaac Lab via Reinforcement Learning (RSL-RL PPO; ``rl_policy_cfg`` = ``base_rsl_rl_policy:RLPolicyCfg``)
    * - **CLI Args**
      - ``--object``, ``--embodiment``, ``--teleop_device``, ``--rl_training_mode``
 
@@ -466,7 +466,7 @@ dexsuite_lift
 **Class:** ``DexsuiteLiftEnvironment`` (``isaaclab_arena_environments/dexsuite_lift_environment.py``)
 
 **Task Description:** Evaluation wrapper around the Isaac Lab
-``Isaac-Dexsuite-Kuka-Allegro-Lift-v0`` MDP. The Kuka arm with an Allegro
+``Isaac-Lift-KukaAllegro`` MDP. The Kuka arm with an Allegro
 dexterous hand lifts a procedurally generated cuboid to a commanded target
 position. Featured in the
 :doc:`dexsuite_lift/index` workflow.
@@ -490,7 +490,7 @@ position. Featured in the
    * - **Task Class**
      - ``DexsuiteLiftTask`` (object_pose command, position-only, resampled every 2–3 s)
    * - **Training Method**
-     - Pre-trained in Isaac Lab via ``DexsuiteKukaAllegroPPORunnerCfg`` (RSL-RL PPO)
+     - Pre-trained in Isaac Lab via ``KukaAllegroPPORunnerCfg`` (RSL-RL PPO)
    * - **Physics Backend**
      - PhysX (default) or Newton (``--presets newton``)
    * - **CLI Args**

@@ -13,7 +13,7 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.sim.utils import clone
 
 from isaaclab_arena.assets.object import Object
-from isaaclab_arena.assets.object_base import ObjectType
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.usd_prim_tree import load_usd_physics_roots
 
@@ -33,7 +33,7 @@ class Background(Object):
         object_min_z: float,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
-        reset_nested_physics: bool = False,
+        reset_nested_physics: bool = True,
         **kwargs,
     ):
         self.reset_nested_physics = reset_nested_physics

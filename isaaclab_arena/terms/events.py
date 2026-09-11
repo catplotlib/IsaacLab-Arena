@@ -7,7 +7,6 @@ import torch
 from dataclasses import dataclass
 from typing import Any
 
-import carb
 import warp as wp
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedEnv
@@ -100,6 +99,8 @@ class ResetBackgroundPhysics(ManagerTermBase):
             # type for that case, so accept only their known error signatures.
             if not ResetBackgroundPhysics._is_unavailable_backend_error(exc):
                 raise
+            import carb
+
             carb.log_warn(f"Skipping unavailable background {asset_kind} '{prim_path}': {exc}")
             return None
         return asset
@@ -110,7 +111,7 @@ class ResetBackgroundPhysics(ManagerTermBase):
         for background_name, background_path_template in self._background_prim_paths.items():
             background_path = self._runtime_path(background_path_template, env_prim_path)
             background_prim = env.scene.stage.GetPrimAtPath(background_path)
-            assert background_prim.IsValid(), f"Missing opted-in background prim at '{background_path}'"
+            assert background_prim.IsValid(), f"Missing reset-enabled background prim at '{background_path}'"
             referenced_paths = {
                 self._runtime_path(path, env_prim_path): object_type
                 for path, object_type in self._referenced_paths[background_name].items()
@@ -216,6 +217,21 @@ def set_object_pose(
         asset.write_root_velocity_to_sim(vel, env_ids=env_ids)
     else:
         asset.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+
+
+def reset_cable_to_default(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg,
+) -> None:
+    """Restore selected cable instances to their configured default segment state."""
+    if env_ids is None:
+        return
+    cable = env.scene[asset_cfg.name]
+    segment_pose = cable.data.default_segment_pose_w.torch[env_ids].clone()
+    segment_velocity = cable.data.default_segment_velocity_w.torch[env_ids].clone()
+    cable.write_segment_pose_to_sim_index(segment_pose=segment_pose, env_ids=env_ids)
+    cable.write_segment_velocity_to_sim_index(segment_velocity=segment_velocity, env_ids=env_ids)
 
 
 def reset_articulation_pose_and_joints(

@@ -30,8 +30,7 @@ Arena comes with an existing collection of predicates under ``isaaclab_arena.tas
 * ``object_is_above_height`` — an object is above a fixed height or its recorded resting height.
 * ``object_moving`` — an object exceeds a linear velocity threshold.
 * ``objects_in_proximity`` — two objects are within configured axis-aligned distances.
-* ``object_on_destination`` and ``objects_on_destinations`` — contact and velocity checks for
-  placement goals.
+* ``object_on_destination`` — destination-footprint, upward-support, and velocity checks for a placement goal.
 
 .. note::
 
@@ -56,11 +55,9 @@ A predicate may accept any task-specific arguments it needs after ``env``. For e
 
    import torch
 
-   from isaaclab_arena.tasks.predicates.predicate_utils import get_root_pos_w
-
    def object_inside_x_bounds(env, object_name: str, min_x: float, max_x: float) -> torch.Tensor:
-       object_x = get_root_pos_w(env, object_name)[:, 0]
-       return (object_x >= min_x) & (object_x <= max_x)
+       object_x_e = env.arena_world.get_pose_e(object_name)[:, 0]
+       return (object_x_e >= min_x) & (object_x_e <= max_x)
 
 The arguments after ``env`` are configured when the predicate is added to a progress objective
 (shown in the next section).
@@ -102,7 +99,11 @@ a single three-predicate chain: settle, lift, then place.
                    partial(
                        object_on_destination,
                        object_cfg=SceneEntityCfg(self.pick_up_object.name),
+                       destination_cfg=SceneEntityCfg(self.destination_location.name),
                        contact_sensor_cfg=SceneEntityCfg(self.contact_sensor_name),
+                       force_threshold=self.force_threshold,
+                       velocity_threshold=self.velocity_threshold,
+                       support_cone_half_angle_rad=self.support_cone_half_angle_rad,
                    ),
                ],
            )
