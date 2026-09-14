@@ -32,13 +32,25 @@ class ConsecutivePredicate(ManagerTermBase):
         ids = slice(None) if env_ids is None else env_ids
         self.consecutive_true_steps[ids] = 0
 
-    def _update_consecutive(self, passed: torch.Tensor) -> torch.Tensor:
-        """Update per-environment streaks and return which have reached the required length."""
+    def _update_consecutive_and_get_completion_mask(
+        self,
+        passed: torch.Tensor,
+        active_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Update active environments' streaks and return which have reached the required length."""
 
         passed = torch.as_tensor(passed, dtype=torch.bool, device=self.device).reshape(-1)
         assert passed.shape == (
             self.num_envs,
         ), f"Predicate returned shape {tuple(passed.shape)}; expected ({self.num_envs},)."
+        if active_mask is None:
+            active_mask = torch.ones_like(passed)
+        else:
+            active_mask = torch.as_tensor(active_mask, dtype=torch.bool, device=self.device).reshape(-1)
+            assert active_mask.shape == (
+                self.num_envs,
+            ), f"Active mask has shape {tuple(active_mask.shape)}; expected ({self.num_envs},)."
         next_count = torch.clamp(self.consecutive_true_steps + 1, max=self._required_consecutive_steps)
-        self.consecutive_true_steps = torch.where(passed, next_count, torch.zeros_like(self.consecutive_true_steps))
-        return self.consecutive_true_steps >= self._required_consecutive_steps
+        updated_count = torch.where(passed, next_count, torch.zeros_like(self.consecutive_true_steps))
+        self.consecutive_true_steps = torch.where(active_mask, updated_count, self.consecutive_true_steps)
+        return active_mask & (self.consecutive_true_steps >= self._required_consecutive_steps)

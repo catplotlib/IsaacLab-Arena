@@ -29,6 +29,10 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env import IsaacLabArenaManagerBasedRLEnv
 
 
+DEFAULT_LINEAR_VELOCITY_THRESHOLD = 1e-2
+DEFAULT_ANGULAR_VELOCITY_THRESHOLD = 5e-2
+
+
 class ObjectInitialRestPoseRecorder:
     """Recorder object that works in conjunction with the ``objects_settled`` predicate to record the
     initial resting poses of scene objects and expose to downstream predicates.
@@ -66,8 +70,8 @@ class ObjectInitialRestPoseRecorder:
         entry = self._entry(name)
         return entry["position"], entry["settled"]
 
-    def reset(self, env_ids=None) -> None:
-        """Clear recorded rest poses for ``env_ids`` (all envs if None)."""
+    def reset(self, env_ids=None, object_names: Sequence[str] | None = None) -> None:
+        """Clear selected objects' recorded rest poses for ``env_ids``."""
 
         if env_ids is None:
             ids = slice(None)
@@ -75,7 +79,11 @@ class ObjectInitialRestPoseRecorder:
             ids = env_ids
         else:
             ids = torch.as_tensor(env_ids, dtype=torch.long, device=self._device)
-        for entry in self._entries.values():
+        names = self._entries if object_names is None else object_names
+        for name in names:
+            entry = self._entries.get(name)
+            if entry is None:
+                continue
             entry["settled"][ids] = False
             entry["position"][ids] = float("nan")
 
@@ -87,7 +95,7 @@ def get_rest_pose_recorder(env: IsaacLabArenaManagerBasedRLEnv) -> ObjectInitial
 
 
 def reset_rest_pose_recorder(env: IsaacLabArenaManagerBasedRLEnv, env_ids=None) -> None:
-    """Clear recorded initial rest poses for ``env_ids``. Invoked by the progress tracker on env reset."""
+    """Clear every recorded initial rest pose for ``env_ids``."""
 
     env.object_initial_rest_pose_recorder.reset(env_ids)
 
@@ -148,8 +156,8 @@ def compute_objects_settled_mask(
 def objects_settled(
     env: IsaacLabArenaManagerBasedRLEnv,
     object_names: list[str],
-    lin_vel_threshold: float = 1e-2,
-    ang_vel_threshold: float = 5e-2,
+    lin_vel_threshold: float = DEFAULT_LINEAR_VELOCITY_THRESHOLD,
+    ang_vel_threshold: float = DEFAULT_ANGULAR_VELOCITY_THRESHOLD,
 ) -> torch.Tensor:
     """Check whether every named object is at rest and record its first resting position.
 
@@ -196,31 +204,32 @@ class ObjectsSettledForConsecutiveSteps(ConsecutivePredicate):
     def __init__(self, cfg: TerminationTermCfg, env: IsaacLabArenaManagerBasedRLEnv):
         super().__init__(cfg, env)
         object_names = cfg.params["object_names"]
-        lin_vel_threshold = cfg.params.get("lin_vel_threshold", 1e-2)
-        ang_vel_threshold = cfg.params.get("ang_vel_threshold", 5e-2)
+        lin_vel_threshold = cfg.params.get("lin_vel_threshold", DEFAULT_LINEAR_VELOCITY_THRESHOLD)
+        ang_vel_threshold = cfg.params.get("ang_vel_threshold", DEFAULT_ANGULAR_VELOCITY_THRESHOLD)
 
         assert object_names, "ObjectsSettledForConsecutiveSteps requires at least one object name."
         assert all(
             isinstance(name, str) and name for name in object_names
         ), f"ObjectsSettledForConsecutiveSteps object names must be non-empty strings, got {object_names!r}."
         assert (
-            lin_vel_threshold >= 0.0
-        ), f"ObjectsSettledForConsecutiveSteps linear velocity threshold must be non-negative, got {lin_vel_threshold}."
-        assert ang_vel_threshold >= 0.0, (
-            "ObjectsSettledForConsecutiveSteps angular velocity threshold must be non-negative, got"
-            f" {ang_vel_threshold}."
-        )
+            lin_vel_threshold > 0.0
+        ), f"ObjectsSettledForConsecutiveSteps linear velocity threshold must be positive, got {lin_vel_threshold}."
+        assert (
+            ang_vel_threshold > 0.0
+        ), f"ObjectsSettledForConsecutiveSteps angular velocity threshold must be positive, got {ang_vel_threshold}."
 
     def __call__(
         self,
         env: IsaacLabArenaManagerBasedRLEnv,
         object_names: list[str],
         consecutive_steps: int,
-        lin_vel_threshold: float = 1e-2,
-        ang_vel_threshold: float = 5e-2,
+        lin_vel_threshold: float = DEFAULT_LINEAR_VELOCITY_THRESHOLD,
+        ang_vel_threshold: float = DEFAULT_ANGULAR_VELOCITY_THRESHOLD,
+        active_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Return where all objects have stayed below thresholds for ``consecutive_steps`` calls."""
 
+        # NOTE: Isaac Lab requires every cfg.params key in this signature; construction consumes this value.
         del consecutive_steps
 
         below_thresholds = _objects_below_velocity_thresholds(
@@ -229,7 +238,7 @@ class ObjectsSettledForConsecutiveSteps(ConsecutivePredicate):
             lin_vel_threshold=lin_vel_threshold,
             ang_vel_threshold=ang_vel_threshold,
         )
-        settled = self._update_consecutive(below_thresholds)
+        settled = self._update_consecutive_and_get_completion_mask(below_thresholds, active_mask=active_mask)
 
         recorder = get_rest_pose_recorder(env)
         for object_name in object_names:
@@ -240,4 +249,4 @@ class ObjectsSettledForConsecutiveSteps(ConsecutivePredicate):
         """Clear stability counters and recorded rest poses for selected environments."""
 
         super().reset(env_ids)
-        get_rest_pose_recorder(self._env).reset(env_ids)
+        get_rest_pose_recorder(self._env).reset(env_ids, object_names=self.cfg.params["object_names"])

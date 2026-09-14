@@ -10,6 +10,7 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 
 def _test_stateful_predicates(_simulation_app) -> bool:
     import torch
+    from functools import partial
     from types import SimpleNamespace
 
     from isaaclab.managers import TerminationManager, TerminationTermCfg
@@ -21,6 +22,7 @@ def _test_stateful_predicates(_simulation_app) -> bool:
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
     )
+    from isaaclab_arena.tasks.terminations import termination_term_result
 
     class _PlayingSimulation:
         def is_playing(self) -> bool:
@@ -59,6 +61,20 @@ def _test_stateful_predicates(_simulation_app) -> bool:
             "consecutive_steps": 2,
         },
     )
+
+    for threshold_name in ("lin_vel_threshold", "ang_vel_threshold"):
+        invalid_params = dict(settled_cfg.params)
+        invalid_params[threshold_name] = 0.0
+        try:
+            ObjectsSettledForConsecutiveSteps(
+                TerminationTermCfg(func=ObjectsSettledForConsecutiveSteps, params=invalid_params),
+                env,
+            )
+        except AssertionError as error:
+            assert "must be positive" in str(error)
+        else:
+            raise AssertionError(f"Zero {threshold_name} should be rejected.")
+
     manager = TerminationManager({"success": settled_cfg}, env)
 
     # Isaac Lab resolves the managed term inside a copied config. The task's source config stays reusable.
@@ -86,14 +102,47 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     manager.compute()
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
     assert recorded.tolist() == [True, True]
+    env.object_initial_rest_pose_recorder.record(
+        "unrelated_object",
+        arena_world.position,
+        torch.ones(env.num_envs, dtype=torch.bool),
+    )
     manager.reset(env_ids=[1])
     assert resolved_settled.consecutive_true_steps.tolist() == [2, 0]
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
     assert recorded.tolist() == [True, False]
+    _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
+    assert unrelated_recorded.tolist() == [True, True]
     manager.reset()
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
     assert recorded.tolist() == [False, False]
+    _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
+    assert unrelated_recorded.tolist() == [True, True]
+
+    # Progress consumes the cached task termination result without evaluating its predicate again.
+    env.termination_manager = manager
+    cached_result_tracker = ProgressTracker(
+        progress_objectives=[
+            ProgressObjective(
+                name="cached_termination",
+                predicate_groups=partial(termination_term_result, term_name="success"),
+            )
+        ],
+        num_envs=env.num_envs,
+        device=env.device,
+        env=env,
+    )
+    manager.compute()
+    assert resolved_settled.consecutive_true_steps.tolist() == [1, 1]
+    cached_result_tracker.step(env, step_index=torch.tensor([1, 1]))
+    assert resolved_settled.consecutive_true_steps.tolist() == [1, 1]
+    assert [state.all_complete for state in cached_result_tracker.get_state()] == [False, False]
+    manager.compute()
+    assert resolved_settled.consecutive_true_steps.tolist() == [2, 2]
+    cached_result_tracker.step(env, step_index=torch.tensor([2, 2]))
+    assert resolved_settled.consecutive_true_steps.tolist() == [2, 2]
+    assert [state.all_complete for state in cached_result_tracker.get_state()] == [True, True]
 
     # Progress tracking resolves and owns managed predicate configs, including their reset lifecycle.
     progress_cfg = TerminationTermCfg(
@@ -115,6 +164,42 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     assert [state.all_complete for state in progress_tracker.get_state()] == [True, True]
     progress_tracker.reset([1])
     assert resolved_progress_settled.consecutive_true_steps.tolist() == [1, 0]
+
+    # A managed predicate only accumulates state for envs currently at its chain position.
+    env.ready = torch.tensor([True, False])
+
+    def _is_ready(env):
+        return env.ready
+
+    delayed_progress_cfg = TerminationTermCfg(
+        func=ObjectsSettledForConsecutiveSteps,
+        params={"object_names": ["sphere"], "consecutive_steps": 2},
+    )
+    delayed_tracker = ProgressTracker(
+        progress_objectives=[
+            ProgressObjective(name="delayed_settling", predicate_groups=[_is_ready, delayed_progress_cfg])
+        ],
+        num_envs=env.num_envs,
+        device=env.device,
+        env=env,
+    )
+    delayed_predicate = delayed_tracker.runners[0].predicate_chains["default_group"][1][0].func
+
+    delayed_tracker.step(env, step_index=torch.tensor([1, 1]))
+    delayed_tracker.step(env, step_index=torch.tensor([2, 2]))
+    assert delayed_predicate.consecutive_true_steps.tolist() == [1, 0]
+
+    env.ready[1] = True
+    delayed_tracker.step(env, step_index=torch.tensor([3, 3]))
+    assert delayed_predicate.consecutive_true_steps.tolist() == [2, 0]
+    assert [state.all_complete for state in delayed_tracker.get_state()] == [True, False]
+
+    delayed_tracker.step(env, step_index=torch.tensor([4, 4]))
+    assert delayed_predicate.consecutive_true_steps.tolist() == [2, 1]
+    assert [state.all_complete for state in delayed_tracker.get_state()] == [True, False]
+    delayed_tracker.step(env, step_index=torch.tensor([5, 5]))
+    assert delayed_predicate.consecutive_true_steps.tolist() == [2, 2]
+    assert [state.all_complete for state in delayed_tracker.get_state()] == [True, True]
     return True
 
 
@@ -124,15 +209,38 @@ def test_stateful_predicates():
 
 def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bool:
     import torch
-    from types import SimpleNamespace
 
+    from isaaclab_arena.assets.object_library import DomeLight, GroundPlane, ProceduralTable, Sphere
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.tasks.objects_settled_task import ObjectsSettledTask
     from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
     from isaaclab_arena.utils.physics_settle import step_physics
-    from isaaclab_arena_examples.external_environments.object_settled import ExternalObjectsSettledEnvironment
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena.utils.velocity import Velocity
 
-    environment = ExternalObjectsSettledEnvironment().get_env(SimpleNamespace(consecutive_steps=5))
+    table = ProceduralTable(instance_name="table")
+    table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.45)))
+    table_top_z = 0.47
+
+    table_sphere = Sphere(instance_name="table_sphere")
+    table_sphere.set_initial_pose(Pose(position_xyz=(0.0, 0.0, table_top_z + 0.1)))
+    table_sphere.set_initial_velocity(Velocity.zero())
+
+    falling_sphere = Sphere(instance_name="falling_sphere")
+    falling_sphere.set_initial_pose(Pose(position_xyz=(0.55, 0.0, table_top_z + 0.1)))
+    falling_sphere.set_initial_velocity(Velocity.zero())
+
+    environment = IsaacLabArenaEnvironment(
+        name="objects_settled",
+        scene=Scene(assets=[GroundPlane(), table, table_sphere, falling_sphere, DomeLight()]),
+        task=ObjectsSettledTask(
+            object_names=[table_sphere.name, falling_sphere.name],
+            consecutive_steps=5,
+        ),
+    )
     args_cli = get_isaaclab_arena_cli_parser().parse_args([])
     args_cli.num_envs = 1
     env = ArenaEnvBuilder(environment, arena_env_builder_cfg_from_argparse(args_cli)).make_registered()
@@ -169,7 +277,7 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
                 assert progress_state.overall_score == 1.0
                 settled_events = progress["events"][0]
                 assert len(settled_events) == 1
-                assert settled_events[0].predicate_name == "objects_settled_success"
+                assert settled_events[0].predicate_name == "termination_term_result(term_name='success')"
                 assert settled_events[0].step >= 5
                 break
             assert not progress_state.progress_objectives["objects_settled"].is_complete

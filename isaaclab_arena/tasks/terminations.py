@@ -32,6 +32,12 @@ class SuccessMode(str, Enum):
     """Success needs at least k predicates to be True."""
 
 
+def termination_term_result(env: ManagerBasedRLEnv, term_name: str) -> torch.Tensor:
+    """Return a termination term's result most recently computed for the current step."""
+
+    return env.termination_manager.get_term(term_name)
+
+
 def check_success(
     env: ManagerBasedRLEnv,
     predicates: list[TerminationTermCfg],

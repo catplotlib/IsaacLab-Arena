@@ -17,7 +17,7 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import _predicate_repr
-from isaaclab_arena.tasks.predicates.object_settling import reset_rest_pose_recorder
+from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
 
 _PROGRESS_TRACKER_ATTR = "_progress_tracker"
 
@@ -37,6 +37,15 @@ def _resolve_progress_predicate(predicate, env):
     if isinstance(predicate_func, type):
         predicate_func = predicate_func(predicate_cfg, env)
     return functools.partial(predicate_func, **predicate_cfg.params)
+
+
+def _evaluate_progress_predicate_with_state_update_mask(predicate, env, state_update_mask: torch.Tensor):
+    """Evaluate a predicate without mutating inactive consecutive-predicate environments."""
+
+    predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
+    if isinstance(predicate_func, ConsecutivePredicate):
+        return predicate(env, active_mask=state_update_mask)
+    return predicate(env)
 
 
 @dataclass
@@ -201,7 +210,15 @@ class ProgressObjectiveRunner:
                 continue
 
             # Evaluate the predicate for all envs, reshaped to a flat (num_envs,) bool tensor.
-            result = torch.as_tensor(predicate(env), dtype=torch.bool, device=self.device).reshape(-1)
+            result = torch.as_tensor(
+                _evaluate_progress_predicate_with_state_update_mask(
+                    predicate,
+                    env,
+                    state_update_mask=at_position,
+                ),
+                dtype=torch.bool,
+                device=self.device,
+            ).reshape(-1)
             assert result.shape[0] == self.num_envs, (
                 f"Predicate {_predicate_repr(predicate)} returned shape {tuple(result.shape)};"
                 f" expected ({self.num_envs},)"
@@ -467,7 +484,6 @@ def progress_tracking_reset_func(env, env_ids, progress_objectives: list[Progres
     elif torch.is_tensor(env_ids):
         env_ids = env_ids.tolist()
     progress_tracker.reset(env_ids)
-    reset_rest_pose_recorder(env, env_ids)
 
 
 @configclass
