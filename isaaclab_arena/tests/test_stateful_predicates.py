@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate stateful predicate evaluation and nested partial-reset lifecycle."""
+"""Validate consecutive predicate evaluation and nested partial-reset lifecycle."""
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
@@ -15,7 +15,10 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     from isaaclab.managers import TerminationManager, TerminationTermCfg
 
     from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate, PredicateGroup
-    from isaaclab_arena.tasks.predicates.object_settling import ObjectInitialRestPoseRecorder, ObjectsSettled
+    from isaaclab_arena.tasks.predicates.object_settling import (
+        ObjectInitialRestPoseRecorder,
+        ObjectsSettledForConsecutiveSteps,
+    )
 
     class _PlayingSimulation:
         def is_playing(self) -> bool:
@@ -50,7 +53,7 @@ def _test_stateful_predicates(_simulation_app) -> bool:
         is_aligned=torch.tensor([True, True]),
     )
     settled_cfg = TerminationTermCfg(
-        func=ObjectsSettled,
+        func=ObjectsSettledForConsecutiveSteps,
         params={
             "object_names": ["sphere"],
             "lin_vel_threshold": 0.1,
@@ -77,9 +80,9 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     resolved_settled = resolved_inner_group.cfg.params["predicates"][0].func
     assert isinstance(resolved_group, PredicateGroup)
     assert isinstance(resolved_inner_group, PredicateGroup)
-    assert isinstance(resolved_settled, ObjectsSettled)
+    assert isinstance(resolved_settled, ObjectsSettledForConsecutiveSteps)
     assert isinstance(resolved_settled, ConsecutivePredicate)
-    assert settled_cfg.func is ObjectsSettled
+    assert settled_cfg.func is ObjectsSettledForConsecutiveSteps
 
     # Zero initial velocity is not enough: success requires two consecutive evaluations.
     assert manager.compute().tolist() == [False, False]
@@ -122,7 +125,7 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.tasks.predicates.composition import PredicateGroup
-    from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettled
+    from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
     from isaaclab_arena.utils.physics_settle import step_physics
     from isaaclab_arena_examples.external_environments.object_settled import ExternalObjectsSettledEnvironment
 
@@ -137,7 +140,7 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
         group = arena_env.termination_manager.get_term_cfg("success").func
         assert isinstance(group, PredicateGroup)
         settled = group.cfg.params["predicates"][0].func
-        assert isinstance(settled, ObjectsSettled)
+        assert isinstance(settled, ObjectsSettledForConsecutiveSteps)
 
         falling_speed = arena_env.arena_world.get_root_linear_velocity_w("falling_sphere").norm(dim=-1)
         assert falling_speed.item() == 0.0

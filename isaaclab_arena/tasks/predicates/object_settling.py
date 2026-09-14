@@ -5,10 +5,10 @@
 
 """Object-settling predicate and recorder object.
 
-The ``objects_settled`` function reports instantaneous rest, while ``ObjectsSettled`` requires a
-consecutive stability window. Both record the initial resting position through
-``ObjectInitialRestPoseRecorder`` for downstream predicates. The stateful term clears its counters
-and recordings through the termination-manager reset lifecycle.
+The ``objects_settled`` function reports instantaneous rest, while
+``ObjectsSettledForConsecutiveSteps`` requires a consecutive stability window. Both record the
+initial resting position through ``ObjectInitialRestPoseRecorder`` for downstream predicates. The
+managed term clears its counters and recordings through the termination-manager reset lifecycle.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def _objects_below_velocity_thresholds(
     )
 
 
-class ObjectsSettled(ConsecutivePredicate):
+class ObjectsSettledForConsecutiveSteps(ConsecutivePredicate):
     """Pass after every named object remains below velocity thresholds for a duration."""
 
     def __init__(self, cfg: TerminationTermCfg, env: IsaacLabArenaManagerBasedRLEnv):
@@ -199,16 +199,17 @@ class ObjectsSettled(ConsecutivePredicate):
         lin_vel_threshold = cfg.params.get("lin_vel_threshold", 1e-2)
         ang_vel_threshold = cfg.params.get("ang_vel_threshold", 5e-2)
 
-        assert object_names, "ObjectsSettled requires at least one object name."
+        assert object_names, "ObjectsSettledForConsecutiveSteps requires at least one object name."
         assert all(
             isinstance(name, str) and name for name in object_names
-        ), f"ObjectsSettled object names must be non-empty strings, got {object_names!r}."
+        ), f"ObjectsSettledForConsecutiveSteps object names must be non-empty strings, got {object_names!r}."
         assert (
             lin_vel_threshold >= 0.0
-        ), f"ObjectsSettled linear velocity threshold must be non-negative, got {lin_vel_threshold}."
-        assert (
-            ang_vel_threshold >= 0.0
-        ), f"ObjectsSettled angular velocity threshold must be non-negative, got {ang_vel_threshold}."
+        ), f"ObjectsSettledForConsecutiveSteps linear velocity threshold must be non-negative, got {lin_vel_threshold}."
+        assert ang_vel_threshold >= 0.0, (
+            "ObjectsSettledForConsecutiveSteps angular velocity threshold must be non-negative, got"
+            f" {ang_vel_threshold}."
+        )
 
     def __call__(
         self,
