@@ -249,7 +249,8 @@ class GripperStateRecorder(RecorderTerm):
 
             travel = close_command - open_command
             assert (travel != 0).all(), "Binary gripper open and close commands must be distinct"
-            joint_positions = wp.to_torch(asset.data.joint_pos)[:, joint_ids]
+            # The term's joint ids are a warp array, which torch cannot index with; it needs int64.
+            joint_positions = wp.to_torch(asset.data.joint_pos)[:, wp.to_torch(joint_ids).long()]
             opening = (joint_positions - open_command) / travel
             gripper_state = {"position": opening[env_ids] if env_ids is not None else opening}
 
