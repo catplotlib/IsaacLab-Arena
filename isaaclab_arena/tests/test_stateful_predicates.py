@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate consecutive predicate evaluation and nested partial-reset lifecycle."""
+"""Validate consecutive predicate evaluation and managed-term reset lifecycle."""
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
@@ -14,7 +14,9 @@ def _test_stateful_predicates(_simulation_app) -> bool:
 
     from isaaclab.managers import TerminationManager, TerminationTermCfg
 
-    from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate, PredicateGroup
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
     from isaaclab_arena.tasks.predicates.object_settling import (
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
@@ -39,9 +41,6 @@ def _test_stateful_predicates(_simulation_app) -> bool:
         def get_position_w(self, _name: str) -> torch.Tensor:
             return self.position
 
-    def _is_aligned(env) -> torch.Tensor:
-        return env.is_aligned
-
     arena_world = _ArenaWorld()
     env = SimpleNamespace(
         num_envs=2,
@@ -50,7 +49,6 @@ def _test_stateful_predicates(_simulation_app) -> bool:
         sim=_PlayingSimulation(),
         arena_world=arena_world,
         object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(2, "cpu"),
-        is_aligned=torch.tensor([True, True]),
     )
     settled_cfg = TerminationTermCfg(
         func=ObjectsSettledForConsecutiveSteps,
@@ -61,25 +59,10 @@ def _test_stateful_predicates(_simulation_app) -> bool:
             "consecutive_steps": 2,
         },
     )
-    inner_group_cfg = TerminationTermCfg(
-        func=PredicateGroup,
-        params={
-            "predicates": [settled_cfg, TerminationTermCfg(func=_is_aligned)],
-            "mode": "ALL",
-        },
-    )
-    group_cfg = TerminationTermCfg(
-        func=PredicateGroup,
-        params={"predicates": [inner_group_cfg], "mode": "ALL"},
-    )
-    manager = TerminationManager({"success": group_cfg}, env)
+    manager = TerminationManager({"success": settled_cfg}, env)
 
-    # Isaac Lab resolves nested manager terms inside a copied config. The task's source config stays reusable.
-    resolved_group = manager.get_term_cfg("success").func
-    resolved_inner_group = resolved_group.cfg.params["predicates"][0].func
-    resolved_settled = resolved_inner_group.cfg.params["predicates"][0].func
-    assert isinstance(resolved_group, PredicateGroup)
-    assert isinstance(resolved_inner_group, PredicateGroup)
+    # Isaac Lab resolves the managed term inside a copied config. The task's source config stays reusable.
+    resolved_settled = manager.get_term_cfg("success").func
     assert isinstance(resolved_settled, ObjectsSettledForConsecutiveSteps)
     assert isinstance(resolved_settled, ConsecutivePredicate)
     assert settled_cfg.func is ObjectsSettledForConsecutiveSteps
@@ -96,7 +79,7 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     assert manager.compute().tolist() == [False, False]
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
 
-    # Nested lifecycle propagation resets only the selected environment, including its recorded rest pose.
+    # Managed-term lifecycle propagation resets only the selected environment and its recorded rest pose.
     arena_world.linear_velocity.zero_()
     arena_world.angular_velocity.zero_()
     manager.compute()
@@ -111,6 +94,27 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
     assert recorded.tolist() == [False, False]
+
+    # Progress tracking resolves and owns managed predicate configs, including their reset lifecycle.
+    progress_cfg = TerminationTermCfg(
+        func=ObjectsSettledForConsecutiveSteps,
+        params={"object_names": ["sphere"], "consecutive_steps": 1},
+    )
+    progress_tracker = ProgressTracker(
+        progress_objectives=[ProgressObjective(name="settled", predicate_groups=progress_cfg)],
+        num_envs=env.num_envs,
+        device=env.device,
+        env=env,
+    )
+    progress_predicate = progress_tracker.runners[0].predicate_chains["default_group"][0][0]
+    resolved_progress_settled = progress_predicate.func
+    assert isinstance(resolved_progress_settled, ObjectsSettledForConsecutiveSteps)
+
+    progress_tracker.step(env, step_index=torch.tensor([1, 1]))
+    assert resolved_progress_settled.consecutive_true_steps.tolist() == [1, 1]
+    assert [state.all_complete for state in progress_tracker.get_state()] == [True, True]
+    progress_tracker.reset([1])
+    assert resolved_progress_settled.consecutive_true_steps.tolist() == [1, 0]
     return True
 
 
@@ -124,7 +128,6 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
 
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.tasks.predicates.composition import PredicateGroup
     from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
     from isaaclab_arena.utils.physics_settle import step_physics
     from isaaclab_arena_examples.external_environments.object_settled import ExternalObjectsSettledEnvironment
@@ -137,21 +140,19 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
 
     try:
         arena_env = env.unwrapped
-        group = arena_env.termination_manager.get_term_cfg("success").func
-        assert isinstance(group, PredicateGroup)
-        settled = group.cfg.params["predicates"][0].func
+        settled = arena_env.termination_manager.get_term_cfg("success").func
         assert isinstance(settled, ObjectsSettledForConsecutiveSteps)
 
         falling_speed = arena_env.arena_world.get_root_linear_velocity_w("falling_sphere").norm(dim=-1)
         assert falling_speed.item() == 0.0
-        assert not group(arena_env, **group.cfg.params).item()
+        assert not settled(arena_env, **settled.cfg.params).item()
         assert settled.consecutive_true_steps.item() == 1
 
         # The unsupported sphere starts accelerating on the next physics frame, clearing the false streak.
         step_physics(env, 1)
         falling_speed = arena_env.arena_world.get_root_linear_velocity_w("falling_sphere").norm(dim=-1)
         assert falling_speed.item() > 1e-2
-        assert not group(arena_env, **group.cfg.params).item()
+        assert not settled(arena_env, **settled.cfg.params).item()
         assert settled.consecutive_true_steps.item() == 0
 
         # It can succeed only after falling to the ground and completing a fresh stability window.

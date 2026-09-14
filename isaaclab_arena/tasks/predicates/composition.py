@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Managed temporal predicates and predicate composition."""
+"""Managed temporal predicate bases."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ import torch
 from collections.abc import Sequence
 
 from isaaclab.managers import ManagerTermBase, TerminationTermCfg
-
-from isaaclab_arena.tasks.terminations import SuccessMode, check_success
 
 
 class ConsecutivePredicate(ManagerTermBase):
@@ -44,34 +42,3 @@ class ConsecutivePredicate(ManagerTermBase):
         next_count = torch.clamp(self.consecutive_true_steps + 1, max=self._required_consecutive_steps)
         self.consecutive_true_steps = torch.where(passed, next_count, torch.zeros_like(self.consecutive_true_steps))
         return self.consecutive_true_steps >= self._required_consecutive_steps
-
-
-# TODO(xinjieyao, 2026-09-14): To be removed once progress tracking handles the lifecycle of predicates.
-class PredicateGroup(ManagerTermBase):
-    """Combine predicates while forwarding resets to managed predicate terms."""
-
-    def __init__(self, cfg: TerminationTermCfg, env):
-        super().__init__(cfg, env)
-        predicates = cfg.params["predicates"]
-        assert predicates, "PredicateGroup requires at least one predicate."
-
-    def __call__(
-        self,
-        env,
-        predicates: list[TerminationTermCfg],
-        mode: SuccessMode | str = SuccessMode.ALL,
-        k: int | None = None,
-    ) -> torch.Tensor:
-        return check_success(env, predicates=predicates, mode=mode, k=k)
-
-    def reset(self, env_ids: Sequence[int] | None = None) -> None:
-        """Reset each unique managed predicate for the selected environments."""
-
-        reset_predicates: list[ManagerTermBase] = []
-        for predicate_cfg in self.cfg.params["predicates"]:
-            predicate = predicate_cfg.func
-            if isinstance(predicate, ManagerTermBase) and not any(
-                predicate is existing for existing in reset_predicates
-            ):
-                predicate.reset(env_ids)
-                reset_predicates.append(predicate)
