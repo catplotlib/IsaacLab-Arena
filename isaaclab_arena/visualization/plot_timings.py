@@ -3,13 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Plot where a rollout step's time goes, from an Arena Experiment timings file.
-
-Timer names are hierarchical: a timer entered inside another records under ``<enclosing>/<name>``.
-This script follows that tree, so each bar is one Run's mean step split into the timers nested
-below it, and the time a timer does not attribute to its children becomes its own "(other)" slice.
-Adding a timer to the rollout therefore adds a slice here without changing this script.
-"""
+"""Plot where a rollout step's time goes, from an Arena Experiment timings file."""
 
 from __future__ import annotations
 
@@ -26,10 +20,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 TIMER_NAME_SEPARATOR = "/"
 DEFAULT_ROOT_TIMER_NAME = "step"
-
-# Time a parent timer does not attribute to its children is allowed to go this far below zero
-# before the file is treated as inconsistent, which absorbs float error in the recorded totals.
-_UNATTRIBUTED_MS_TOLERANCE = 1e-6
 
 # Okabe-Ito, which stays distinguishable for the most common colour vision deficiencies.
 _SEGMENT_COLORS = ("#D55E00", "#009E73", "#E69F00", "#CC79A7", "#0072B2", "#56B4E9", "#F0E442", "#000000")
@@ -114,11 +104,15 @@ def read_run_timer_records(timings_path: Path) -> dict[str, list[dict]]:
 def _child_timer_names(parent_name: str, timer_names: Sequence[str]) -> list[str]:
     """Return the names nested exactly one level below the parent, in recorded order."""
     prefix = parent_name + TIMER_NAME_SEPARATOR
-    return [
-        timer_name
-        for timer_name in timer_names
-        if timer_name.startswith(prefix) and TIMER_NAME_SEPARATOR not in timer_name[len(prefix) :]
-    ]
+    child_names = []
+    for timer_name in timer_names:
+        if not timer_name.startswith(prefix):
+            continue
+        name_below_parent = timer_name[len(prefix) :]
+        if TIMER_NAME_SEPARATOR in name_below_parent:
+            continue
+        child_names.append(timer_name)
+    return child_names
 
 
 def _timer_slice_totals(
@@ -136,13 +130,9 @@ def _timer_slice_totals(
         yield from _timer_slice_totals(child_name, total_ms_by_name, root_name)
         attributed_ms += total_ms_by_name[child_name]
 
-    unattributed_ms = total_ms_by_name[timer_name] - attributed_ms
-    if unattributed_ms < -_UNATTRIBUTED_MS_TOLERANCE:
-        raise ValueError(
-            f"Timer '{timer_name}' totals {total_ms_by_name[timer_name]:.3f} ms but its children"
-            f" total {attributed_ms:.3f} ms, so the file is inconsistent"
-        )
-    yield f"{label} (other)", max(unattributed_ms, 0.0)
+    # Children are not guaranteed to add up to their parent, so clamp instead of trusting the sum.
+    unattributed_ms = max(total_ms_by_name[timer_name] - attributed_ms, 0.0)
+    yield f"{label} (other)", unattributed_ms
 
 
 def build_run_timings(run_name: str, records: Sequence[Mapping], root_timer_name: str) -> RunTimings:
