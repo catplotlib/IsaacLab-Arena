@@ -185,9 +185,6 @@ class PickAndPlaceTask(TaskBase):
                     partial(
                         objects_settled,
                         object_names=[self.pick_up_object.name],
-                        # To maintain compatibility with the v0.3.0 ObjectSettled predicate,
-                        # as long as the object is settled for one step, we consider it settled.
-                        settle_steps=1,
                     ),
                     partial(
                         object_is_above_height,
