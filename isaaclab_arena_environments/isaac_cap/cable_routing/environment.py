@@ -40,7 +40,7 @@ def _build_environment(
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
     from ..embodiments.cable_routing import IndustrialBimanualYamEmbodiment
-    from .physics import configure_cable_routing_physics
+    from .physics import configure_cable_routing_physics, configure_easy_cable_routing_physics
     from .scene import (
         BOARD_TOP_Z,
         EASY_VARIANT,
@@ -56,6 +56,9 @@ def _build_environment(
 
     assert variant_name in ("easy", "medium"), f"Unsupported cable-routing variant {variant_name!r}."
     variant = EASY_VARIANT if variant_name == "easy" else MEDIUM_VARIANT
+    physics_callback = (
+        configure_easy_cable_routing_physics if variant_name == "easy" else configure_cable_routing_physics
+    )
     built_scene = build_cable_routing_scene(factory.asset_registry, factory.hdr_registry, variant)
     embodiment = IndustrialBimanualYamEmbodiment(
         robot_usd_path=YAM_USD_PATH,
@@ -79,7 +82,7 @@ def _build_environment(
         embodiment=embodiment,
         scene=built_scene.scene,
         task=task,
-        env_cfg_callback=configure_cable_routing_physics,
+        env_cfg_callback=physics_callback,
     )
 
 
