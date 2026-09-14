@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pinch and drag the medium cable, demonstrate task success, and show its automatic reset."""
+"""Pinch and drag either cable-routing variant, then demonstrate task success and reset."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ _GRIPPER_CLOSED = 1.0
 _HOME = (0.0, 0.85, 0.6, 0.0, 0.0, 0.0)
 _RIGHT_APPROACH = (0.409067, 2.066704, 0.474773, 1.433090, 0.400142, 0.105784)
 
-_LEFT_CABLE_SEGMENT = 82
-_RIGHT_CABLE_SEGMENT = 9
+_LEFT_CABLE_FRACTION = 0.82
+_RIGHT_CABLE_FRACTION = 0.09
 _HIGH_HOVER_CLEARANCE = 0.075
 _LOW_HOVER_CLEARANCE = 0.045
 # The lower-finger body midpoint sits above the surfaces that contact the cable.
@@ -123,8 +123,9 @@ def _build_success_cable_poses(
     cable_z_w: torch.Tensor,
     num_segments: int,
     rest_length: float,
+    route: tuple[tuple[int, float], ...],
 ) -> torch.Tensor:
-    """Construct a connected cable pose satisfying the medium task route."""
+    """Construct a connected cable pose satisfying the selected task route."""
     import torch
 
     device = peg_positions_w.device
@@ -132,7 +133,7 @@ def _build_success_cable_poses(
     controls = [board_center_xy_w + torch.tensor(_SUCCESS_ROUTE_START, device=device, dtype=dtype)]
     exit_radial = torch.tensor((1.0, 0.0), device=device, dtype=dtype)
 
-    for step, (peg_index, direction) in enumerate(_SUCCESS_ROUTE):
+    for step, (peg_index, direction) in enumerate(route):
         center = peg_positions_w[peg_index, :2]
         if step == 0:
             entry_angle = torch.tensor(_SUCCESS_ROUTE_ENTRY_ANGLE, device=device, dtype=dtype)
@@ -249,13 +250,18 @@ _RETURN_HOME_PHASE = MotionPhase(
 )
 
 
-def _build_cable_demo_environment():
-    """Compose the medium cable-routing environment used by this demo."""
+def _build_cable_demo_environment(variant: str):
+    """Compose the selected cable-routing environment used by this demo."""
     from isaaclab_arena_environments.isaac_cap.cable_routing.environment import (
+        CableRoutingEasyEnvironment,
+        CableRoutingEasyEnvironmentCfg,
         CableRoutingMediumEnvironment,
         CableRoutingMediumEnvironmentCfg,
     )
 
+    assert variant in ("easy", "medium"), f"Unsupported cable-routing variant {variant!r}."
+    if variant == "easy":
+        return CableRoutingEasyEnvironment().build(CableRoutingEasyEnvironmentCfg())
     return CableRoutingMediumEnvironment().build(CableRoutingMediumEnvironmentCfg())
 
 
@@ -270,11 +276,13 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
         arena_environment,
         builder_cfg,
         *,
+        variant: str,
         pause_steps: int,
         real_time: bool = True,
         visualizer_cfg=None,
     ) -> None:
         """Configure the cable behavior and success-state display duration."""
+        assert variant in ("easy", "medium"), f"Unsupported cable-routing variant {variant!r}."
         assert pause_steps >= 1, "pause_steps must be positive."
         super().__init__(
             simulation_app,
@@ -283,6 +291,7 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
             real_time=real_time,
             visualizer_cfg=visualizer_cfg,
         )
+        self.variant = variant
         self.pause_steps = pause_steps
 
     def setup_demo(self) -> None:
@@ -319,13 +328,19 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
                 strict=True,
             )
         )
-        assert (
-            configured_route == _SUCCESS_ROUTE
-        ), f"The success-pose generator supports {_SUCCESS_ROUTE}, got {configured_route}."
+        expected_route = _SUCCESS_ROUTE if self.variant == "medium" else ((1, 0.0),)
+        assert configured_route == expected_route, f"Expected {expected_route}, got {configured_route}."
+        self._success_pose_route = tuple(
+            (peg_index, direction if direction != 0.0 else 1.0) for peg_index, direction in configured_route
+        )
 
         default_positions = self.cable.data.default_segment_pose_w.torch[0, :, :3]
         segment_lengths = torch.linalg.vector_norm(default_positions[1:] - default_positions[:-1], dim=-1)
         self.cable_rest_length = float(segment_lengths.median())
+        self._cable_segment_ids = tuple(
+            min(round(fraction * self.cable.num_segments), self.cable.num_segments - 1)
+            for fraction in (_LEFT_CABLE_FRACTION, _RIGHT_CABLE_FRACTION)
+        )
 
     def _phase_action(self, phase: MotionPhase):
         """Return smooth absolute joint targets and the largest live target error."""
@@ -503,8 +518,8 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
     def _cable_targets(self, clearance: float):
         """Return gripper targets above the live cable sections selected for pinching."""
         cable_positions = self.cable.data.segment_pose_w.torch[:, :, :3]
-        left_target = cable_positions[:, _LEFT_CABLE_SEGMENT].clone()
-        right_target = cable_positions[:, _RIGHT_CABLE_SEGMENT].clone()
+        left_target = cable_positions[:, self._cable_segment_ids[0]].clone()
+        right_target = cable_positions[:, self._cable_segment_ids[1]].clone()
         left_target[:, 2] += clearance
         right_target[:, 2] += clearance
         return left_target, right_target
@@ -561,6 +576,7 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
             cable_z_w,
             self.cable.num_segments,
             self.cable_rest_length,
+            self._success_pose_route,
         ).unsqueeze(0)
 
         from isaaclab_arena_environments.isaac_cap.cable_routing.geometry import cable_route_success_from_geometry
@@ -739,6 +755,7 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
 def run_demo(
     simulation_app,
     *,
+    variant: str = "medium",
     cycles: int = 0,
     pause_steps: int = 30,
     real_time: bool = True,
@@ -748,8 +765,9 @@ def run_demo(
 
     demo = CableEnvBehaviourDemo(
         simulation_app,
-        _build_cable_demo_environment(),
+        _build_cable_demo_environment(variant),
         ArenaEnvBuilderCfg(num_envs=1, solve_relations=False),
+        variant=variant,
         pause_steps=pause_steps,
         real_time=real_time,
     )
@@ -763,12 +781,18 @@ def main() -> None:
     from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--variant",
+        choices=("easy", "medium"),
+        default="medium",
+        help="Cable-routing variant to display and validate.",
+    )
     parser.add_argument("--cycles", type=int, default=0, help="Cycles to run; zero repeats until Kit closes.")
     parser.add_argument(
         "--pause-steps",
         type=int,
         default=30,
-        help="Frames shown for the teleported success and reset states.",
+        help="Frames shown after easy motion or for the medium success and reset states.",
     )
     parser.add_argument("--no-real-time", action="store_true", help="Run without wall-clock rate limiting.")
     AppLauncher.add_app_launcher_args(parser)
@@ -779,6 +803,7 @@ def main() -> None:
     with SimulationAppContext(args) as simulation_app:
         run_demo(
             simulation_app,
+            variant=args.variant,
             cycles=args.cycles,
             pause_steps=args.pause_steps,
             real_time=not args.no_real_time,
