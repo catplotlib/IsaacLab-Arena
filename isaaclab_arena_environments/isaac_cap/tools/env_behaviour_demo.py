@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared environment lifecycle and stepping for behavior demos."""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -19,9 +17,9 @@ if TYPE_CHECKING:
 
 
 class EnvBehaviourDemo(ABC):
-    """Run environment-specific behavior cycles in a live simulation app."""
+    """Run environment-specific validation cycles in a live simulation app."""
 
-    label = "env-behaviour-demo"
+    label = "env_behaviour_demo"
 
     def __init__(
         self,
@@ -38,7 +36,7 @@ class EnvBehaviourDemo(ABC):
             simulation_app: Active Arena simulation application context.
             arena_environment: Composed Arena environment to instantiate.
             builder_cfg: Configuration for building the stepable environment.
-            real_time: Whether to pace steps using the environment step period.
+            real_time: Whether to pace environment steps using the environment step period. Defaults to true.
             visualizer_cfg: Optional default simulator visualizer configuration.
         """
         self.simulation_app = simulation_app
@@ -52,7 +50,7 @@ class EnvBehaviourDemo(ABC):
     @property
     def env(self) -> gym.Env:
         """Return the wrapped environment while the demo is running."""
-        assert self._env is not None, "The behavior-demo environment is not running."
+        assert self._env is not None, "The validation environment has not been created."
         return self._env
 
     @property
@@ -75,7 +73,7 @@ class EnvBehaviourDemo(ABC):
 
     @abstractmethod
     def run_cycle(self, cycle: int) -> None:
-        """Run one environment-specific behavior cycle."""
+        """Run one environment-specific validation cycle."""
 
     def is_running(self) -> bool:
         """Return whether the simulation application can continue stepping."""
@@ -104,12 +102,12 @@ class EnvBehaviourDemo(ABC):
         Args:
             cycles: Number of cycles to run. Zero runs until the simulation closes.
         """
-        assert cycles >= 0, "cycles must be non-negative; zero means repeat until the simulation closes."
-        self._env = self.make_env()
-        if self.real_time:
-            from isaaclab_arena.utils.rate_limiter import RateLimiter
+        from isaaclab_arena.utils.rate_limiter import RateLimiter
 
-            self._rate_limiter = RateLimiter(self.base_env.step_dt)
+        assert cycles >= 0, "cycles must be non-negative; zero means repeat until the simulation closes."
+        assert self._env is None, "An EnvBehaviourDemo instance can only be run once."
+        self._env = self.make_env()
+        self._rate_limiter = RateLimiter(self.base_env.step_dt) if self.real_time else None
 
         try:
             self.env.reset()
@@ -121,8 +119,4 @@ class EnvBehaviourDemo(ABC):
         except KeyboardInterrupt:
             print(f"\n[{self.label}] exiting", flush=True)
         finally:
-            try:
-                self.env.close()
-            finally:
-                self._env = None
-                self._rate_limiter = None
+            self.env.close()
