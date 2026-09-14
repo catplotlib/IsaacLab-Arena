@@ -26,6 +26,7 @@ from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArena
 from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import (
     IsaacArenaManagerBasedMimicEnvCfg,
     IsaacLabArenaManagerBasedRLEnvCfg,
+    apply_arena_global_settings,
 )
 from isaaclab_arena.environments.relation_solver_interface import solve_and_apply_relation_placement
 from isaaclab_arena.metrics.metric_base import MetricBase
@@ -45,9 +46,10 @@ from isaaclab_arena.tasks.no_task import NoTask
 from isaaclab_arena.terms.events import ResetBackgroundPhysics
 from isaaclab_arena.terms.recorders import ArenaEnvRecorderManagerCfg
 from isaaclab_arena.utils.configclass import combine_configclass_instances, make_configclass
-from isaaclab_arena.utils.isaaclab_utils.resolve_clone_plan_source_patch import patch_resolve_clone_plan_source
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import reapply_viewer_cfg
+from isaaclab_arena.utils.isaaclab_utils.warp_patch import install_empty_cpu_warp_to_torch_patch
 from isaaclab_arena.utils.multiprocess import get_local_rank
+from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.variations import variations_hydra, variations_printing
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
@@ -233,6 +235,7 @@ class ArenaEnvBuilder:
 
         # Constructing the environment by combining inputs from the scene, embodiment, and task.
         embodiment = self.arena_env.embodiment or NoEmbodiment()
+        embodiment.configure_physics_backend(self.cfg.presets)
         task = self.arena_env.task or NoTask()
         scene_cfg = combine_configclass_instances(
             "SceneCfg",
@@ -415,26 +418,28 @@ class ArenaEnvBuilder:
                 viewer=viewer_cfg,
             )
 
-        # Apply the environment configuration callback if it is set
-        # This can be used to modify the simulation configuration, etc.
-        if self.arena_env.env_cfg_callback is not None:
-            env_cfg = self.arena_env.env_cfg_callback(env_cfg)
-
         # Set seed for Isaac Lab env.
         env_cfg.seed = self.cfg.seed
 
-        # Apply the requested physics backend after the callback so it remains the final authority.
+        # Apply the requested physics backend before the callback so env-specific overrides can
+        # tune the selected preset. Callbacks that require a specific backend must validate the
+        # selected physics config before replacing or modifying it.
         presets = self.cfg.presets
         if presets is not None:
             from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import ArenaPhysicsCfg
 
-            env_cfg.sim.physics = getattr(ArenaPhysicsCfg(), presets)
+            env_cfg.sim.physics = getattr(ArenaPhysicsCfg(), presets.value)
 
             # Set replicate_physics for shared physics representations.
             # For Newton, without this flag, the simulation initialization
             # takes a very long time for large number of parallel environments.
-            if presets == "newton":
+            if presets is PhysicsBackend.NEWTON:
                 env_cfg.scene.replicate_physics = True
+
+        # Apply the environment configuration callback if it is set
+        # This can be used to modify the simulation configuration, etc.
+        if self.arena_env.env_cfg_callback is not None:
+            env_cfg = self.arena_env.env_cfg_callback(env_cfg)
 
         env_kwargs: dict[str, Any] = {"variation_recorder": variation_recorder}
         return env_cfg, env_kwargs
@@ -467,11 +472,14 @@ class ArenaEnvBuilder:
         Returns:
             A ``(name, cfg, env_kwargs)`` tuple.
         """
+        install_empty_cpu_warp_to_torch_patch()
+        apply_arena_global_settings()
         name = self.arena_env.name
         if env_cfg is None:
             env_cfg, env_kwargs = self.compose_manager_cfg()
         elif env_kwargs is None:
             env_kwargs = {}
+        self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
         entry_point = self.get_entry_point()
         # Register the environment with the Gym registry.
         # NOTE(alexmillane, 2026-08-05): Do not spread env_kwargs into the registry kwargs. env_kwargs carries the
@@ -499,12 +507,6 @@ class ArenaEnvBuilder:
             num_envs=self.cfg.num_envs,
             use_fabric=not self.cfg.disable_fabric,
         )
-        # During Lab's env build, ObjectSets give every env cfg its own clone-plan destination
-        # It is an issue for cameras nested under the robot that multiple destination are returned for the same source.
-        # E.g. camera gets /World/envs/env_{}/Robot, /World/envs/env_{}/Robot/panda_link0/external_camera  as destinations.
-        # Lab EA2 cannot pick one so patching to support single destination for the same source.
-        # TODO(xinjieyao, 2026-08-05): Remove this patch once Lab is updated to GA.
-        patch_resolve_clone_plan_source()
         return name, cfg, env_kwargs
 
     def make_registered(

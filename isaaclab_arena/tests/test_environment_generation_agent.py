@@ -93,7 +93,7 @@ def test_task_catalogue_excludes_structural_graph_fields():
     pick_params = entries["PickAndPlaceTask"].required_params + entries["PickAndPlaceTask"].optional_params
     assert "task_description" not in pick_params
     assert "max_separation" not in pick_params
-    assert "support_cone_half_angle_deg" in pick_params
+    assert "support_cone_half_angle_rad" in pick_params
 
 
 def test_relation_catalogue_collects_required_optional_and_enum_params():
@@ -375,6 +375,16 @@ def test_asset_catalogue_withholds_the_generic_simready_object():
 
     assert AssetRegistry().is_registered(SIMREADY_USD_OBJECT_REGISTRY_NAME)
     assert SIMREADY_USD_OBJECT_REGISTRY_NAME not in catalog_string
+
+
+def test_asset_catalogue_withholds_procedural_assets():
+    catalog_string = build_asset_catalogue().to_catalog_string()
+
+    registry = AssetRegistry()
+    assert registry.is_registered("procedural_cube")
+    assert registry.is_registered("procedural_table")
+    assert "procedural_cube" not in catalog_string
+    assert "procedural_table" not in catalog_string
 
 
 # ---------------------------------------------------------------------------

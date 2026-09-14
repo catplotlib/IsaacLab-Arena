@@ -10,8 +10,11 @@ from isaaclab.sensors.contact_sensor.contact_sensor_cfg import ContactSensorCfg
 from pxr import Usd
 
 from isaaclab_arena.affordances.openable import Openable
+from isaaclab_arena.affordances.pressable import Pressable
+from isaaclab_arena.affordances.turnable import Turnable
 from isaaclab_arena.assets.object import Object
-from isaaclab_arena.assets.object_base import ObjectBase, ObjectType
+from isaaclab_arena.assets.object_base import ObjectBase, RootedObjectBase
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.relations.relations import IsAnchor, RelationBase
 from isaaclab_arena.terms.events import reset_articulation_pose_and_joints
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, quaternion_to_90_deg_z_quarters
@@ -25,7 +28,7 @@ from isaaclab_arena.utils.usd_helpers import (
 from isaaclab_arena.utils.usd_pose_helpers import get_prim_pose_in_default_prim_frame
 
 
-class ObjectReference(ObjectBase):
+class ObjectReference(RootedObjectBase):
     """An object which *refers* to an existing element in the scene"""
 
     def __init__(self, parent_asset: Object, **kwargs):
@@ -248,6 +251,39 @@ class OpenableObjectReference(ObjectReference, Openable):
         super().__init__(
             openable_joint_name=openable_joint_name,
             openable_threshold=openable_threshold,
+            object_type=ObjectType.ARTICULATION,
+            **kwargs,
+        )
+
+
+class PressableObjectReference(ObjectReference, Pressable):
+    """A referenced articulation exposing one prismatic joint as a button."""
+
+    def __init__(self, pressable_joint_name: str, pressedness_threshold: float = 0.5, **kwargs):
+        super().__init__(
+            pressable_joint_name=pressable_joint_name,
+            pressedness_threshold=pressedness_threshold,
+            object_type=ObjectType.ARTICULATION,
+            **kwargs,
+        )
+
+
+class TurnableObjectReference(ObjectReference, Turnable):
+    """A referenced articulation exposing one revolute joint as a discrete control."""
+
+    def __init__(
+        self,
+        turnable_joint_name: str,
+        min_level_angle_deg: float,
+        max_level_angle_deg: float,
+        num_levels: int,
+        **kwargs,
+    ):
+        super().__init__(
+            turnable_joint_name=turnable_joint_name,
+            min_level_angle_deg=min_level_angle_deg,
+            max_level_angle_deg=max_level_angle_deg,
+            num_levels=num_levels,
             object_type=ObjectType.ARTICULATION,
             **kwargs,
         )
