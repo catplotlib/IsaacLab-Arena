@@ -340,17 +340,15 @@ class DroidSceneCfg:
         },
     )
 
-    # The end-effector frame marker
+    # Match the Robotiq base frame used by the actions and end-effector observations.
     ee_frame: FrameTransformerCfg = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
         debug_vis=False,
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
+                prim_path="{ENV_REGEX_NS}/Robot/Gripper/Robotiq_2F_85/base_link",
                 name="end_effector",
-                offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.1034],
-                ),
+                offset=OffsetCfg(),
             ),
             FrameTransformerCfg.FrameCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/Gripper/Robotiq_2F_85/right_inner_finger",
@@ -389,15 +387,15 @@ class BinaryJointPositionZeroToOneActionCfg(BinaryJointPositionActionCfg):
 
 @configclass
 class DroidDifferentialIKActionsCfg:
-    """Action specifications for the MDP."""
+    """Relative pose control of the Robotiq base frame with binary gripper actions."""
 
     arm_action: ActionTermCfg = DifferentialInverseKinematicsActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
-        body_name="panda_link0",
+        body_name="base_link",
         controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
         scale=0.5,
-        body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+        body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(),
     )
 
     gripper_action: ActionTermCfg = BinaryJointPositionZeroToOneActionCfg(
