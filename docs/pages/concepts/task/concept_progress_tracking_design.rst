@@ -169,7 +169,7 @@ before the task completes.
 Evaluation and reset lifecycle
 ------------------------------
 
-``TaskSuccessFromProgress`` connects the progress tracker to Isaac Lab's termination manager:
+``ProgressBasedSuccessTerm`` connects the progress tracker to Isaac Lab's termination manager:
 
 #. Physics advances and the termination manager evaluates the root success term.
 #. The term advances active progress stages once and returns task completion for that same step.
@@ -179,7 +179,12 @@ Evaluation and reset lifecycle
    The termination manager then resets the progress and recorded initial rest poses for the
    selected environments.
 
-The root success term owns progress state. Individual predicates remain ordinary callables;
+The builder installs this term automatically. It inherits from ``ManagerTermBase`` so Isaac Lab
+calls its ``reset()`` when an episode resets. A plain success function could read completion,
+but the tracker would need its updates and resets connected elsewhere.
+
+The tracker stores progress state; the root success term manages its updates and resets.
+Individual predicates remain ordinary callables;
 they do not each need a ``ManagerTermBase`` adapter. Progress tracking needs no separate reset
 event or updating recorder. If progress reporting is disabled, success evaluation and resets still work.
 Inspect the cached success result through ``env.unwrapped.termination_manager.get_term("success")``.
