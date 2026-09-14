@@ -5,16 +5,22 @@
 
 """Object-settling predicate and recorder object.
 
-The ``objects_settled`` predicate reports when all specified objects in the env come to a rest.
-When an object settles, its initial resting position is recorded by the ``ObjectInitialRestPoseRecorder`` object.
-Downstream predicates can read the positions via the ``get_object_initial_rest_state`` function.
-Resetting and clearing of positions are handled by the progress tracker on env reset.
+The ``objects_settled`` function reports instantaneous rest, while ``ObjectsSettled`` requires a
+consecutive stability window. Both record the initial resting position through
+``ObjectInitialRestPoseRecorder`` for downstream predicates. The stateful term clears its counters
+and recordings through the termination-manager reset lifecycle.
 """
 
 from __future__ import annotations
 
-import torch
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
+
+import torch
+
+from isaaclab.managers import TerminationTermCfg
+
+from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
 
 if TYPE_CHECKING:
     from isaaclab.scene import InteractiveScene
@@ -63,7 +69,12 @@ class ObjectInitialRestPoseRecorder:
     def reset(self, env_ids=None) -> None:
         """Clear recorded rest poses for ``env_ids`` (all envs if None)."""
 
-        ids = slice(None) if env_ids is None else torch.as_tensor(env_ids, dtype=torch.long, device=self._device)
+        if env_ids is None:
+            ids = slice(None)
+        elif isinstance(env_ids, slice):
+            ids = env_ids
+        else:
+            ids = torch.as_tensor(env_ids, dtype=torch.long, device=self._device)
         for entry in self._entries.values():
             entry["settled"][ids] = False
             entry["position"][ids] = float("nan")
@@ -147,18 +158,85 @@ def objects_settled(
     ``get_object_initial_rest_state``.
     """
 
-    arena_world = env.arena_world
-    settled = compute_objects_settled_mask(
-        arena_world,
+    settled = _objects_below_velocity_thresholds(
+        env,
+        object_names=object_names,
+        lin_vel_threshold=lin_vel_threshold,
+        ang_vel_threshold=ang_vel_threshold,
+    )
+
+    recorder = get_rest_pose_recorder(env)
+    for object_name in object_names:
+        object_position_w = env.arena_world.get_position_w(object_name)
+        recorder.record(object_name, object_position_w, settled)
+
+    return settled
+
+
+def _objects_below_velocity_thresholds(
+    env: IsaacLabArenaManagerBasedRLEnv,
+    object_names: list[str],
+    lin_vel_threshold: float,
+    ang_vel_threshold: float,
+) -> torch.Tensor:
+    """Return where every object is below both velocity thresholds."""
+
+    return compute_objects_settled_mask(
+        env.arena_world,
         env.scene,
         object_names,
         lin_vel_threshold,
         ang_vel_threshold,
     )
 
-    recorder = get_rest_pose_recorder(env)
-    for object_name in object_names:
-        center_position_w = arena_world.get_position_w(object_name)
-        recorder.record(object_name, center_position_w, settled)
 
-    return settled
+class ObjectsSettled(ConsecutivePredicate):
+    """Pass after every named object remains below velocity thresholds for a duration."""
+
+    def __init__(self, cfg: TerminationTermCfg, env: IsaacLabArenaManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        object_names = cfg.params["object_names"]
+        lin_vel_threshold = cfg.params.get("lin_vel_threshold", 1e-2)
+        ang_vel_threshold = cfg.params.get("ang_vel_threshold", 5e-2)
+
+        assert object_names, "ObjectsSettled requires at least one object name."
+        assert all(
+            isinstance(name, str) and name for name in object_names
+        ), f"ObjectsSettled object names must be non-empty strings, got {object_names!r}."
+        assert (
+            lin_vel_threshold >= 0.0
+        ), f"ObjectsSettled linear velocity threshold must be non-negative, got {lin_vel_threshold}."
+        assert (
+            ang_vel_threshold >= 0.0
+        ), f"ObjectsSettled angular velocity threshold must be non-negative, got {ang_vel_threshold}."
+
+    def __call__(
+        self,
+        env: IsaacLabArenaManagerBasedRLEnv,
+        object_names: list[str],
+        consecutive_steps: int,
+        lin_vel_threshold: float = 1e-2,
+        ang_vel_threshold: float = 5e-2,
+    ) -> torch.Tensor:
+        """Return where all objects have stayed below thresholds for ``consecutive_steps`` calls."""
+
+        del consecutive_steps
+
+        below_thresholds = _objects_below_velocity_thresholds(
+            env,
+            object_names=object_names,
+            lin_vel_threshold=lin_vel_threshold,
+            ang_vel_threshold=ang_vel_threshold,
+        )
+        settled = self._update_consecutive(below_thresholds)
+
+        recorder = get_rest_pose_recorder(env)
+        for object_name in object_names:
+            recorder.record(object_name, env.arena_world.get_position_w(object_name), settled)
+        return settled
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        """Clear stability counters and recorded rest poses for selected environments."""
+
+        super().reset(env_ids)
+        get_rest_pose_recorder(self._env).reset(env_ids)
