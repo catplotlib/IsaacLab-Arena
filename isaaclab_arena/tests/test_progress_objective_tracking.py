@@ -193,6 +193,9 @@ def _test_predicate_groups_rejects_invalid_inputs(simulation_app) -> bool:
 
     predicate = _MockPredicate(num_envs=1)
     invalid_groups = [
+        [],
+        42,
+        "string",
         predicate,
         [predicate],
         [(predicate, 1.0)],
@@ -208,6 +211,11 @@ def _test_predicate_groups_rejects_invalid_inputs(simulation_app) -> bool:
             ProgressObjective(name="invalid_groups", predicate_groups=groups)
     with pytest.raises(AssertionError, match="K is required"):
         ProgressObjective(name="choose", predicate_groups={"object": [predicate]}, logical="choose")
+    for invalid_count in (0, 2):
+        with pytest.raises(AssertionError):
+            ProgressObjective(
+                name="invalid_count", predicate_groups={"object": [predicate]}, logical="choose", K=invalid_count
+            )
     return True
 
 
@@ -517,69 +525,69 @@ def _test_state_machine_reset_clears_state(simulation_app) -> bool:
 
 
 def _test_recorder_publishes_to_extras_and_records_nothing(simulation_app) -> bool:
-    """ProgressTrackingRecorder.record_post_step writes env.extras and records nothing.
+    """Only the success term advances progress; the recorder publishes its latest state."""
+    from isaaclab.managers import TerminationTermCfg
 
-    ``record_post_step`` returns ``(None, None)`` (so nothing is added to the recorded
-    episode data) while publishing the already-computed state to
-    ``env.extras["progress_tracking"]``.
-    """
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker, ProgressTrackingRecorderCfg
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorderCfg
+    from isaaclab_arena.progress_tracking.task_success import TaskSuccessFromProgress
 
-    try:
-        env = _MockEnv(num_envs=2)
-        pred = _MockPredicate(num_envs=2, name="p")
-        objective = ProgressObjective(name="t", sequence=[pred])
+    env = _MockEnv(num_envs=2)
+    first_predicate = _MockPredicate(num_envs=2, name="first")
+    final_predicate = _MockPredicate(num_envs=2, name="final")
+    first_predicate.set([True, False])
+    final_predicate.set([True, False])
+    objectives = [ProgressObjective(name="task", sequence=[first_predicate, final_predicate])]
+    recorder_cfg = ProgressTrackingRecorderCfg()
+    recorder = recorder_cfg.class_type(recorder_cfg, env)
+    assert not hasattr(env, "_progress_tracker")
+    success_cfg = TerminationTermCfg(func=TaskSuccessFromProgress, params={"progress_objectives": objectives})
+    success = TaskSuccessFromProgress(success_cfg, env)
 
-        env._progress_tracker = ProgressTracker([objective], env.num_envs, env.device)
-        recorder_cfg = ProgressTrackingRecorderCfg()
-        recorder = recorder_cfg.class_type(recorder_cfg, env)
-
-        env._progress_tracker.reset([0, 1])
-
-        # Recording publishes the existing state without advancing any predicates.
+    assert recorder.record_post_step() == (None, None)
+    assert len(env.extras["progress_tracking"]["states"]) == 2
+    assert env.extras["progress_tracking"]["events"] == [[], []]
+    for _ in range(2):
         assert recorder.record_post_step() == (None, None)
-        assert "progress_tracking" in env.extras
-        assert len(env.extras["progress_tracking"]["states"]) == 2
-        assert env.extras["progress_tracking"]["events"] == [[], []]
-        assert not env.extras["progress_tracking"]["states"][0].progress_objectives["t"].is_complete
+        assert env.extras["progress_tracking"]["states"][0].overall_score == 0.0
 
-        # Step with env 0 predicate True, env 0 completes, env 1 does not.
-        pred.set([True, False])
-        _advance_step(env)
+    _advance_step(env)
+    assert success(env, **success_cfg.params).tolist() == [False, False]
+    for _ in range(2):
         assert recorder.record_post_step() == (None, None)
-        assert not env.extras["progress_tracking"]["states"][0].all_complete
-        env._progress_tracker.step(env, env.episode_length_buf)
-        assert recorder.record_post_step() == (None, None)
-        states = env.extras["progress_tracking"]["states"]
-        events = env.extras["progress_tracking"]["events"]
-        assert states[0].progress_objectives["t"].is_complete
-        assert not states[1].progress_objectives["t"].is_complete
-        assert len(events[0]) == 1
-        assert len(events[1]) == 0
+        progress = env.extras["progress_tracking"]
+        assert [state.overall_score for state in progress["states"]] == [0.5, 0.0]
+        assert [len(events) for events in progress["events"]] == [1, 0]
 
-        # Reset env 0, env 1 untouched.
-        pred.set([False, False])
-        env._progress_tracker.reset([0])
-        assert recorder.record_post_step() == (None, None)
-        states = env.extras["progress_tracking"]["states"]
-        assert not states[0].progress_objectives["t"].is_complete
-        assert states[0].progress_objectives["t"].score == 0.0
-    except Exception as e:
-        print(f"Error: {e}")
-        traceback.print_exc()
-        return False
+    _advance_step(env)
+    assert success(env, **success_cfg.params).tolist() == [True, False]
+    assert recorder.record_post_step() == (None, None)
+    progress = env.extras["progress_tracking"]
+    assert [state.all_complete for state in progress["states"]] == [True, False]
+    assert [len(events) for events in progress["events"]] == [2, 0]
+
+    success.reset(env_ids=[0])
+    assert recorder.record_post_step() == (None, None)
+    progress = env.extras["progress_tracking"]
+    assert [state.overall_score for state in progress["states"]] == [0.0, 0.0]
+    assert progress["events"] == [[], []]
     return True
 
 
-def _test_task_base_progress_objective_hooks(simulation_app) -> bool:
+def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> bool:
     """Task termination configuration contains success objectives and preserves their hierarchy."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import make_progress_tracking_recorder_cfg
+    from isaaclab_arena.tasks.no_task import NoTask
     from isaaclab_arena.tasks.task_base import TaskBase
     from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
     try:
+        default_task = NoTask()
+        default_cfg = default_task.get_termination_cfg()
+        assert isinstance(default_cfg, TaskTerminationCfg)
+        assert default_cfg.success == []
+        assert default_cfg.timeout_s == default_task.episode_length_s
 
         class _Base(TaskBase):
             def get_scene_cfg(self):
@@ -885,8 +893,10 @@ def test_recorder_publishes_to_extras_and_records_nothing():
     )
 
 
-def test_task_base_progress_objective_hooks():
-    assert run_function_with_persistent_simulation_app(_test_task_base_progress_objective_hooks, headless=HEADLESS)
+def test_task_termination_cfg_preserves_objective_hierarchy():
+    assert run_function_with_persistent_simulation_app(
+        _test_task_termination_cfg_preserves_objective_hierarchy, headless=HEADLESS
+    )
 
 
 if __name__ == "__main__":
@@ -905,4 +915,4 @@ if __name__ == "__main__":
     test_state_machine_logical_choose()
     test_state_machine_reset_clears_state()
     test_recorder_publishes_to_extras_and_records_nothing()
-    test_task_base_progress_objective_hooks()
+    test_task_termination_cfg_preserves_objective_hierarchy()

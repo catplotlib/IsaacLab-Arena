@@ -40,9 +40,7 @@ def _make_environment_and_manager(predicate_names):
     objectives = [
         ProgressObjective(
             name="pick_and_place",
-            predicate_groups={
-                "task_success": [partial(_controlled_predicate, predicate_name=name) for name in predicate_names]
-            },
+            sequence=[partial(_controlled_predicate, predicate_name=name) for name in predicate_names],
         )
     ]
     # Isaac Lab constructs recorders before the termination manager that owns progress.
@@ -321,6 +319,65 @@ def _test_builder_rejects_task_without_unified_termination_config(simulation_app
     return True
 
 
+def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
+    from unittest.mock import Mock, patch
+
+    from isaaclab.envs.common import ViewerCfg
+    from isaaclab.envs.mdp import root_height_below_minimum, time_out
+    from isaaclab.sensors import ContactSensorCfg
+
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorder
+    from isaaclab_arena.progress_tracking.task_success import TaskSuccessFromProgress
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.predicates.object_settling import objects_settled
+    from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
+
+    pick_up_object = SimpleNamespace(
+        name="object",
+        get_contact_sensor_cfg=Mock(return_value=ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Object")),
+    )
+    task = PickAndPlaceTask(
+        pick_up_object,
+        SimpleNamespace(name="destination"),
+        SimpleNamespace(object_min_z=-0.1),
+        episode_length_s=12.0,
+    )
+    termination_cfg = task.get_termination_cfg()
+    assert isinstance(termination_cfg, TaskTerminationCfg)
+    assert termination_cfg.timeout_s == 12.0
+    assert len(termination_cfg.success) == 1
+    expected_predicates = [objects_settled, object_is_above_height, object_on_destination]
+    assert [predicate.func for predicate in termination_cfg.success[0].sequence] == expected_predicates
+    assert set(termination_cfg.failures) == {"object_dropped"}
+    assert termination_cfg.failures["object_dropped"].func is root_height_below_minimum
+    assert termination_cfg.failures["object_dropped"].params["minimum_height"] == -0.1
+
+    description = IsaacLabArenaEnvironment(name="pick_and_place_success_builder", scene=Scene(), task=task)
+    builder = ArenaEnvBuilder(description, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False, device="cpu"))
+    with (
+        patch.object(task, "get_viewer_cfg", return_value=ViewerCfg()),
+        patch.object(task, "get_metrics", return_value=[]),
+    ):
+        env_cfg, _ = builder.compose_manager_cfg()
+    assert env_cfg.terminations.success.func is TaskSuccessFromProgress
+    objectives = env_cfg.terminations.success.params["progress_objectives"]
+    assert len(objectives) == 1
+    assert [predicate.func for predicate in objectives[0].sequence] == expected_predicates
+    assert env_cfg.terminations.object_dropped.func is root_height_below_minimum
+    assert env_cfg.terminations.object_dropped.params["minimum_height"] == -0.1
+    assert env_cfg.terminations.time_out.func is time_out
+    assert env_cfg.terminations.time_out.time_out
+    assert env_cfg.episode_length_s == 12.0
+    assert env_cfg.recorders.progress_tracking.class_type is ProgressTrackingRecorder
+    assert getattr(env_cfg.events, "reset_progress_objectives", None) is None
+    return True
+
+
 def test_success_advances_once_and_reporting_is_passive():
     assert run_function_with_persistent_simulation_app(_test_success_advances_once_and_reporting_is_passive)
 
@@ -355,3 +412,7 @@ def test_task_termination_config_validation():
 
 def test_builder_rejects_task_without_unified_termination_config():
     assert run_function_with_persistent_simulation_app(_test_builder_rejects_task_without_unified_termination_config)
+
+
+def test_pick_and_place_uses_typed_success_failure_and_timeout():
+    assert run_function_with_persistent_simulation_app(_test_pick_and_place_uses_typed_success_failure_and_timeout)
