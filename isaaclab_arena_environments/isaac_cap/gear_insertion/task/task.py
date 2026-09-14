@@ -19,10 +19,18 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate, PredicateGroup
+from isaaclab_arena.tasks.predicates.spatial import (
+    depth_in_range,
+    tilt_axis_aligned,
+    velocity_below_threshold,
+    xy_in_proximity,
+)
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.terminations import SuccessMode
 
 from .metrics import GearInsertionFractionMetric
-from .terminations import all_gears_seated
+from .terminations import GearSupported
 
 
 @configclass
@@ -42,6 +50,75 @@ class TerminationsCfg:
 
     time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
     success: TerminationTermCfg = MISSING
+
+
+def _gear_success_predicate(
+    plate: Asset,
+    gear: Asset,
+    target_offset_xyz: tuple[float, float, float],
+    *,
+    xy_threshold: float,
+    z_threshold: float,
+    upright_axis_threshold_deg: float,
+    linear_velocity_threshold: float,
+    angular_velocity_threshold: float,
+    support_z_threshold: float,
+    consecutive_success_steps: int,
+) -> TerminationTermCfg:
+    """Build the current geometric gates and stateful settling gate for one gear."""
+    relative_position_params = {
+        "subject_name": gear.name,
+        "receiver_name": plate.name,
+        "target_offset_xyz": target_offset_xyz,
+    }
+    predicates = [
+        TerminationTermCfg(
+            func=xy_in_proximity,
+            params={**relative_position_params, "tolerance_xy": xy_threshold},
+        ),
+        TerminationTermCfg(
+            func=depth_in_range,
+            params={
+                **relative_position_params,
+                "depth_min": -z_threshold,
+                "depth_max": z_threshold,
+            },
+        ),
+        TerminationTermCfg(
+            func=tilt_axis_aligned,
+            params={
+                "subject_name": gear.name,
+                "receiver_name": plate.name,
+                "max_tilt_rad": math.radians(upright_axis_threshold_deg),
+            },
+        ),
+        TerminationTermCfg(
+            func=GearSupported,
+            params={
+                "plate_asset_cfg": SceneEntityCfg(plate.name),
+                "gear_asset_cfg": SceneEntityCfg(gear.name),
+                "support_z_threshold": support_z_threshold,
+            },
+        ),
+        TerminationTermCfg(
+            func=ConsecutivePredicate,
+            params={
+                "predicate": TerminationTermCfg(
+                    func=velocity_below_threshold,
+                    params={
+                        "subject_name": gear.name,
+                        "linear_velocity_threshold": linear_velocity_threshold,
+                        "angular_velocity_threshold": angular_velocity_threshold,
+                    },
+                ),
+                "steps": consecutive_success_steps,
+            },
+        ),
+    ]
+    return TerminationTermCfg(
+        func=PredicateGroup,
+        params={"predicates": predicates, "mode": SuccessMode.ALL},
+    )
 
 
 class GearInsertionTask(TaskBase):
@@ -97,21 +174,29 @@ class GearInsertionTask(TaskBase):
         )
         self.plate = plate
         self.gears = gears
+        self.target_offsets_xyz = offsets
         self.events_cfg = EventsCfg()
+        gear_success_predicates = [
+            _gear_success_predicate(
+                plate,
+                gear,
+                target_offset_xyz,
+                xy_threshold=xy_threshold,
+                z_threshold=z_threshold,
+                upright_axis_threshold_deg=upright_axis_threshold_deg,
+                linear_velocity_threshold=linear_velocity_threshold,
+                angular_velocity_threshold=angular_velocity_threshold,
+                support_z_threshold=support_z_threshold,
+                consecutive_success_steps=consecutive_success_steps,
+            )
+            for gear, target_offset_xyz in zip(gears, offsets, strict=True)
+        ]
         self.termination_cfg = TerminationsCfg(
             success=TerminationTermCfg(
-                func=all_gears_seated,
+                func=PredicateGroup,
                 params={
-                    "plate_asset_cfg": SceneEntityCfg(plate.name),
-                    "gear_asset_cfgs": [SceneEntityCfg(gear.name) for gear in gears],
-                    "target_offsets_xyz": offsets,
-                    "xy_threshold": xy_threshold,
-                    "z_threshold": z_threshold,
-                    "upright_axis_threshold_deg": upright_axis_threshold_deg,
-                    "linear_velocity_threshold": linear_velocity_threshold,
-                    "angular_velocity_threshold": angular_velocity_threshold,
-                    "support_z_threshold": support_z_threshold,
-                    "consecutive_success_steps": consecutive_success_steps,
+                    "predicates": gear_success_predicates,
+                    "mode": SuccessMode.ALL,
                 },
             )
         )
@@ -129,4 +214,4 @@ class GearInsertionTask(TaskBase):
         return None
 
     def get_metrics(self) -> list[MetricBase]:
-        return [SuccessRateMetric(), GearInsertionFractionMetric()]
+        return [SuccessRateMetric(), GearInsertionFractionMetric(tuple(gear.name for gear in self.gears))]
