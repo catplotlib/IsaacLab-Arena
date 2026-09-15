@@ -8,7 +8,7 @@
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
-def _test_predicate_group_lifecycle(_simulation_app) -> bool:
+def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
     import torch
     from functools import partial
     from types import SimpleNamespace
@@ -17,12 +17,12 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.composite import CompositePredicate
     from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
     from isaaclab_arena.tasks.predicates.object_settling import (
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
     )
-    from isaaclab_arena.tasks.predicates.predicate_group import PredicateGroup
     from isaaclab_arena.tasks.predicates.spatial import (
         depth_in_range,
         tilt_axis_aligned,
@@ -95,7 +95,7 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
         },
     )
     group_cfg = TerminationTermCfg(
-        func=PredicateGroup,
+        func=CompositePredicate,
         params={
             "predicates": [
                 TerminationTermCfg(
@@ -133,7 +133,7 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     manager = TerminationManager({"success": group_cfg}, env)
     resolved_group = manager.get_term_cfg("success").func
     resolved_settled = resolved_group.predicates[-1].func
-    assert isinstance(resolved_group, PredicateGroup)
+    assert isinstance(resolved_group, CompositePredicate)
     assert isinstance(resolved_settled, ConsecutivePredicate)
 
     assert manager.compute().tolist() == [False, False]
@@ -144,7 +144,7 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     env.arena_world.poses["subject"][0, 0] = 0.02
     assert manager.compute().tolist() == [False, True]
 
-    # TerminationManager forwards a partial reset through PredicateGroup.
+    # TerminationManager forwards a partial reset through CompositePredicate.
     manager.reset(env_ids=[0])
     env.arena_world.poses["subject"][0, 0] = 0.005
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 2]
@@ -163,7 +163,7 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     combined_manager = TerminationManager(
         {
             "success": TerminationTermCfg(
-                func=PredicateGroup,
+                func=CompositePredicate,
                 params={
                     "predicates": [
                         TerminationTermCfg(func=_first_gate),
@@ -183,9 +183,9 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     # Shared reset logic unwraps configs and partials, resets identities once, and preserves partial env IDs.
     reset_predicate = _ResetTrackingPredicate(TerminationTermCfg(func=_ResetTrackingPredicate), env)
     reset_predicate_partial = partial(reset_predicate)
-    reset_group = PredicateGroup(
+    reset_group = CompositePredicate(
         TerminationTermCfg(
-            func=PredicateGroup,
+            func=CompositePredicate,
             params={
                 "predicates": [
                     TerminationTermCfg(func=reset_predicate_partial),
@@ -219,7 +219,7 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
 
     # Nested managed configs are rejected before progress evaluation because active masks cannot propagate yet.
     nested_group_cfg = TerminationTermCfg(
-        func=PredicateGroup,
+        func=CompositePredicate,
         params={"predicates": [TerminationTermCfg(func=_first_gate)]},
     )
     try:
@@ -263,11 +263,11 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
         consecutive_success_steps=3,
     )
     success_cfg = task.get_termination_cfg().success
-    assert success_cfg.func is PredicateGroup
+    assert success_cfg.func is CompositePredicate
     assert success_cfg.params["consecutive_steps"] == 3
     gear_predicates = success_cfg.params["predicates"]
     assert len(gear_predicates) == 2
-    assert all(predicate.func is PredicateGroup for predicate in gear_predicates)
+    assert all(predicate.func is CompositePredicate for predicate in gear_predicates)
     for gear_name, predicate in zip(("gear_a", "gear_b"), gear_predicates, strict=True):
         velocity = predicate.params["predicates"][-1]
         assert velocity.func is velocity_below_threshold
@@ -357,5 +357,5 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     return True
 
 
-def test_predicate_group_lifecycle():
-    assert run_function_with_persistent_simulation_app(_test_predicate_group_lifecycle)
+def test_composite_predicate_lifecycle():
+    assert run_function_with_persistent_simulation_app(_test_composite_predicate_lifecycle)

@@ -17,9 +17,9 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import _predicate_repr
+from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 from isaaclab_arena.tasks.predicates.object_settling import reset_rest_pose_recorder
-from isaaclab_arena.tasks.predicates.predicate_group import reset_managed_predicates
 
 _PROGRESS_TRACKER_ATTR = "_progress_tracker"
 
@@ -46,7 +46,7 @@ def _resolve_progress_predicate(predicate, env):
         return predicate
 
     assert not _contains_nested_termination_term_cfg(predicate.params), (
-        "Nested TerminationTermCfg parameters, including PredicateGroup children, are unsupported for progress "
+        "Nested TerminationTermCfg parameters, including CompositePredicate children, are unsupported for progress "
         "predicates until #1255."
     )
     assert env is not None, "An environment is required to resolve a managed progress predicate."

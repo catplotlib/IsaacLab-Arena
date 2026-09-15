@@ -19,7 +19,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
-from isaaclab_arena.tasks.predicates.predicate_group import PredicateGroup
+from isaaclab_arena.tasks.predicates.composite import CompositePredicate
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
     tilt_axis_aligned,
@@ -52,7 +52,7 @@ class TerminationsCfg:
     success: TerminationTermCfg = MISSING
 
 
-def _make_gear_success_predicate_group_cfg(
+def _make_gear_success_composite_predicate_cfg(
     plate: Asset,
     gear: Asset,
     target_offset_xyz: tuple[float, float, float],
@@ -109,7 +109,7 @@ def _make_gear_success_predicate_group_cfg(
         ),
     ]
     return TerminationTermCfg(
-        func=PredicateGroup,
+        func=CompositePredicate,
         params={"predicates": predicates, "mode": SuccessMode.ALL},
     )
 
@@ -175,7 +175,7 @@ class GearInsertionTask(TaskBase):
         self.target_offsets_xyz = offsets
         self.events_cfg = EventsCfg()
         gear_success_predicates = [
-            _make_gear_success_predicate_group_cfg(
+            _make_gear_success_composite_predicate_cfg(
                 plate,
                 gear,
                 target_offset_xyz,
@@ -190,7 +190,7 @@ class GearInsertionTask(TaskBase):
         ]
         self.termination_cfg = TerminationsCfg(
             success=TerminationTermCfg(
-                func=PredicateGroup,
+                func=CompositePredicate,
                 params={
                     "predicates": gear_success_predicates,
                     "mode": SuccessMode.ALL,

@@ -33,16 +33,16 @@ def reset_managed_predicates(
 
 
 # TODO(xinjieyao, 2026-09-14): To be removed once progress tracking handles the lifecycle of predicates.
-# NOTE(xinjieyao, 2026-09-14): Progress tracking does not support PredicateGroup because it does not
+# NOTE(xinjieyao, 2026-09-14): Progress tracking does not support CompositePredicate because it does not
 # propagate per-environment active masks to nested stateful predicates.
-class PredicateGroup(ConsecutivePredicate):
+class CompositePredicate(ConsecutivePredicate):
     """Combine child results, optionally requiring consecutive successful evaluations."""
 
     def __init__(self, cfg: TerminationTermCfg, env):
         cfg.params.setdefault("consecutive_steps", 1)
         super().__init__(cfg, env)
         self.predicates = cfg.params["predicates"]
-        assert self.predicates, "PredicateGroup requires at least one predicate."
+        assert self.predicates, "CompositePredicate requires at least one predicate."
         self.results = torch.zeros(
             (len(self.predicates), env.num_envs),
             dtype=torch.bool,
