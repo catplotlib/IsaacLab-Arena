@@ -96,7 +96,7 @@ class AssemblyTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="assemble",
-                    sequence=[
+                    predicate_sequences=[
                         partial(
                             objects_in_proximity,
                             object_cfg=SceneEntityCfg(self.held_asset.name),

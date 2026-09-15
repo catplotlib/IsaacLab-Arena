@@ -77,4 +77,4 @@ def test_dexsuite_kuka_lift_task_matches_lift_mdp_flags() -> None:
         command_manager=SimpleNamespace(get_command=lambda command_name: command_goal),
     )
     # Dexsuite keeps its live command goal instead of inheriting the fixed IL goal.
-    torch.testing.assert_close(objectives[0].sequence[0](env), torch.tensor([True, False]))
+    torch.testing.assert_close(objectives[0].predicate_sequences[0](env), torch.tensor([True, False]))

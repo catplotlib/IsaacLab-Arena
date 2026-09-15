@@ -106,7 +106,7 @@ class SortMultiObjectTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="sort_objects",
-                    sequence=[
+                    predicate_sequences=[
                         partial(
                             check_success,
                             predicates=object_on_destination_terms,

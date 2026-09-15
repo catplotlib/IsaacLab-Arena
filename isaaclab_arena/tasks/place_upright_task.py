@@ -58,7 +58,7 @@ class PlaceUprightTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="place_upright",
-                    sequence=[partial(self.placeable_object.is_placed_upright, **params)],
+                    predicate_sequences=[partial(self.placeable_object.is_placed_upright, **params)],
                 )
             ],
         )

@@ -53,7 +53,7 @@ class SuccessAfterNStepsTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="reach_step_count",
-                    sequence=[self.has_reached_step_count],
+                    predicate_sequences=[self.has_reached_step_count],
                 )
             ],
         )

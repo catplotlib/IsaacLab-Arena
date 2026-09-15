@@ -101,7 +101,7 @@ def _test_sequence_single_predicate(simulation_app) -> bool:
 
     try:
         pred = _MockPredicate(num_envs=1)
-        objective = ProgressObjective(name="t", sequence=[pred])
+        objective = ProgressObjective(name="t", predicate_sequences=[pred])
         assert objective.group_names == [DEFAULT_GROUP_NAME]
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         assert len(chain) == 1
@@ -121,7 +121,7 @@ def _test_sequence_unweighted_predicates(simulation_app) -> bool:
 
     try:
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="t", sequence=preds)
+        objective = ProgressObjective(name="t", predicate_sequences=preds)
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         assert [c[0] for c in chain] == preds
         # Equal scores normalize to 0.33 each, summing to 1.0.
@@ -143,7 +143,7 @@ def _test_sequence_weighted_predicates(simulation_app) -> bool:
     try:
         p1 = _MockPredicate(num_envs=1, name="p1")
         p2 = _MockPredicate(num_envs=1, name="p2")
-        objective = ProgressObjective(name="t", sequence=[(p1, 1.0), (p2, 3.0)])
+        objective = ProgressObjective(name="t", predicate_sequences=[(p1, 1.0), (p2, 3.0)])
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         # 1.0/4.0 = 0.25, 3.0/4.0 = 0.75
         assert abs(chain[0][1] - 0.25) < SCORE_TOL
@@ -155,7 +155,7 @@ def _test_sequence_weighted_predicates(simulation_app) -> bool:
     return True
 
 
-def _test_predicate_groups_dict_groups(simulation_app) -> bool:
+def _test_named_predicate_sequences(simulation_app) -> bool:
     """Dict input gives one group per key and each group's scores are normalized independently."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 
@@ -165,7 +165,7 @@ def _test_predicate_groups_dict_groups(simulation_app) -> bool:
         p_b = _MockPredicate(num_envs=1, name="b")
         objective = ProgressObjective(
             name="t",
-            predicate_groups={
+            predicate_sequences={
                 "obj_a": [(p_a1, 1.0), (p_a2, 3.0)],
                 "obj_b": [p_b],
             },
@@ -186,87 +186,177 @@ def _test_predicate_groups_dict_groups(simulation_app) -> bool:
     return True
 
 
-def _test_predicate_groups_rejects_invalid_inputs(simulation_app) -> bool:
-    """Named groups require explicit, nonempty lists of predicates."""
-    import pytest
-
-    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-
-    predicate = _MockPredicate(num_envs=1)
-    invalid_groups = [
-        [],
-        42,
-        "string",
-        predicate,
-        [predicate],
-        [(predicate, 1.0)],
-        {},
-        {"object": predicate},
-        {"object": []},
-        {"object": (predicate,)},
-        {"object": [42]},
-        {0: [predicate]},
-    ]
-    for groups in invalid_groups:
-        with pytest.raises(AssertionError):
-            ProgressObjective(name="invalid_groups", predicate_groups=groups)
-    with pytest.raises(AssertionError, match="K is required"):
-        ProgressObjective(name="choose", predicate_groups={"object": [predicate]}, logical="choose")
-    for invalid_count in (0, 2):
-        with pytest.raises(AssertionError):
-            ProgressObjective(
-                name="invalid_count", predicate_groups={"object": [predicate]}, logical="choose", K=invalid_count
-            )
-    return True
-
-
-def _test_sequence_rejects_invalid_inputs(simulation_app) -> bool:
-    """A sequence must be an explicit list with consistently weighted or unweighted predicates."""
+def _test_objective_rejects_invalid_inputs(simulation_app) -> bool:
+    """Predicate sequences must be nonempty lists of predicates, optionally named in a dictionary."""
     import pytest
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 
     predicate = _MockPredicate(num_envs=1)
     invalid_sequences = [
-        predicate,
         [],
+        42,
+        "string",
+        predicate,
         (predicate,),
-        {"object": [predicate]},
+        {},
+        {"object": predicate},
+        {"object": []},
+        {"object": (predicate,)},
+        {"object": [42]},
+        {0: [predicate]},
         [42],
         [predicate, (predicate, 1.0)],
         [(predicate, 1.0), predicate],
         [(predicate, "invalid_weight")],
     ]
-    for sequence in invalid_sequences:
+    for predicate_sequences in invalid_sequences:
         with pytest.raises(AssertionError):
-            ProgressObjective(name="invalid_sequence", sequence=sequence)
-    with pytest.raises(AssertionError, match="logical"):
-        ProgressObjective(name="invalid_mode", sequence=[predicate], logical="any")
-    with pytest.raises(AssertionError, match="K"):
-        ProgressObjective(name="invalid_count", sequence=[predicate], K=1)
+            ProgressObjective(name="invalid_sequences", predicate_sequences=predicate_sequences)
+    for predicate_sequences in ([predicate], {"object": [predicate]}):
+        with pytest.raises(AssertionError, match="K is required"):
+            ProgressObjective(name="missing_k", predicate_sequences=predicate_sequences, logical="choose")
+        for invalid_count in (0, 2):
+            with pytest.raises(AssertionError):
+                ProgressObjective(
+                    name="invalid_k", predicate_sequences=predicate_sequences, logical="choose", K=invalid_count
+                )
     return True
 
 
 def _test_objective_requires_exactly_one_definition(simulation_app) -> bool:
-    """Sequence, independent groups, and child composition are mutually exclusive."""
+    """Predicate sequences and child composition are mutually exclusive."""
     import pytest
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 
     predicate = _MockPredicate(num_envs=1)
-    sequence = [predicate]
-    groups = {"object": [predicate]}
-    children = [ProgressObjective(name="child", sequence=sequence)]
+    predicate_sequence = [predicate]
+    named_sequences = {"object": [predicate]}
+    children = [ProgressObjective(name="child", predicate_sequences=predicate_sequence)]
     invalid_definitions = [
         {},
-        {"sequence": sequence, "predicate_groups": groups},
-        {"sequence": sequence, "children": children},
-        {"predicate_groups": groups, "children": children},
-        {"sequence": sequence, "predicate_groups": groups, "children": children},
+        {"predicate_sequences": predicate_sequence, "children": children},
+        {"predicate_sequences": named_sequences, "children": children},
     ]
     for definition in invalid_definitions:
         with pytest.raises(AssertionError, match="exactly one"):
             ProgressObjective(name="invalid_definition", **definition)
+    return True
+
+
+def _test_objective_rejects_invalid_composition(simulation_app) -> bool:
+    """Composition options require children and valid current-state constraints."""
+    import pytest
+
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+
+    predicate = _MockPredicate(num_envs=1)
+    child = ProgressObjective(name="child", predicate_sequences=[predicate])
+    with pytest.raises(AssertionError, match="at least one child"):
+        ProgressObjective(name="empty", children=[])
+    for logical in ("any", "choose"):
+        with pytest.raises(AssertionError, match="every child"):
+            ProgressObjective(name="invalid_mode", children=[child], logical=logical)
+    with pytest.raises(AssertionError, match="K"):
+        ProgressObjective(name="invalid_k", children=[child], K=1)
+    for desired_child_states in ([], [True, False], ["true"]):
+        with pytest.raises(AssertionError, match="Desired child states"):
+            ProgressObjective(name="invalid_states", children=[child], desired_child_states=desired_child_states)
+    for predicate_sequences in ([predicate], {"object": [predicate]}):
+        with pytest.raises(AssertionError, match="requires children"):
+            ProgressObjective(name="invalid_order", predicate_sequences=predicate_sequences, sequential=True)
+        with pytest.raises(AssertionError, match="require children"):
+            ProgressObjective(
+                name="invalid_states", predicate_sequences=predicate_sequences, desired_child_states=[True]
+            )
+    return True
+
+
+def _test_list_and_named_sequence_track_identically(simulation_app) -> bool:
+    """List and dictionary inputs produce the same weighted progress for every completion mode."""
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME
+
+    for logical in ("all", "any", "choose"):
+        env = _MockEnv(num_envs=1)
+        first_predicate = _MockPredicate(num_envs=1, name="first")
+        final_predicate = _MockPredicate(num_envs=1, name="final")
+        weighted_sequence = [(first_predicate, 1.0), (final_predicate, 3.0)]
+        trackers = [
+            ProgressTracker(
+                progress_objectives=[
+                    ProgressObjective(
+                        name="task",
+                        predicate_sequences=predicate_sequences,
+                        logical=logical,
+                        K=1 if logical == "choose" else None,
+                    )
+                ],
+                num_envs=1,
+                device="cpu",
+            )
+            for predicate_sequences in (weighted_sequence, {DEFAULT_GROUP_NAME: weighted_sequence})
+        ]
+        for predicate_values, expected_score, expected_complete in (
+            ([False, False], 0.0, False),
+            ([True, False], 0.25, False),
+            ([False, True], 1.0, True),
+        ):
+            first_predicate.set([predicate_values[0]])
+            final_predicate.set([predicate_values[1]])
+            _advance_step(env)
+            for tracker in trackers:
+                tracker.step(env, step_index=env.episode_length_buf)
+                state = tracker.get_state()[0]
+                assert abs(state.overall_score - expected_score) < SCORE_TOL
+                assert state.all_complete == expected_complete
+            assert trackers[0].get_state() == trackers[1].get_state()
+            assert trackers[0].get_events() == trackers[1].get_events()
+    return True
+
+
+def _test_named_predicate_sequences_advance_independently(simulation_app) -> bool:
+    """Each named sequence follows its own order without waiting for another sequence."""
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+
+    env = _MockEnv(num_envs=1)
+    left_lifted = _MockPredicate(num_envs=1, name="left_lifted")
+    left_placed = _MockPredicate(num_envs=1, name="left_placed")
+    right_lifted = _MockPredicate(num_envs=1, name="right_lifted")
+    right_placed = _MockPredicate(num_envs=1, name="right_placed")
+    objective = ProgressObjective(
+        name="place_both",
+        predicate_sequences={"left": [left_lifted, left_placed], "right": [right_lifted, right_placed]},
+        logical="all",
+    )
+    tracker = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
+
+    # Right finishes while left's placement cannot bypass its unsatisfied lift predicate.
+    left_placed.set([True])
+    right_lifted.set([True])
+    right_placed.set([True])
+    for _ in range(2):
+        _advance_step(env)
+        tracker.step(env, step_index=env.episode_length_buf)
+    state = tracker.get_state()[0].progress_objectives["place_both"]
+    assert state.completed_groups == 1
+    assert not state.is_complete
+    assert [(event.group, event.predicate_index) for event in tracker.get_events()[0]] == [("right", 0), ("right", 1)]
+
+    left_lifted.set([True])
+    for _ in range(2):
+        _advance_step(env)
+        tracker.step(env, step_index=env.episode_length_buf)
+    assert tracker.get_state()[0].all_complete
+    assert [(event.group, event.predicate_index) for event in tracker.get_events()[0]] == [
+        ("right", 0),
+        ("right", 1),
+        ("left", 0),
+        ("left", 1),
+    ]
     return True
 
 
@@ -278,7 +368,7 @@ def _test_state_machine_advances_sequentially(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=1)
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="lift", sequence=preds)
+        objective = ProgressObjective(name="lift", predicate_sequences=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
         sm.reset([0])
 
@@ -325,7 +415,7 @@ def _test_state_machine_ignores_out_of_order_success(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=1)
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="lift", sequence=preds)
+        objective = ProgressObjective(name="lift", predicate_sequences=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
         sm.reset([0])
 
@@ -370,7 +460,7 @@ def _test_state_machine_logical_any(simulation_app) -> bool:
         p_b = _MockPredicate(num_envs=1, name="b")
         objective = ProgressObjective(
             name="either",
-            predicate_groups={"a": [p_a], "b": [p_b]},
+            predicate_sequences={"a": [p_a], "b": [p_b]},
             logical="any",
         )
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
@@ -408,7 +498,7 @@ def _test_state_machine_logical_all(simulation_app) -> bool:
         p_b = _MockPredicate(num_envs=1, name="b")
         objective = ProgressObjective(
             name="both",
-            predicate_groups={"a": [p_a], "b": [p_b]},
+            predicate_sequences={"a": [p_a], "b": [p_b]},
             logical="all",
         )
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
@@ -448,7 +538,7 @@ def _test_state_machine_logical_choose(simulation_app) -> bool:
         p_c = _MockPredicate(num_envs=1, name="c")
         objective = ProgressObjective(
             name="any_two",
-            predicate_groups={"a": [p_a], "b": [p_b], "c": [p_c]},
+            predicate_sequences={"a": [p_a], "b": [p_b], "c": [p_c]},
             logical="choose",
             K=2,
         )
@@ -485,7 +575,7 @@ def _test_state_machine_reset_clears_state(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=2)
         preds = [_MockPredicate(num_envs=2, name=f"p{i}") for i in range(2)]
-        objective = ProgressObjective(name="t", sequence=preds)
+        objective = ProgressObjective(name="t", predicate_sequences=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=2, device="cpu")
         sm.reset([0, 1])
 
@@ -531,19 +621,19 @@ def _test_recorder_publishes_to_extras_and_records_nothing(simulation_app) -> bo
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorderCfg
-    from isaaclab_arena.progress_tracking.task_success import ProgressBasedSuccessTerm
+    from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
 
     env = _MockEnv(num_envs=2)
     first_predicate = _MockPredicate(num_envs=2, name="first")
     final_predicate = _MockPredicate(num_envs=2, name="final")
     first_predicate.set([True, False])
     final_predicate.set([True, False])
-    objectives = [ProgressObjective(name="task", sequence=[first_predicate, final_predicate])]
+    objectives = [ProgressObjective(name="task", predicate_sequences=[first_predicate, final_predicate])]
     recorder_cfg = ProgressTrackingRecorderCfg()
     recorder = recorder_cfg.class_type(recorder_cfg, env)
     assert env._progress_tracker is None
-    success_cfg = TerminationTermCfg(func=ProgressBasedSuccessTerm, params={"progress_objectives": objectives})
-    success = ProgressBasedSuccessTerm(success_cfg, env)
+    success_cfg = TerminationTermCfg(func=TaskSuccessTerm, params={"success_objectives": objectives})
+    success = TaskSuccessTerm(success_cfg, env)
 
     assert recorder.record_post_step() == (None, None)
     assert len(env.extras["progress_tracking"]["states"]) == 2
@@ -612,7 +702,8 @@ def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> 
             def get_termination_cfg(self):
                 pred = _MockPredicate(num_envs=1, name="p")
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="lift", sequence=[pred])], timeout_s=self.episode_length_s
+                    success=[ProgressObjective(name="lift", predicate_sequences=[pred])],
+                    timeout_s=self.episode_length_s,
                 )
 
         progress_task = _ProgressTask()
@@ -625,14 +716,14 @@ def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> 
         class _ChildA(_Base):
             def get_termination_cfg(self):
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="open", sequence=[_MockPredicate(1, name="pa")])],
+                    success=[ProgressObjective(name="open", predicate_sequences=[_MockPredicate(1, name="pa")])],
                     timeout_s=self.episode_length_s,
                 )
 
         class _ChildB(_Base):
             def get_termination_cfg(self):
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="close", sequence=[_MockPredicate(1, name="pb")])],
+                    success=[ProgressObjective(name="close", predicate_sequences=[_MockPredicate(1, name="pb")])],
                     timeout_s=self.episode_length_s,
                 )
 
@@ -666,11 +757,11 @@ def _test_nested_objectives_advance_in_order_and_reset_independently(simulation_
             ProgressObjective(
                 name="parallel",
                 children=[
-                    ProgressObjective(name="first", sequence=[first]),
-                    ProgressObjective(name="second", sequence=[second]),
+                    ProgressObjective(name="first", predicate_sequences=[first]),
+                    ProgressObjective(name="second", predicate_sequences=[second]),
                 ],
             ),
-            ProgressObjective(name="last", sequence=[last]),
+            ProgressObjective(name="last", predicate_sequences=[last]),
         ],
     )
     env = _MockEnv(2)
@@ -705,7 +796,8 @@ def _test_composed_objective_requires_history_and_current_states(simulation_app)
     objective = ProgressObjective(
         name="task",
         children=[
-            ProgressObjective(name=f"child_{index}", sequence=[predicate]) for index, predicate in enumerate(predicates)
+            ProgressObjective(name=f"child_{index}", predicate_sequences=[predicate])
+            for index, predicate in enumerate(predicates)
         ],
         desired_child_states=[False, True, None],
     )
@@ -748,7 +840,7 @@ def _test_composed_final_reads_reuse_predicate_results(simulation_app):
     predicate.set([True])
     objective = ProgressObjective(
         name="task",
-        children=[ProgressObjective(name="child", sequence=[predicate])],
+        children=[ProgressObjective(name="child", predicate_sequences=[predicate])],
         desired_child_states=[True],
     )
     tracker = ProgressTracker([objective], 1, "cpu")
@@ -772,12 +864,12 @@ def _test_nested_sequence_current_success_respects_task_semantics(simulation_app
                     name="open_then_close",
                     sequential=True,
                     children=[
-                        ProgressObjective(name="opened", sequence=[opened]),
-                        ProgressObjective(name="closed", sequence=[closed]),
+                        ProgressObjective(name="opened", predicate_sequences=[opened]),
+                        ProgressObjective(name="closed", predicate_sequences=[closed]),
                     ],
                     desired_child_states=desired_inner_states,
                 ),
-                ProgressObjective(name="checkpoint", sequence=[checkpoint]),
+                ProgressObjective(name="checkpoint", predicate_sequences=[checkpoint]),
             ],
             desired_child_states=[True, None],
         )
@@ -844,21 +936,33 @@ def test_sequence_weighted_predicates():
     assert run_function_with_persistent_simulation_app(_test_sequence_weighted_predicates, headless=HEADLESS)
 
 
-def test_predicate_groups_dict_groups():
-    assert run_function_with_persistent_simulation_app(_test_predicate_groups_dict_groups, headless=HEADLESS)
+def test_named_predicate_sequences():
+    assert run_function_with_persistent_simulation_app(_test_named_predicate_sequences, headless=HEADLESS)
 
 
-def test_predicate_groups_rejects_invalid_inputs():
-    assert run_function_with_persistent_simulation_app(_test_predicate_groups_rejects_invalid_inputs, headless=HEADLESS)
-
-
-def test_sequence_rejects_invalid_inputs():
-    assert run_function_with_persistent_simulation_app(_test_sequence_rejects_invalid_inputs, headless=HEADLESS)
+def test_objective_rejects_invalid_inputs():
+    assert run_function_with_persistent_simulation_app(_test_objective_rejects_invalid_inputs, headless=HEADLESS)
 
 
 def test_objective_requires_exactly_one_definition():
     assert run_function_with_persistent_simulation_app(
         _test_objective_requires_exactly_one_definition, headless=HEADLESS
+    )
+
+
+def test_objective_rejects_invalid_composition():
+    assert run_function_with_persistent_simulation_app(_test_objective_rejects_invalid_composition, headless=HEADLESS)
+
+
+def test_list_and_named_sequence_track_identically():
+    assert run_function_with_persistent_simulation_app(
+        _test_list_and_named_sequence_track_identically, headless=HEADLESS
+    )
+
+
+def test_named_predicate_sequences_advance_independently():
+    assert run_function_with_persistent_simulation_app(
+        _test_named_predicate_sequences_advance_independently, headless=HEADLESS
     )
 
 
@@ -905,10 +1009,12 @@ if __name__ == "__main__":
     test_rest_pose_recorder_is_owned_by_env()
     test_sequence_unweighted_predicates()
     test_sequence_weighted_predicates()
-    test_predicate_groups_dict_groups()
-    test_predicate_groups_rejects_invalid_inputs()
-    test_sequence_rejects_invalid_inputs()
+    test_named_predicate_sequences()
+    test_objective_rejects_invalid_inputs()
     test_objective_requires_exactly_one_definition()
+    test_objective_rejects_invalid_composition()
+    test_list_and_named_sequence_track_identically()
+    test_named_predicate_sequences_advance_independently()
     test_state_machine_advances_sequentially()
     test_state_machine_ignores_out_of_order_success()
     test_state_machine_logical_any()

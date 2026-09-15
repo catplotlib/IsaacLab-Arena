@@ -95,7 +95,8 @@ class _ControlledTask:
         from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
         return TaskTerminationCfg(
-            timeout_s=self.timeout_s, success=[ProgressObjective(name="condition", sequence=[self.predicate])]
+            timeout_s=self.timeout_s,
+            success=[ProgressObjective(name="condition", predicate_sequences=[self.predicate])],
         )
 
     def get_metrics(self):
@@ -204,7 +205,7 @@ def _test_multiple_objective_subtask_retains_completion_history(simulation_app):
             return TaskTerminationCfg(
                 timeout_s=self.timeout_s,
                 success=[
-                    ProgressObjective(name=f"condition_{index}", sequence=[_ControlledPredicate(index)])
+                    ProgressObjective(name=f"condition_{index}", predicate_sequences=[_ControlledPredicate(index)])
                     for index in range(2)
                 ],
             )

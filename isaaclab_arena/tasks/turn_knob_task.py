@@ -55,7 +55,7 @@ class TurnKnobTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="turn_knob",
-                    sequence=[partial(self.turnable_object.is_at_level, **params)],
+                    predicate_sequences=[partial(self.turnable_object.is_at_level, **params)],
                 )
             ],
         )

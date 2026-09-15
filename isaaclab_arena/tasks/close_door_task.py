@@ -46,7 +46,7 @@ class CloseDoorTask(RotateRevoluteJointTask):
             success=[
                 ProgressObjective(
                     name="close_door",
-                    sequence=[partial(self.openable_object.is_closed, **params)],
+                    predicate_sequences=[partial(self.openable_object.is_closed, **params)],
                 )
             ],
         )

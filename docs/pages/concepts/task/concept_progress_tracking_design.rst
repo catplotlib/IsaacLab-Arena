@@ -11,7 +11,7 @@ environment builder creates one success termination that advances the objectives
 success when all required objectives are complete.
 
 ``NoTask`` declares no success objectives, so environments used for inspection have no success
-termination. A task with one success condition uses a single objective with ``sequence=[predicate]``.
+termination. A task with one success condition uses a single objective with ``predicate_sequences=[predicate]``.
 
 
 Predicates
@@ -66,13 +66,14 @@ The arguments after ``env`` are configured when the predicate is added to a prog
 Defining a progress objective
 -----------------------------
 
-Put the required milestones in ``TaskTerminationCfg.success``. A ``ProgressObjective`` describes
-them using exactly one of three forms: ``sequence`` for one ordered chain, ``predicate_groups``
-for named independent chains, or ``children`` for composed objectives.
+Put the required milestones in ``TaskTerminationCfg.success``. A ``ProgressObjective`` accepts
+either ``predicate_sequences`` or ``children``. For ``predicate_sequences``, a list defines one
+ordered sequence and a dictionary defines named independent sequences. Use ``children`` to
+compose objectives instead; do not supply both arguments.
 
 A sequence is an explicit list, even when it contains only one predicate. The tracker evaluates
 its active predicate, ignores later predicates until their turn, and advances by at most one
-position per environment step. To weight the stages, use ``sequence=[(settled, 1.0), (placed, 3.0)]``;
+position per environment step. To weight the predicates, use ``predicate_sequences=[(settled, 1.0), (placed, 3.0)]``;
 the tracker normalizes those weights within the sequence.
 
 For example, the built-in pick-and-place task tracks a single progress objective with
@@ -97,7 +98,7 @@ on its destination does not complete the lift stage.
            success=[
                ProgressObjective(
                    name="pick_and_place",
-                   sequence=[
+                   predicate_sequences=[
                        partial(objects_settled, object_names=[self.pick_up_object.name]),
                        partial(
                            object_is_above_height,
@@ -136,15 +137,16 @@ on its destination does not complete the lift stage.
     resolve scene selections inside bound arguments; predicates that need resolved joint or body
     indices must arrange that preparation explicitly.
 
-``predicate_groups`` accepts a dictionary whose values are explicit predicate lists, optionally
-paired with score weights. Predicates within each group remain sequential while groups advance
-independently. Bare callables and unnamed lists are not accepted in ``predicate_groups``:
+For named independent sequences, pass a dictionary to ``predicate_sequences``. Each value is an
+explicit predicate list, optionally paired with score weights. Predicates within each sequence
+must hold in order, while the named sequences advance independently. A single predicate must
+also be wrapped in a list:
 
 .. code-block:: python
 
    objective = ProgressObjective(
        name="pack_objects",
-       predicate_groups={
+       predicate_sequences={
            "can": [can_lifted, can_placed],
            "bottle": [bottle_lifted, bottle_placed],
            "box": [box_lifted, box_placed],
@@ -153,11 +155,15 @@ independently. Bare callables and unnamed lists are not accepted in ``predicate_
        K=2,
    )
 
-``logical`` and ``K`` apply to ``predicate_groups``. They control how completed groups make the objective complete:
+``logical`` and ``K`` control how completed predicate sequences make the objective complete:
 
-* ``all`` — every group must complete. This is the default.
-* ``any`` — one group must complete.
-* ``choose`` — at least ``K`` groups must complete.
+* ``all`` — every sequence must complete. This is the default.
+* ``any`` — one sequence must complete.
+* ``choose`` — at least ``K`` sequences must complete.
+
+These rules apply to both input forms; a single list counts as one sequence. The type aliases
+are ``PredicateSequence`` for one list and ``PredicateSequences`` for a dictionary of named lists.
+Progress reports retain their existing group identifiers and fields.
 
 Completed stages are remembered until the environment resets. Separate chains therefore describe
 milestones that may complete at different times. If several conditions must hold simultaneously,
@@ -169,15 +175,15 @@ before the task completes.
 Evaluation and reset lifecycle
 ------------------------------
 
-``ProgressBasedSuccessTerm`` connects the progress tracker to Isaac Lab's termination manager:
+``TaskSuccessTerm`` creates and owns ``ProgressTracker`` and connects it to Isaac Lab's ``TerminationManager``:
 
-#. Physics advances and the termination manager evaluates the root success term.
-#. The term advances active progress stages once and returns task completion for that same step.
+#. Physics advances and ``TerminationManager`` evaluates ``TaskSuccessTerm``.
+#. ``TaskSuccessTerm`` updates ``ProgressTracker`` and returns task completion for that same step.
 #. ``ProgressTrackingRecorder`` publishes the resulting state and events to ``env.extras``.
    Reading or recording these results does not evaluate predicates again.
 #. Before a completed environment resets, the episode recorder records its final progress.
-   The termination manager then resets the progress and recorded initial rest poses for the
-   selected environments.
+   ``TerminationManager`` then calls ``TaskSuccessTerm.reset()``, which resets ``ProgressTracker``
+   and recorded initial rest poses for the selected environments.
 
 The builder installs this term automatically. It inherits from ``ManagerTermBase`` so Isaac Lab
 calls its ``reset()`` when an episode resets. A plain success function could read completion,

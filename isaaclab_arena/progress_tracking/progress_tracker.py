@@ -76,7 +76,7 @@ class ProgressState:
 
 
 class ProgressObjectiveRunner:
-    """Track one objective's predicate chains or child objectives across parallel environments."""
+    """Track a ProgressObjective's predicate sequences or child objectives across parallel environments."""
 
     def __init__(self, progress_objective: ProgressObjective, num_envs: int, device):
         self.progress_objective = progress_objective
@@ -135,7 +135,7 @@ class ProgressObjectiveRunner:
             self._completed |= active_envs & completed
             return events
 
-        for group_name, predicate_chain in self.progress_objective.canonical_predicate_groups.items():
+        for group_name, predicate_chain in self.progress_objective.canonical_predicate_sequences.items():
             events += self._step_group(env, group_name, predicate_chain, active_envs, step_index, predicate_results)
         return events
 
@@ -167,7 +167,7 @@ class ProgressObjectiveRunner:
 
         final_results = [
             self._evaluate_predicate(chain[-1][0], env, predicate_results)
-            for chain in self.progress_objective.canonical_predicate_groups.values()
+            for chain in self.progress_objective.canonical_predicate_sequences.values()
         ]
         return torch.stack(final_results, dim=0).sum(dim=0) >= self._num_required_groups()
 
@@ -311,7 +311,7 @@ class ProgressObjectiveRunner:
         # The active predicate for a group is the one at its current chain position. Any group
         # whose pointer has run off the end of the chain is complete (no active predicate).
         for group_name in objective.group_names:
-            predicate_chain = objective.canonical_predicate_groups[group_name]
+            predicate_chain = objective.canonical_predicate_sequences[group_name]
             cur_predicate_index = int(self.current_predicate_index[group_name][env_idx].item())
             if cur_predicate_index >= len(predicate_chain):
                 active_predicates[group_name] = None

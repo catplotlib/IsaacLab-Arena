@@ -89,8 +89,8 @@ def _test_press_button_coffee_machine(simulation_app) -> bool:
 
         default_task = PressButtonTask(coffee_machine)
         deeper_press_task = PressButtonTask(coffee_machine, pressedness_threshold=0.8)
-        default_predicate = default_task.get_termination_cfg().success[0].sequence[0]
-        deeper_press_predicate = deeper_press_task.get_termination_cfg().success[0].sequence[0]
+        default_predicate = default_task.get_termination_cfg().success[0].predicate_sequences[0]
+        deeper_press_predicate = deeper_press_task.get_termination_cfg().success[0].predicate_sequences[0]
         coffee_machine.press(env, env_ids=None, pressed_percentage=0.6)
         assert default_predicate(env).item()
         assert not deeper_press_predicate(env).item()

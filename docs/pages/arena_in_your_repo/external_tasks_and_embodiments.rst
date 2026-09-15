@@ -39,7 +39,7 @@ This task can be passed to the ``ArenaEnvBuilder`` to create an environment
        def get_termination_cfg(self) -> TaskTerminationCfg:
            return TaskTerminationCfg(
                success=[
-                   ProgressObjective(name="wait", sequence=[self.has_reached_step_count]),
+                   ProgressObjective(name="wait", predicate_sequences=[self.has_reached_step_count]),
                ],
                failures={},
                timeout_s=self.episode_length_s,
