@@ -63,7 +63,12 @@ def test_find_shallowest_rigid_body_requires_physics_variant(tmp_path: Path):
     # No physics until the variant is selected, and then two bodies tie for shallowest.
     assert find_shallowest_rigid_body(str(usd_path)) is None
     with pytest.raises(ValueError, match="Expected only one"):
-        find_shallowest_rigid_body(str(usd_path), relative_to_root=True, variants={"Physics": "physics"})
+        find_shallowest_rigid_body(
+            str(usd_path),
+            within_default_prim=True,
+            relative_to_default_prim=True,
+            variants={"Physics": "physics"},
+        )
 
 
 def test_find_shallowest_rigid_body_from_stage_raises_on_a_tie(tmp_path: Path):
@@ -91,4 +96,12 @@ def test_find_shallowest_rigid_body_is_relative_to_nested_default_prim(tmp_path:
     UsdPhysics.RigidBodyAPI.Apply(auxiliary_body.GetPrim())
     stage.GetRootLayer().Save()
 
-    assert find_shallowest_rigid_body(str(usd_path), relative_to_root=True) == "/rigid_body"
+    assert find_shallowest_rigid_body(str(usd_path), within_default_prim=True) == "/Outer/Asset/rigid_body"
+    assert (
+        find_shallowest_rigid_body(
+            str(usd_path),
+            within_default_prim=True,
+            relative_to_default_prim=True,
+        )
+        == "/rigid_body"
+    )
