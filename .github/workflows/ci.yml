@@ -414,6 +414,7 @@ jobs:
     timeout-minutes: 120
     needs: [pre_commit]
     env:
+      OMNI_USER: '$omni-api-token'
       OMNI_PASS: ${{ secrets.ISAAC_CAP_CI_OMNI_PASS }}
 
     container:
@@ -432,6 +433,24 @@ jobs:
       - *git_lfs_step
       - *install_project_step
       - *setup_isaac_sim_kit_cache_step
+
+      - name: Check private Nucleus access
+        timeout-minutes: 3
+        run: |
+          getent hosts isaac-dev.ov.nvidia.com
+
+          /isaac-sim/python.sh - <<'PY'
+          import omni.client
+
+          asset = (
+              "omniverse://isaac-dev.ov.nvidia.com/Projects/nvblox/"
+              "isaac_arena/newton_envs/cap_envs/cable_routing/assets/"
+              "industrial__yam_workcell_table/industrial__yam_workcell_table.usda"
+          )
+          result, _ = omni.client.stat(asset)
+          print(f"Nucleus stat result: {result}")
+          assert result == omni.client.Result.OK, result
+          PY
 
       - name: Run temporary Isaac CAP environment sanity checks
         run: |
