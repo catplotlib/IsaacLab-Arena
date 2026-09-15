@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pxr import Usd
 
 
-class GearSupported(ManagerTermBase):
+class GearIsSupported(ManagerTermBase):
     """Check that one gear bottom remains near the plate support surface."""
 
     def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedEnv):
@@ -73,7 +73,7 @@ class GearSupported(ManagerTermBase):
         root_prims = sim_utils.find_matching_prims(asset.cfg.prim_path)
         assert root_prims, f"{asset.cfg.prim_path} has no matching prims"
         root_prim = root_prims[0]
-        rigid_prim = GearSupported._rigid_body_prim(root_prim)
+        rigid_prim = GearIsSupported._rigid_body_prim(root_prim)
         assert rigid_prim is not None, f"{asset.cfg.prim_path} has no rigid-body prim"
 
         bbox_cache = UsdGeom.BBoxCache(

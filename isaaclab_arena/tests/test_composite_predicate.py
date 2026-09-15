@@ -242,6 +242,7 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
 
     from isaaclab_arena.assets.asset import Asset
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.metrics import _terminal_diagnostics
+    from isaaclab_arena_environments.isaac_cap.gear_insertion.task.predicates import GearIsSupported
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
 
     try:
@@ -269,6 +270,8 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
     assert len(gear_predicates) == 2
     assert all(predicate.func is CompositePredicate for predicate in gear_predicates)
     for gear_name, predicate in zip(("gear_a", "gear_b"), gear_predicates, strict=True):
+        support = predicate.params["predicates"][-2]
+        assert support.func is GearIsSupported
         velocity = predicate.params["predicates"][-1]
         assert velocity.func is velocity_below_threshold
         assert velocity.params == {

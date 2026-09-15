@@ -30,7 +30,7 @@ from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import SuccessMode
 
 from .metrics import GearInsertionFractionMetric
-from .terminations import GearSupported
+from .predicates import GearIsSupported
 
 
 @configclass
@@ -92,7 +92,7 @@ def _make_gear_success_composite_predicate_cfg(
             },
         ),
         TerminationTermCfg(
-            func=GearSupported,
+            func=GearIsSupported,
             params={
                 "plate_asset_cfg": SceneEntityCfg(plate.name),
                 "gear_asset_cfg": SceneEntityCfg(gear.name),
