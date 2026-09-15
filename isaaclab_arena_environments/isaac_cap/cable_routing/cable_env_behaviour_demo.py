@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 _MAX_ARM_JOINT_STEP = 0.04
 _GRIPPER_OPEN = 0.0
 _GRIPPER_CLOSED = 1.0
+_NUM_ENVS = 2
 
 _HOME = (0.0, 0.85, 0.6, 0.0, 0.0, 0.0)
 _RIGHT_APPROACH = (0.409067, 2.066704, 0.474773, 1.433090, 0.400142, 0.105784)
@@ -298,7 +299,12 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
         """Resolve the bimanual action interface and cable success geometry."""
         import torch
 
-        assert self.env.action_space.shape == (1, 14), f"Unexpected action shape {self.env.action_space.shape}."
+        self.num_envs = self.base_env.num_envs
+        assert self.num_envs == _NUM_ENVS, f"Expected {_NUM_ENVS} environments, got {self.num_envs}."
+        assert self.env.action_space.shape == (
+            self.num_envs,
+            14,
+        ), f"Unexpected action shape {self.env.action_space.shape}."
         self.torch = torch
 
         left_finger_ids, _ = self.base_env.scene["left_robot"].find_bodies(["lf_down", "rf_down"], preserve_order=True)
@@ -334,8 +340,8 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
             (peg_index, direction if direction != 0.0 else 1.0) for peg_index, direction in configured_route
         )
 
-        default_positions = self.cable.data.default_segment_pose_w.torch[0, :, :3]
-        segment_lengths = torch.linalg.vector_norm(default_positions[1:] - default_positions[:-1], dim=-1)
+        default_positions = self.cable.data.default_segment_pose_w.torch[..., :3]
+        segment_lengths = torch.linalg.vector_norm(default_positions[:, 1:] - default_positions[:, :-1], dim=-1)
         self.cable_rest_length = float(segment_lengths.median())
         self._cable_segment_ids = tuple(
             min(round(fraction * self.cable.num_segments), self.cable.num_segments - 1)
@@ -566,24 +572,28 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
     def _successful_cable_pose(self):
         """Return a physically connected cable pose satisfying the configured route."""
         peg_positions_w = self.torch.stack(
-            [self.base_env.scene[name].data.root_pos_w.torch[0] for name in self.peg_names]
+            [self.base_env.scene[name].data.root_pos_w.torch for name in self.peg_names],
+            dim=1,
         )
-        board_center_xy_w = self.base_env.scene["board"].data.root_pos_w.torch[0, :2]
-        cable_z_w = self.cable.data.default_segment_pose_w.torch[0, :, 2].mean()
-        pose = _build_success_cable_poses(
-            peg_positions_w,
-            board_center_xy_w,
-            cable_z_w,
-            self.cable.num_segments,
-            self.cable_rest_length,
-            self._success_pose_route,
-        ).unsqueeze(0)
+        board_center_xy_w = self.base_env.scene["board"].data.root_pos_w.torch[:, :2]
+        cable_z_w = self.cable.data.default_segment_pose_w.torch[:, :, 2].mean(dim=1)
+        pose = self.torch.stack([
+            _build_success_cable_poses(
+                peg_positions_w[env_id],
+                board_center_xy_w[env_id],
+                cable_z_w[env_id],
+                self.cable.num_segments,
+                self.cable_rest_length,
+                self._success_pose_route,
+            )
+            for env_id in range(self.num_envs)
+        ])
 
         from isaaclab_arena_environments.isaac_cap.cable_routing.geometry import cable_route_success_from_geometry
 
         success = cable_route_success_from_geometry(
             pose[:, :, :3],
-            peg_positions_w.unsqueeze(0),
+            peg_positions_w,
             route_peg_indices=self.success_params["route_peg_indices"],
             route_directions=self.success_params["route_directions"],
         )
@@ -593,11 +603,11 @@ class CableEnvBehaviourDemo(EnvBehaviourDemo):
     def _teleport_cable_to_success(self) -> None:
         """Write a valid route through the native cable state API."""
         pose = self._successful_cable_pose()
-        env_ids = self.torch.arange(self.base_env.num_envs, device=self.base_env.device, dtype=self.torch.int32)
+        env_ids = self.torch.arange(self.num_envs, device=self.base_env.device, dtype=self.torch.int32)
         self.cable.write_segment_pose_to_sim_index(segment_pose=pose, env_ids=env_ids)
         self.cable.write_segment_velocity_to_sim_index(
             segment_velocity=self.torch.zeros(
-                (self.base_env.num_envs, self.cable.num_segments, 6),
+                (self.num_envs, self.cable.num_segments, 6),
                 device=self.base_env.device,
             ),
             env_ids=env_ids,
@@ -766,7 +776,7 @@ def run_demo(
     demo = CableEnvBehaviourDemo(
         simulation_app,
         _build_cable_demo_environment(variant),
-        ArenaEnvBuilderCfg(num_envs=1, solve_relations=False),
+        ArenaEnvBuilderCfg(num_envs=_NUM_ENVS, env_spacing=1.5, solve_relations=False),
         variant=variant,
         pause_steps=pause_steps,
         real_time=real_time,
