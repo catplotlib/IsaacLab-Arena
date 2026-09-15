@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Managed temporal predicate bases."""
+"""Managed consecutive predicate base."""
 
 from __future__ import annotations
 

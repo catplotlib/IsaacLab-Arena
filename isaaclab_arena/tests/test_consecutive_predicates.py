@@ -8,7 +8,7 @@
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
-def _test_stateful_predicates(_simulation_app) -> bool:
+def _test_consecutive_predicates(_simulation_app) -> bool:
     import torch
     from functools import partial
     from types import SimpleNamespace
@@ -17,7 +17,7 @@ def _test_stateful_predicates(_simulation_app) -> bool:
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
+    from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
     from isaaclab_arena.tasks.predicates.object_settling import (
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
@@ -203,8 +203,8 @@ def _test_stateful_predicates(_simulation_app) -> bool:
     return True
 
 
-def test_stateful_predicates():
-    assert run_function_with_persistent_simulation_app(_test_stateful_predicates)
+def test_consecutive_predicates():
+    assert run_function_with_persistent_simulation_app(_test_consecutive_predicates)
 
 
 def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bool:

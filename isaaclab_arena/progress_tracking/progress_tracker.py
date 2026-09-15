@@ -17,7 +17,7 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import _predicate_repr
-from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 
 _PROGRESS_TRACKER_ATTR = "_progress_tracker"
 

@@ -20,7 +20,7 @@ import torch
 
 from isaaclab.managers import TerminationTermCfg
 
-from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 
 if TYPE_CHECKING:
     from isaaclab.scene import InteractiveScene
