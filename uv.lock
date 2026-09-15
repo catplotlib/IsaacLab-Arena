@@ -14,9 +14,9 @@ conflicts = [[
 
 [manifest]
 constraints = [
-    { name = "gitpython", specifier = "==3.1.62" },
-    { name = "hydra-core", specifier = "==1.3.6" },
-    { name = "mistune", specifier = "==3.3.4" },
+    { name = "gitpython", specifier = ">=3.1.62" },
+    { name = "hydra-core", specifier = ">=1.3.6" },
+    { name = "mistune", specifier = ">=3.3.4" },
     { name = "mujoco-usd-converter", specifier = "==0.2.0", index = "https://pypi.org/simple" },
     { name = "pin-pink", specifier = "==3.3.0" },
     { name = "pyglet", specifier = "<3" },
