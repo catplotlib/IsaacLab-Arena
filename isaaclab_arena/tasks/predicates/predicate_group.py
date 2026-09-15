@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Managed composition for task predicates."""
+"""Combine predicate results while managing child predicate lifecycles."""
 
 from __future__ import annotations
 
@@ -12,13 +12,18 @@ from collections.abc import Sequence
 
 from isaaclab.managers import ManagerTermBase, TerminationTermCfg
 
+from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 from isaaclab_arena.tasks.terminations import SuccessMode, combine_success_results
 
 
-class PredicateGroup(ManagerTermBase):
-    """Manage child predicate lifecycles and combine their current results."""
+# TODO(xinjieyao, 2026-09-14): To be removed once progress tracking handles the lifecycle of predicates.
+# NOTE(xinjieyao, 2026-09-14): Progress tracking does not support PredicateGroup because it does not
+# propagate per-environment active masks to nested stateful predicates.
+class PredicateGroup(ConsecutivePredicate):
+    """Combine child results, optionally requiring consecutive successful evaluations."""
 
     def __init__(self, cfg: TerminationTermCfg, env):
+        cfg.params.setdefault("consecutive_steps", 1)
         super().__init__(cfg, env)
         self.predicates = cfg.params["predicates"]
         assert self.predicates, "PredicateGroup requires at least one predicate."
@@ -34,17 +39,21 @@ class PredicateGroup(ManagerTermBase):
         predicates: list[TerminationTermCfg],
         mode: SuccessMode | str = SuccessMode.ALL,
         k: int | None = None,
+        consecutive_steps: int = 1,
+        active_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        # This argument mirrors TerminationTermCfg.params for manager signature validation.
-        del predicates
+        # These arguments mirror TerminationTermCfg.params for manager signature validation.
+        del predicates, consecutive_steps
         self.results = torch.stack(
             [predicate.func(env, **predicate.params) for predicate in self.predicates],
             dim=0,
         )
-        return combine_success_results(self.results, mode=mode, k=k)
+        passed = combine_success_results(self.results, mode=mode, k=k)
+        return self._update_consecutive_and_get_completion_mask(passed, active_mask=active_mask)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         """Reset managed children and cached results for selected environments."""
+        super().reset(env_ids)
         if env_ids is None:
             env_ids = slice(None)
         self.results[:, env_ids] = False

@@ -14,13 +14,18 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
 
     from isaaclab.managers import TerminationManager, TerminationTermCfg
 
-    from isaaclab_arena.tasks.predicates.composition import PredicateGroup
     from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
     from isaaclab_arena.tasks.predicates.object_settling import (
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
     )
-    from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
+    from isaaclab_arena.tasks.predicates.predicate_group import PredicateGroup
+    from isaaclab_arena.tasks.predicates.spatial import (
+        depth_in_range,
+        tilt_axis_aligned,
+        velocity_below_threshold,
+        xy_in_proximity,
+    )
     from isaaclab_arena.tasks.terminations import SuccessMode
 
     class _PlayingSimulation:
@@ -131,11 +136,55 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 2]
     assert manager.compute().tolist() == [False, True]
 
+    # The consecutive window applies to the combined result and resets when any child fails.
+    env.first_gate = torch.tensor([True, True])
+    env.second_gate = torch.tensor([True, True])
+
+    def _first_gate(env):
+        return env.first_gate
+
+    def _second_gate(env):
+        return env.second_gate
+
+    combined_manager = TerminationManager(
+        {
+            "success": TerminationTermCfg(
+                func=PredicateGroup,
+                params={
+                    "predicates": [
+                        TerminationTermCfg(func=_first_gate),
+                        TerminationTermCfg(func=_second_gate),
+                    ],
+                    "mode": SuccessMode.ALL,
+                    "consecutive_steps": 2,
+                },
+            )
+        },
+        env,
+    )
+    assert combined_manager.compute().tolist() == [False, False]
+    env.first_gate[0] = False
+    assert combined_manager.compute().tolist() == [False, True]
+    env.first_gate[0] = True
+    assert combined_manager.compute().tolist() == [False, True]
+
     # ManagerBase deep-copies configs, so task-build configuration stays declarative.
     assert settled_cfg.func is ObjectsSettledForConsecutiveSteps
 
     from isaaclab_arena.assets.asset import Asset
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
+
+    try:
+        GearInsertionTask(
+            plate=Asset("plate"),
+            gears=[Asset("gear")],
+            target_offsets_xyz=[(0.0, 0.0, 0.0)],
+            upright_axis_threshold_deg=181.0,
+        )
+    except ValueError as error:
+        assert "must be in (0, 180]" in str(error)
+    else:
+        raise AssertionError("GearInsertionTask should reject orientation thresholds above 180 degrees.")
 
     task = GearInsertionTask(
         plate=Asset("plate"),
@@ -145,17 +194,17 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     )
     success_cfg = task.get_termination_cfg().success
     assert success_cfg.func is PredicateGroup
+    assert success_cfg.params["consecutive_steps"] == 3
     gear_predicates = success_cfg.params["predicates"]
     assert len(gear_predicates) == 2
     assert all(predicate.func is PredicateGroup for predicate in gear_predicates)
     for gear_name, predicate in zip(("gear_a", "gear_b"), gear_predicates, strict=True):
-        settled = predicate.params["predicates"][-1]
-        assert settled.func is ObjectsSettledForConsecutiveSteps
-        assert settled.params == {
-            "object_names": [gear_name],
-            "lin_vel_threshold": 0.05,
-            "ang_vel_threshold": 0.5,
-            "consecutive_steps": 3,
+        velocity = predicate.params["predicates"][-1]
+        assert velocity.func is velocity_below_threshold
+        assert velocity.params == {
+            "subject_name": gear_name,
+            "linear_velocity_threshold": 0.05,
+            "angular_velocity_threshold": 0.5,
         }
     return True
 

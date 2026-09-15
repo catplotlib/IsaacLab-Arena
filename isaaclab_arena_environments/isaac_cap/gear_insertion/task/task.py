@@ -19,9 +19,13 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
-from isaaclab_arena.tasks.predicates.composition import PredicateGroup
-from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
-from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
+from isaaclab_arena.tasks.predicates.predicate_group import PredicateGroup
+from isaaclab_arena.tasks.predicates.spatial import (
+    depth_in_range,
+    tilt_axis_aligned,
+    velocity_below_threshold,
+    xy_in_proximity,
+)
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import SuccessMode
 
@@ -48,7 +52,7 @@ class TerminationsCfg:
     success: TerminationTermCfg = MISSING
 
 
-def _gear_success_predicate(
+def _make_gear_success_predicate_group_cfg(
     plate: Asset,
     gear: Asset,
     target_offset_xyz: tuple[float, float, float],
@@ -97,12 +101,11 @@ def _gear_success_predicate(
             },
         ),
         TerminationTermCfg(
-            func=ObjectsSettledForConsecutiveSteps,
+            func=velocity_below_threshold,
             params={
-                "object_names": [gear.name],
-                "lin_vel_threshold": linear_velocity_threshold,
-                "ang_vel_threshold": angular_velocity_threshold,
-                "consecutive_steps": consecutive_success_steps,
+                "subject_name": gear.name,
+                "linear_velocity_threshold": linear_velocity_threshold,
+                "angular_velocity_threshold": angular_velocity_threshold,
             },
         ),
     ]
@@ -143,7 +146,6 @@ class GearInsertionTask(TaskBase):
         thresholds = {
             "xy_threshold": xy_threshold,
             "z_threshold": z_threshold,
-            "upright_axis_threshold_deg": upright_axis_threshold_deg,
             "linear_velocity_threshold": linear_velocity_threshold,
             "angular_velocity_threshold": angular_velocity_threshold,
             "support_z_threshold": support_z_threshold,
@@ -152,6 +154,12 @@ class GearInsertionTask(TaskBase):
         for name, value in thresholds.items():
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be a positive finite number")
+        if (
+            isinstance(upright_axis_threshold_deg, bool)
+            or not math.isfinite(upright_axis_threshold_deg)
+            or not 0 < upright_axis_threshold_deg <= 180
+        ):
+            raise ValueError("upright_axis_threshold_deg must be in (0, 180]")
         if (
             isinstance(consecutive_success_steps, bool)
             or not isinstance(consecutive_success_steps, int)
@@ -168,7 +176,7 @@ class GearInsertionTask(TaskBase):
         self.target_offsets_xyz = offsets
         self.events_cfg = EventsCfg()
         gear_success_predicates = [
-            _gear_success_predicate(
+            _make_gear_success_predicate_group_cfg(
                 plate,
                 gear,
                 target_offset_xyz,
@@ -188,6 +196,7 @@ class GearInsertionTask(TaskBase):
                 params={
                     "predicates": gear_success_predicates,
                     "mode": SuccessMode.ALL,
+                    "consecutive_steps": consecutive_success_steps,
                 },
             )
         )
