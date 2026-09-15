@@ -414,7 +414,6 @@ jobs:
     timeout-minutes: 120
     needs: [pre_commit]
     env:
-      OMNI_USER: '$omni-api-token'
       OMNI_PASS: ${{ secrets.ISAAC_CAP_CI_OMNI_PASS }}
 
     container:
