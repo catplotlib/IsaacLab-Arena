@@ -32,6 +32,8 @@ class SuccessMode(str, Enum):
     """Success needs at least k predicates to be True."""
 
 
+# TODO(cvolk): Remove this success-to-progress adapter once its callers use tracker-owned stateful predicates
+# through TaskTerminationCfg.
 def termination_term_result(env: ManagerBasedRLEnv, term_name: str) -> torch.Tensor:
     """Return a termination term's result most recently computed for the current step."""
 

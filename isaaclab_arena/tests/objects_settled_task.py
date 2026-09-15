@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Task that succeeds after objects remain settled for consecutive steps."""
+"""Test task that succeeds after objects remain settled for consecutive steps."""
 
 from dataclasses import MISSING
 from functools import partial
@@ -13,7 +13,6 @@ from isaaclab.envs.common import ViewerCfg
 from isaaclab.managers import TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_arena.assets.register import register_task
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
@@ -22,7 +21,6 @@ from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import termination_term_result
 
 
-@register_task
 class ObjectsSettledTask(TaskBase):
     """Succeed when every configured object remains settled for consecutive steps."""
 
@@ -68,7 +66,7 @@ class ObjectsSettledTask(TaskBase):
 
 @configclass
 class ObjectsSettledTerminationsCfg:
-    """Termination terms for the objects-settled task."""
+    """Termination terms for the objects-settled test task."""
 
     time_out: TerminationTermCfg = TerminationTermCfg(func=mdp_isaac_lab.time_out, time_out=True)
     success: TerminationTermCfg = MISSING

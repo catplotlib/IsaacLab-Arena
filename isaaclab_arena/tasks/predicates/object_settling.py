@@ -8,13 +8,12 @@
 The ``objects_settled`` function reports instantaneous rest, while
 ``ObjectsSettledForConsecutiveSteps`` requires a consecutive stability window. Both record the
 initial resting position through ``ObjectInitialRestPoseRecorder`` for downstream predicates. The
-managed term clears its counters and recordings through the termination-manager reset lifecycle.
+environment reset lifecycle clears the shared recordings.
 """
 
 from __future__ import annotations
 
 import torch
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from isaaclab.managers import TerminationTermCfg
@@ -69,8 +68,8 @@ class ObjectInitialRestPoseRecorder:
         entry = self._entry(name)
         return entry["position"], entry["settled"]
 
-    def reset(self, env_ids=None, object_names: Sequence[str] | None = None) -> None:
-        """Clear selected objects' recorded rest poses for ``env_ids``."""
+    def reset(self, env_ids=None) -> None:
+        """Clear recorded rest poses for ``env_ids``."""
 
         if env_ids is None:
             ids = slice(None)
@@ -78,11 +77,7 @@ class ObjectInitialRestPoseRecorder:
             ids = env_ids
         else:
             ids = torch.as_tensor(env_ids, dtype=torch.long, device=self._device)
-        names = self._entries if object_names is None else object_names
-        for name in names:
-            entry = self._entries.get(name)
-            if entry is None:
-                continue
+        for entry in self._entries.values():
             entry["settled"][ids] = False
             entry["position"][ids] = float("nan")
 
@@ -243,9 +238,3 @@ class ObjectsSettledForConsecutiveSteps(ConsecutivePredicate):
         for object_name in object_names:
             recorder.record(object_name, env.arena_world.get_position_w(object_name), settled)
         return settled
-
-    def reset(self, env_ids: Sequence[int] | None = None) -> None:
-        """Clear stability counters and recorded rest poses for selected environments."""
-
-        super().reset(env_ids)
-        get_rest_pose_recorder(self._env).reset(env_ids, object_names=self.cfg.params["object_names"])

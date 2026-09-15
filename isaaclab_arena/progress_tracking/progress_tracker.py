@@ -18,12 +18,16 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import _predicate_repr
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.object_settling import reset_rest_pose_recorder
 
 _PROGRESS_TRACKER_ATTR = "_progress_tracker"
 
 
 def _resolve_progress_predicate(predicate, env):
     """Instantiate a managed predicate config when the tracker gains access to the environment."""
+
+    # TODO(cvolk): This adapts Isaac Lab term configs for progress tracking. Revisit the adapter when
+    # integrating stateful predicates with #1255; predicate construction and reset forwarding must remain supported.
 
     if not isinstance(predicate, TerminationTermCfg):
         return predicate
@@ -484,6 +488,7 @@ def progress_tracking_reset_func(env, env_ids, progress_objectives: list[Progres
     elif torch.is_tensor(env_ids):
         env_ids = env_ids.tolist()
     progress_tracker.reset(env_ids)
+    reset_rest_pose_recorder(env, env_ids)
 
 
 @configclass

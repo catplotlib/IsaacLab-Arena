@@ -47,7 +47,7 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
     env = SimpleNamespace(
         num_envs=2,
         device="cpu",
-        scene={},
+        scene=SimpleNamespace(deformable_objects={}),
         sim=_PlayingSimulation(),
         arena_world=arena_world,
         object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(2, "cpu"),
@@ -95,7 +95,7 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
     assert manager.compute().tolist() == [False, False]
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
 
-    # Managed-term lifecycle propagation resets only the selected environment and its recorded rest pose.
+    # Managed-term lifecycle propagation resets only the selected environment's stability counter.
     arena_world.linear_velocity.zero_()
     arena_world.angular_velocity.zero_()
     manager.compute()
@@ -110,13 +110,13 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
     manager.reset(env_ids=[1])
     assert resolved_settled.consecutive_true_steps.tolist() == [2, 0]
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
-    assert recorded.tolist() == [True, False]
+    assert recorded.tolist() == [True, True]
     _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
     assert unrelated_recorded.tolist() == [True, True]
     manager.reset()
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
     _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
-    assert recorded.tolist() == [False, False]
+    assert recorded.tolist() == [True, True]
     _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
     assert unrelated_recorded.tolist() == [True, True]
 
@@ -215,8 +215,8 @@ def _test_off_table_sphere_does_not_settle_before_falling(_simulation_app) -> bo
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.objects_settled_task import ObjectsSettledTask
     from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
+    from isaaclab_arena.tests.objects_settled_task import ObjectsSettledTask
     from isaaclab_arena.utils.physics_settle import step_physics
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena.utils.velocity import Velocity
