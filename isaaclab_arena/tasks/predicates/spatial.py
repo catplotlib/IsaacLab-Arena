@@ -169,22 +169,6 @@ def tilt_axis_aligned(
     return axis_dot >= math.cos(max_tilt_rad)
 
 
-def velocity_below_threshold(
-    env: IsaacLabArenaManagerBasedRLEnv,
-    subject_name: str,
-    linear_velocity_threshold: float,
-    angular_velocity_threshold: float | None = None,
-) -> torch.Tensor:
-    """Check subject root linear speed and, optionally, angular speed."""
-    arena_world = env.arena_world
-    linear_velocity_w = arena_world.get_root_linear_velocity_w(subject_name)
-    result = torch.linalg.vector_norm(linear_velocity_w, dim=-1) <= linear_velocity_threshold
-    if angular_velocity_threshold is not None:
-        angular_velocity_w = arena_world.get_root_angular_velocity_w(subject_name)
-        result &= torch.linalg.vector_norm(angular_velocity_w, dim=-1) <= angular_velocity_threshold
-    return result
-
-
 def object_is_above_height(
     env: IsaacLabArenaManagerBasedRLEnv,
     object_name: str,

@@ -14,13 +14,13 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
 
     from isaaclab.managers import TerminationManager, TerminationTermCfg
 
-    from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate, PredicateGroup
-    from isaaclab_arena.tasks.predicates.spatial import (
-        depth_in_range,
-        tilt_axis_aligned,
-        velocity_below_threshold,
-        xy_in_proximity,
+    from isaaclab_arena.tasks.predicates.composition import PredicateGroup
+    from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+    from isaaclab_arena.tasks.predicates.object_settling import (
+        ObjectInitialRestPoseRecorder,
+        ObjectsSettledForConsecutiveSteps,
     )
+    from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
     from isaaclab_arena.tasks.terminations import SuccessMode
 
     class _PlayingSimulation:
@@ -48,6 +48,9 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
         def get_pose_w(self, name: str) -> torch.Tensor:
             return self.poses[name]
 
+        def get_position_w(self, name: str) -> torch.Tensor:
+            return self.poses[name][:, :3]
+
         def get_root_linear_velocity_w(self, _name: str) -> torch.Tensor:
             return self.linear_velocity
 
@@ -61,19 +64,15 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
         scene={},
         sim=_PlayingSimulation(),
         arena_world=_ArenaWorld(),
+        object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(num_envs=2, device="cpu"),
     )
     settled_cfg = TerminationTermCfg(
-        func=ConsecutivePredicate,
+        func=ObjectsSettledForConsecutiveSteps,
         params={
-            "predicate": TerminationTermCfg(
-                func=velocity_below_threshold,
-                params={
-                    "subject_name": "subject",
-                    "linear_velocity_threshold": 0.05,
-                    "angular_velocity_threshold": 0.1,
-                },
-            ),
-            "steps": 2,
+            "object_names": ["subject"],
+            "lin_vel_threshold": 0.05,
+            "ang_vel_threshold": 0.1,
+            "consecutive_steps": 2,
         },
     )
     group_cfg = TerminationTermCfg(
@@ -129,11 +128,11 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     # TerminationManager forwards a partial reset through PredicateGroup.
     manager.reset(env_ids=[0])
     env.arena_world.poses["subject"][0, 0] = 0.005
-    assert resolved_settled.count.tolist() == [0, 2]
+    assert resolved_settled.consecutive_true_steps.tolist() == [0, 2]
     assert manager.compute().tolist() == [False, True]
 
     # ManagerBase deep-copies configs, so task-build configuration stays declarative.
-    assert settled_cfg.func is ConsecutivePredicate
+    assert settled_cfg.func is ObjectsSettledForConsecutiveSteps
 
     from isaaclab_arena.assets.asset import Asset
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
@@ -149,11 +148,15 @@ def _test_predicate_group_lifecycle(_simulation_app) -> bool:
     gear_predicates = success_cfg.params["predicates"]
     assert len(gear_predicates) == 2
     assert all(predicate.func is PredicateGroup for predicate in gear_predicates)
-    for predicate in gear_predicates:
+    for gear_name, predicate in zip(("gear_a", "gear_b"), gear_predicates, strict=True):
         settled = predicate.params["predicates"][-1]
-        assert settled.func is ConsecutivePredicate
-        assert settled.params["steps"] == 3
-        assert settled.params["predicate"].func is velocity_below_threshold
+        assert settled.func is ObjectsSettledForConsecutiveSteps
+        assert settled.params == {
+            "object_names": [gear_name],
+            "lin_vel_threshold": 0.05,
+            "ang_vel_threshold": 0.5,
+            "consecutive_steps": 3,
+        }
     return True
 
 

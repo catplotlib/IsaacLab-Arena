@@ -19,13 +19,9 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
-from isaaclab_arena.tasks.predicates.composition import ConsecutivePredicate, PredicateGroup
-from isaaclab_arena.tasks.predicates.spatial import (
-    depth_in_range,
-    tilt_axis_aligned,
-    velocity_below_threshold,
-    xy_in_proximity,
-)
+from isaaclab_arena.tasks.predicates.composition import PredicateGroup
+from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
+from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import SuccessMode
 
@@ -101,17 +97,12 @@ def _gear_success_predicate(
             },
         ),
         TerminationTermCfg(
-            func=ConsecutivePredicate,
+            func=ObjectsSettledForConsecutiveSteps,
             params={
-                "predicate": TerminationTermCfg(
-                    func=velocity_below_threshold,
-                    params={
-                        "subject_name": gear.name,
-                        "linear_velocity_threshold": linear_velocity_threshold,
-                        "angular_velocity_threshold": angular_velocity_threshold,
-                    },
-                ),
-                "steps": consecutive_success_steps,
+                "object_names": [gear.name],
+                "lin_vel_threshold": linear_velocity_threshold,
+                "ang_vel_threshold": angular_velocity_threshold,
+                "consecutive_steps": consecutive_success_steps,
             },
         ),
     ]

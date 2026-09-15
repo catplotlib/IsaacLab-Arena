@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Managed composition for stateless and stateful task predicates."""
+"""Managed composition for task predicates."""
 
 from __future__ import annotations
 
@@ -13,40 +13,6 @@ from collections.abc import Sequence
 from isaaclab.managers import ManagerTermBase, TerminationTermCfg
 
 from isaaclab_arena.tasks.terminations import SuccessMode, combine_success_results
-
-
-class ConsecutivePredicate(ManagerTermBase):
-    """Pass after one child predicate remains true for a fixed number of steps."""
-
-    def __init__(self, cfg: TerminationTermCfg, env):
-        super().__init__(cfg, env)
-        self.predicate = cfg.params["predicate"]
-        steps = cfg.params["steps"]
-        assert (
-            isinstance(steps, int) and not isinstance(steps, bool) and steps > 0
-        ), f"ConsecutivePredicate steps must be a positive integer, got {steps!r}."
-        self.count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-
-    def __call__(
-        self,
-        env,
-        predicate: TerminationTermCfg,
-        steps: int,
-    ) -> torch.Tensor:
-        # These arguments mirror TerminationTermCfg.params for manager signature validation;
-        # the manager-resolved child config is retained on this instance.
-        del predicate
-        passed = self.predicate.func(env, **self.predicate.params)
-        self.count = torch.where(passed, self.count + 1, torch.zeros_like(self.count))
-        return self.count >= steps
-
-    def reset(self, env_ids: Sequence[int] | None = None) -> None:
-        """Clear counters and reset a managed child for the selected environments."""
-        if env_ids is None:
-            env_ids = slice(None)
-        self.count[env_ids] = 0
-        if isinstance(self.predicate.func, ManagerTermBase):
-            self.predicate.func.reset(env_ids)
 
 
 class PredicateGroup(ManagerTermBase):
