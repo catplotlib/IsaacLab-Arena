@@ -87,17 +87,19 @@ class Object(ObjectBase):
         self.reset_pose = True
         self._pose_event_cfg = self._build_reset_event()
 
-    def get_contact_sensor_prim_path(self) -> str:
-        """Return the scene prim path where this object's contact sensor is attached."""
-        assert self.usd_path is not None, f"No USD path available for {self.name}. Can't add contact sensor."
-        return self._get_contact_sensor_prim_path_from_usd(self.usd_path)
+    def get_contact_sensor_prim_path(self, usd_path: str | None = None) -> str:
+        """Return the scene prim path where this object's contact sensor is attached.
 
-    def _get_contact_sensor_prim_path_from_usd(self, usd_path: str) -> str:
-        """Return the contact-sensor prim path for the rigid body in a USD."""
+        Args:
+            usd_path: Optional member USD path for object subclasses that spawn from multiple files.
+        """
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
+        usd_path = usd_path or self.usd_path
+        assert usd_path is not None, f"No USD path available for {self.name}. Can't add contact sensor."
         rigid_body_relative_path = find_shallowest_rigid_body(
             usd_path,
-            relative_to_root=True,
+            within_default_prim=True,
+            relative_to_default_prim=True,
             variants=(self.spawn_cfg_addon or {}).get("variants"),
         )
         assert (
@@ -111,9 +113,6 @@ class Object(ObjectBase):
         # contact sensor to it.
         contact_sensor_prim_path = self.get_contact_sensor_prim_path()
         if isinstance(contact_against_object, Object):
-            # Handles Object and its subclasses, including RigidObjectSet.
-            # RigidObjectSet normalizes the USD paths for all members before spawning, so they have the same
-            # relative structure and rigid-body name. We add the contact sensor to the normalized rigid body beneath the its scene prim.
             filter_prim_paths = [contact_against_object.get_contact_sensor_prim_path()]
         elif isinstance(contact_against_object, ObjectBase):
             # Handles ObjectReference.

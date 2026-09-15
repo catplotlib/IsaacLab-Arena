@@ -150,7 +150,13 @@ class RigidObjectSet(Object):
 
     def get_contact_sensor_prim_path(self) -> str:
         """Return the contact-sensor path shared by all normalized member USDs."""
-        return self._get_contact_sensor_prim_path_from_usd(self.member_usd_paths[0])
+        get_member_prim_path = super().get_contact_sensor_prim_path
+        member_prim_paths = [get_member_prim_path(usd_path) for usd_path in self.member_usd_paths]
+        assert len(set(member_prim_paths)) == 1, (
+            f"RigidObjectSet '{self.name}' member USDs must have the same contact-sensor prim path; "
+            f"got {member_prim_paths}."
+        )
+        return member_prim_paths[0]
 
     def _generate_variant_indices(self, num_envs: int, variant_seed: int | None = None) -> list[int]:
         """Return one member index per env.
@@ -227,7 +233,7 @@ class RigidObjectSet(Object):
         depths = []
         for asset in objects:
             assert asset.usd_path is not None
-            shallowest_rigid_body = find_shallowest_rigid_body(asset.usd_path)
+            shallowest_rigid_body = find_shallowest_rigid_body(asset.usd_path, within_default_prim=True)
             depth = shallowest_rigid_body.count("/") - 1 if shallowest_rigid_body else -1
             depths.append(depth)
         return depths

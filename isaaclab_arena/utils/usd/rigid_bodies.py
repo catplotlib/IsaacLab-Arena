@@ -122,30 +122,33 @@ def _path_relative_to_default_prim(prim_path: str, default_prim_path: str) -> st
     return prim_path[len(default_prim_path) :]
 
 
-def find_shallowest_rigid_body_from_stage(stage: Usd.Stage, relative_to_root: bool = False) -> str | None:
+def find_shallowest_rigid_body_from_stage(
+    stage: Usd.Stage,
+    within_default_prim: bool = False,
+    relative_to_default_prim: bool = False,
+) -> str | None:
     """
     Find the shallowest (closest to root) prim that is a rigid body.
     Also verifies that there is only one rigid body at that depth level.
-    When returning a relative path, only rigid bodies beneath the default prim
-    are considered because other prims do not compose through a USD reference.
 
     Args:
         stage: The stage to analyze
-        relative_to_root: Whether to return the path relative to the USD default prim
+        within_default_prim: Whether to consider only rigid bodies beneath the USD default prim
+        relative_to_default_prim: Whether to return the path relative to the USD default prim
 
     Returns:
         Prim path for the shallowest rigid body. None if no rigid bodies are found.
         Empty string if the shallowest rigid body is the default prim, and
-        relative_to_root is True.
-
-    Raises:
-        ValueError: If multiple rigid bodies exist at the shallowest level
+        relative_to_default_prim is True.
     """
+    assert (
+        within_default_prim or not relative_to_default_prim
+    ), "relative_to_default_prim requires within_default_prim so only paths beneath the default prim are considered"
     rigid_body_prim_paths = get_all_rigid_body_prim_paths_from_stage(stage)
     default_prim_path = None
-    if relative_to_root:
+    if within_default_prim:
         default_prim = stage.GetDefaultPrim()
-        assert default_prim, "A default prim is required to return a path relative to the USD default prim"
+        assert default_prim, "A default prim is required to limit the rigid-body search to the default prim"
         default_prim_path = str(default_prim.GetPath())
         # A USD reference composes only the default-prim subtree. Ignore rigid bodies outside it so
         # an unrelated, shallower body cannot be selected instead of the referenced asset's body.
@@ -182,7 +185,7 @@ def find_shallowest_rigid_body_from_stage(stage: Usd.Stage, relative_to_root: bo
             )
         shallowest_rigid_body = shallowest_rigid_bodies[0]
 
-    if relative_to_root:
+    if relative_to_default_prim:
         assert default_prim_path is not None
         shallowest_rigid_body = _path_relative_to_default_prim(shallowest_rigid_body, default_prim_path)
     return shallowest_rigid_body
@@ -190,7 +193,8 @@ def find_shallowest_rigid_body_from_stage(stage: Usd.Stage, relative_to_root: bo
 
 def find_shallowest_rigid_body(
     usd_path: str,
-    relative_to_root: bool = False,
+    within_default_prim: bool = False,
+    relative_to_default_prim: bool = False,
     variants: dict[str, str] | None = None,
 ) -> str | None:
     """
@@ -199,17 +203,15 @@ def find_shallowest_rigid_body(
 
     Args:
         usd_path: Path to the USD file to analyze
-        relative_to_root: Whether to return the path relative to the USD default prim
+        within_default_prim: Whether to consider only rigid bodies beneath the USD default prim
+        relative_to_default_prim: Whether to return the path relative to the USD default prim
         variants: USD variants to select before searching. SimReady props need
             ``{"Physics": "physics"}``, or they have no physics at all.
 
     Returns:
         Prim path for the shallowest rigid body. None if no rigid bodies are found.
         Empty string if the shallowest rigid body is the default prim, and
-        relative_to_root is True.
-
-    Raises:
-        ValueError: If multiple rigid bodies exist at the shallowest level
+        relative_to_default_prim is True.
     """
     # Avoid loading pxr at module scope before SimulationApp starts, which happens in unit tests.
     from pxr import Usd
@@ -219,4 +221,8 @@ def find_shallowest_rigid_body(
         raise ValueError(f"Error: Could not open USD file at {usd_path}")
     if variants:
         apply_usd_variant_selections(stage, variants)
-    return find_shallowest_rigid_body_from_stage(stage, relative_to_root)
+    return find_shallowest_rigid_body_from_stage(
+        stage,
+        within_default_prim=within_default_prim,
+        relative_to_default_prim=relative_to_default_prim,
+    )
