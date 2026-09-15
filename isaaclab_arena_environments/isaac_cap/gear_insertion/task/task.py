@@ -63,7 +63,6 @@ def _make_gear_success_predicate_group_cfg(
     linear_velocity_threshold: float,
     angular_velocity_threshold: float,
     support_z_threshold: float,
-    consecutive_success_steps: int,
 ) -> TerminationTermCfg:
     """Build the current geometric gates and stateful settling gate for one gear."""
     relative_position_params = {
@@ -186,7 +185,6 @@ class GearInsertionTask(TaskBase):
                 linear_velocity_threshold=linear_velocity_threshold,
                 angular_velocity_threshold=angular_velocity_threshold,
                 support_z_threshold=support_z_threshold,
-                consecutive_success_steps=consecutive_success_steps,
             )
             for gear, target_offset_xyz in zip(gears, offsets, strict=True)
         ]

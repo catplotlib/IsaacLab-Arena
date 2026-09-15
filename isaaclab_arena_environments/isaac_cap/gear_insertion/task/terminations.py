@@ -36,7 +36,6 @@ class GearSupported(ManagerTermBase):
             enabled_only=True,
         )
         self.gear_collision_corners = self._collision_corners(gear_asset, env.device, enabled_only=True)
-        self.support_error = torch.zeros(env.num_envs, device=env.device)
 
     def __call__(
         self,
@@ -59,8 +58,8 @@ class GearSupported(ManagerTermBase):
             T_W_G[:, :3],
             T_W_G[:, 3:],
         )
-        self.support_error = torch.abs(gear_bottom_z - plate_top_z)
-        return self.support_error <= support_z_threshold
+        support_error = torch.abs(gear_bottom_z - plate_top_z)
+        return support_error <= support_z_threshold
 
     @staticmethod
     def _collision_corners(

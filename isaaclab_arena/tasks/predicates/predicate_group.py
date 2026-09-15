@@ -7,13 +7,29 @@
 
 from __future__ import annotations
 
+import functools
 import torch
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from isaaclab.managers import ManagerTermBase, TerminationTermCfg
 
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 from isaaclab_arena.tasks.terminations import SuccessMode, combine_success_results
+
+
+def reset_managed_predicates(
+    predicates: Iterable,
+    env_ids: Sequence[int] | torch.Tensor | None = None,
+) -> None:
+    """Reset each unique managed predicate found through configs or partials."""
+
+    reset_predicate_ids: set[int] = set()
+    for predicate in predicates:
+        while isinstance(predicate, (TerminationTermCfg, functools.partial)):
+            predicate = predicate.func
+        if isinstance(predicate, ManagerTermBase) and id(predicate) not in reset_predicate_ids:
+            predicate.reset(env_ids)
+            reset_predicate_ids.add(id(predicate))
 
 
 # TODO(xinjieyao, 2026-09-14): To be removed once progress tracking handles the lifecycle of predicates.
@@ -54,14 +70,6 @@ class PredicateGroup(ConsecutivePredicate):
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         """Reset managed children and cached results for selected environments."""
         super().reset(env_ids)
-        if env_ids is None:
-            env_ids = slice(None)
-        self.results[:, env_ids] = False
-        reset_predicates: list[ManagerTermBase] = []
-        for predicate_cfg in self.predicates:
-            predicate = predicate_cfg.func
-            if isinstance(predicate, ManagerTermBase) and not any(
-                predicate is existing for existing in reset_predicates
-            ):
-                predicate.reset(env_ids)
-                reset_predicates.append(predicate)
+        ids = slice(None) if env_ids is None else env_ids
+        self.results[:, ids] = False
+        reset_managed_predicates(self.predicates, env_ids)
