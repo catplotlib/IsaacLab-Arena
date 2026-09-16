@@ -527,24 +527,22 @@ class ObjectPlacer:
         parent_bbox = self._get_on_parent_world_bbox(on_relation.parent, anchor_objects, anchor_bbox, env_bboxes)
         child_bbox = env_bboxes[obj]
 
-        child_x_min, child_x_max = on_relation.footprint_constraint.child_extents(
-            child_bbox.min_point[0, 0], child_bbox.max_point[0, 0]
-        )
-        child_y_min, child_y_max = on_relation.footprint_constraint.child_extents(
-            child_bbox.min_point[0, 1], child_bbox.max_point[0, 1]
-        )
+        child_min, child_max = child_bbox.min_point[0], child_bbox.max_point[0]
+        if on_relation.overlap:
+            # Intersection compares the child's far edge with the parent's near edge.
+            child_min, child_max = child_max, child_min
         x = self._sample_axis_position(
             parent_bbox.min_point[0, 0],
             parent_bbox.max_point[0, 0],
-            child_x_min,
-            child_x_max,
+            child_min[0],
+            child_max[0],
             generator,
         )
         y = self._sample_axis_position(
             parent_bbox.min_point[0, 1],
             parent_bbox.max_point[0, 1],
-            child_y_min,
-            child_y_max,
+            child_min[1],
+            child_max[1],
             generator,
         )
 

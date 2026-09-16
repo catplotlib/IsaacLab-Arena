@@ -17,7 +17,7 @@ from isaaclab_arena.relations.loss_primitives import (
     single_boundary_linear_loss,
     single_point_linear_loss,
 )
-from isaaclab_arena.relations.relations import FootprintConstraint, Side
+from isaaclab_arena.relations.relations import Side
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 if TYPE_CHECKING:
@@ -344,17 +344,14 @@ class OnLossStrategy(RelationLossStrategy):
         # Containment uses the parent's inset extent; overlap uses its original footprint.
         # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
         # OVERLAP: c_max >= p_min and c_min <= p_max.
-        m = relation.edge_margin_m if relation.footprint_constraint is FootprintConstraint.CONTAINED else 0.0
-        child_x_min, child_x_max = relation.footprint_constraint.child_extents(
-            child_bbox.min_point[:, 0], child_bbox.max_point[:, 0]
-        )
-        child_y_min, child_y_max = relation.footprint_constraint.child_extents(
-            child_bbox.min_point[:, 1], child_bbox.max_point[:, 1]
-        )
-        valid_x_min = parent_x_min + m - child_x_min  # Child's left/right at parent's left + margin.
-        valid_x_max = parent_x_max - m - child_x_max  # Child's right/left at parent's right - margin.
-        valid_y_min = parent_y_min + m - child_y_min
-        valid_y_max = parent_y_max - m - child_y_max
+        m = 0.0 if relation.overlap else relation.edge_margin_m
+        child_min, child_max = child_bbox.min_point, child_bbox.max_point
+        if relation.overlap:
+            child_min, child_max = child_max, child_min
+        valid_x_min = parent_x_min + m - child_min[:, 0]
+        valid_x_max = parent_x_max - m - child_max[:, 0]
+        valid_y_min = parent_y_min + m - child_min[:, 1]
+        valid_y_max = parent_y_max - m - child_max[:, 1]
 
         # For containment, infeasible bounds produce a non-zero constant loss.
 

@@ -34,30 +34,6 @@ class Side(str, Enum):
     NEGATIVE_Y = "negative_y"  # -Y
 
 
-class FootprintConstraint(str, Enum):
-    """Horizontal support constraint for an ``On`` relation."""
-
-    CONTAINED = "contained"
-    OVERLAP = "overlap"
-
-    def child_extents(self, min_extent: torch.Tensor, max_extent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return child extents for containment or overlap checks.
-
-        For child interval ``C = [c_min, c_max]`` and parent interval
-        ``P = [p_min, p_max]``:
-
-        - ``CONTAINED`` returns ``(c_min, c_max)`` and checks
-          ``c_min >= p_min`` and ``c_max <= p_max``.
-        - ``OVERLAP`` returns ``(c_max, c_min)`` and checks
-          ``c_max >= p_min`` and ``c_min <= p_max``.
-
-        The overlap pair is reversed because interval intersection compares
-        the child's maximum to the parent's minimum and the child's minimum
-        to the parent's maximum.
-        """
-        return (max_extent, min_extent) if self is FootprintConstraint.OVERLAP else (min_extent, max_extent)
-
-
 class RelationBase:
     """Base for all relation-like concepts on objects.
 
@@ -208,8 +184,8 @@ class On(Relation):
     This relation specifies that a child object should be placed on top of
     the parent object, with X/Y bounded within the parent's extent (optionally
     inset by ``edge_margin_m`` so the child stays off the rim) and Z positioned
-    on the parent's top surface. The overlap policy instead requires intersection
-    with the parent's original footprint on both horizontal axes, ignoring the margin.
+    on the parent's top surface. With ``overlap=True``, only intersection with
+    the parent's original footprint is required on both horizontal axes; the margin is ignored.
 
     Note: Loss computation is handled by OnLossStrategy in relation_loss_strategies.py.
     """
@@ -222,7 +198,7 @@ class On(Relation):
         relation_loss_weight: float = 1.0,
         clearance_m: float = 0.01,
         edge_margin_m: float = DEFAULT_ON_EDGE_MARGIN_M,
-        footprint_constraint: FootprintConstraint | str = FootprintConstraint.CONTAINED,
+        overlap: bool = False,
     ):
         """
         Args:
@@ -231,14 +207,15 @@ class On(Relation):
             clearance_m: Safety clearance above parent's surface in meters (default: 1cm).
             edge_margin_m: Inward inset from each X/Y edge of the parent's surface in
                 meters (default: 5cm), applied only for containment. Ignored for overlap.
-            footprint_constraint: Horizontal footprint policy on both X and Y axes.
+            overlap: Allow footprint overlap instead of full containment on both X and Y
+                axes (default: False). Ignores edge_margin_m when True.
         """
         super().__init__(parent, relation_loss_weight)
         assert clearance_m >= 0.0, f"Clearance must be non-negative, got {clearance_m}"
         assert edge_margin_m >= 0.0, f"edge_margin_m must be non-negative, got {edge_margin_m}"
         self.clearance_m = clearance_m
         self.edge_margin_m = edge_margin_m
-        self.footprint_constraint = FootprintConstraint(footprint_constraint)
+        self.overlap = overlap
 
 
 @agent_ready

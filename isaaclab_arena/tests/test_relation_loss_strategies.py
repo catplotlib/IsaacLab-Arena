@@ -12,7 +12,7 @@ import pytest
 from isaaclab_arena.relations.relation_loss_strategies import NextToLossStrategy, NotNextToLossStrategy, OnLossStrategy
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
-from isaaclab_arena.relations.relations import FootprintConstraint, IsAnchor, NextTo, NotNextTo, On, Side
+from isaaclab_arena.relations.relations import IsAnchor, NextTo, NotNextTo, On, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
@@ -153,7 +153,7 @@ def test_on_loss_strategy_overlap_ignores_margin(edge_margin_m):
         table,
         clearance_m=0.0,
         edge_margin_m=edge_margin_m,
-        footprint_constraint=FootprintConstraint.OVERLAP,
+        overlap=True,
     )
     # Partial overlap in X, Y, and both; exact edge contact also remains valid.
     for valid_pose in ([-0.19, 0.4, 0.1], [0.4, 0.99, 0.1], [-0.19, 0.99, 0.1], [-0.2, 1.0, 0.1]):

@@ -14,7 +14,7 @@ from isaaclab_arena.relations.object_placer import ObjectPlacer
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_validation import PlacementCheck
 from isaaclab_arena.relations.placement_validators import NextToValidator, NotNextToValidator, OnRelationValidator
-from isaaclab_arena.relations.relations import FootprintConstraint, NextTo, NotNextTo, On, RotateAroundSolution, Side
+from isaaclab_arena.relations.relations import NextTo, NotNextTo, On, RotateAroundSolution, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
@@ -304,7 +304,7 @@ def test_on_relation_overlap_accepts_oversized_child_but_rejects_separation():
             desk,
             clearance_m=0.0,
             edge_margin_m=0.0,
-            footprint_constraint=FootprintConstraint.OVERLAP,
+            overlap=True,
         )
     )
     positions = {desk: (0.0, 0.0, 0.0), box: (0.0, 0.0, 0.65)}
@@ -320,7 +320,7 @@ def test_on_relation_overlap_ignores_margin(edge_margin_m):
     placer = ObjectPlacer(params=ObjectPlacerParams())
     desk = _make_desk()
     box = _make_box("box", size=0.2)
-    box.add_relation(On(desk, clearance_m=0.0, edge_margin_m=edge_margin_m, footprint_constraint="overlap"))
+    box.add_relation(On(desk, clearance_m=0.0, edge_margin_m=edge_margin_m, overlap=True))
     positions = {desk: (0.0, 0.0, 0.0), box: (0.0, 0.0, 0.15)}
     validator = OnRelationValidator(placer.params)
 
@@ -337,7 +337,7 @@ def test_on_relation_overlap_accepts_exact_edge_contact():
     placer = ObjectPlacer(params=ObjectPlacerParams())
     desk = _make_desk()
     box = _make_box("box", size=0.5)
-    box.add_relation(On(desk, clearance_m=0.0, footprint_constraint="overlap"))
+    box.add_relation(On(desk, clearance_m=0.0, overlap=True))
     positions = {desk: (0.0, 0.0, 0.0), box: (0.75, -0.75, 0.3)}
 
     assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is True

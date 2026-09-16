@@ -67,13 +67,14 @@ Most environments can be described with a small set of relations:
 
    .. code-block:: python
 
-      box.add_relation(On(table, footprint_constraint="overlap"))
+      box.add_relation(On(table, overlap=True))
 
-   The default ``footprint_constraint="contained"`` requires full containment
-   with ``edge_margin_m`` clearance. The ``"overlap"`` policy ignores
+   The default ``overlap=False`` requires full containment
+   with ``edge_margin_m`` clearance. Setting ``overlap=True`` ignores
    ``edge_margin_m`` and checks intersection with the original support footprint.
    Overlap includes exact edge contact and does not require a minimum support area.
-   Both policies retain the same vertical support-height constraint.
+   Both settings retain the same vertical support-height constraint.
+   Overlap does not guarantee physical stability.
 
    ``On`` uses the top and horizontal footprint of the parent's axis-aligned
    bounding box. For L-shaped, hollow, or concave supports, anchor an

@@ -20,7 +20,7 @@ from isaaclab_arena.relations.relation_loss_strategies import (
     next_to_violations,
     not_next_to_violations,
 )
-from isaaclab_arena.relations.relations import FaceTo, FootprintConstraint, NextTo, NotNextTo, On, get_relation
+from isaaclab_arena.relations.relations import FaceTo, NextTo, NotNextTo, On, get_relation
 from isaaclab_arena.relations.warp_sdf_kernels import has_sdf_sentinel, mesh_sdf
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.yaw import centers_in_target_frame, yaw_from_quat_xyzw, yaw_toward_positions
@@ -158,9 +158,9 @@ class OnRelationValidator(PlacementValidator):
                 parent_size = parent_world.max_point - parent_world.min_point
                 child_size = child_world.max_point - child_world.min_point
 
-                m = rel.edge_margin_m if rel.footprint_constraint is FootprintConstraint.CONTAINED else 0.0
+                m = 0.0 if rel.overlap else rel.edge_margin_m
                 # 1) Check that the child fits inside the inset support for containment only.
-                if rel.footprint_constraint is FootprintConstraint.CONTAINED and m > 0.0:
+                if m > 0.0:
                     freespace = (parent_size - child_size)[0, :2]
                     if torch.any(freespace < 2 * m):
                         max_feasible_margin = max(0.0, float(torch.min(freespace).item()) / 2.0)
@@ -174,17 +174,14 @@ class OnRelationValidator(PlacementValidator):
                 # 2) Checking that the child lies within or overlaps the parent's xy footprint.
                 # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
                 # OVERLAP: c_max >= p_min and c_min <= p_max.
-                child_x_min, child_x_max = rel.footprint_constraint.child_extents(
-                    child_world.min_point[0, 0], child_world.max_point[0, 0]
-                )
-                child_y_min, child_y_max = rel.footprint_constraint.child_extents(
-                    child_world.min_point[0, 1], child_world.max_point[0, 1]
-                )
+                child_min, child_max = child_world.min_point[0], child_world.max_point[0]
+                if rel.overlap:
+                    child_min, child_max = child_max, child_min
                 if (
-                    child_x_min < parent_world.min_point[0, 0] + m
-                    or child_x_max > parent_world.max_point[0, 0] - m
-                    or child_y_min < parent_world.min_point[0, 1] + m
-                    or child_y_max > parent_world.max_point[0, 1] - m
+                    child_min[0] < parent_world.min_point[0, 0] + m
+                    or child_max[0] > parent_world.max_point[0, 0] - m
+                    or child_min[1] < parent_world.min_point[0, 1] + m
+                    or child_max[1] > parent_world.max_point[0, 1] - m
                 ):
                     if self._params.verbose:
                         print(f"On relation: '{obj.name}' XY outside parent (retrying)")
