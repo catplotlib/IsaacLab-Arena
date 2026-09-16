@@ -35,6 +35,9 @@ class ArenaEnvBuilderCfg:
     recorder_dataset_filename: str | None = None
     """If set, overrides the recorder manager's dataset filename."""
 
+    episode_conditions_path: str | None = None
+    """YAML overlay of recorded variation conditions to replay instead of re-sampling."""
+
     def __post_init__(self) -> None:
         assert self.num_envs > 0, "num_envs must be greater than zero"
         if self.presets is not None:
