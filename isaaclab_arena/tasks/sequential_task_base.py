@@ -7,10 +7,10 @@ from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
 
 
 class SequentialTaskBase(CompositeTaskBase):
-    """A composed task whose children complete in order through the progress tracker.
+    """Combine a flat list of tasks that ProgressTracker advances in order.
 
-    The next child starts on the following control step. Completing the final
-    child completes the task on that same step once its current-state requirements hold.
+    The next subtask starts on the following control step. Task success is
+    reported on the same step that its completion and final-state requirements are met.
     """
 
     subtasks_are_sequential: bool = True

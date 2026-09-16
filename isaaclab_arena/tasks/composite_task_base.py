@@ -18,7 +18,6 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.metric_term_cfg import MetricTermCfg
-from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.common.mimic_default_params import MIMIC_DATAGEN_CONFIG_DEFAULTS
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
@@ -35,17 +34,15 @@ class SubtaskSuccessStateRecorder(RecorderTerm):
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self.name = cfg.name
-        self.objective_name = cfg.objective_name
 
     def record_post_step(self):
-        return self.name, self._env._progress_tracker.get_child_completion(self.objective_name)
+        return self.name, self._env._progress_tracker.get_subtask_completion()
 
 
 @configclass
 class SubtaskSuccessStateRecorderCfg(RecorderTermCfg):
     class_type: type[RecorderTerm] = SubtaskSuccessStateRecorder
     name: str = "subtask_success_rate"
-    objective_name: str = "task"
 
 
 def compute_subtask_success_rate(recorded_metric_data: list[np.ndarray]) -> list:
@@ -81,13 +78,9 @@ class SubtaskSuccessRateMetric(MetricBase):
     name = "subtask_success_rate"
     recorder_term_name = "subtask_success_rate"
 
-    def __init__(self, objective_name: str = "task"):
-        super().__init__()
-        self.objective_name = objective_name
-
     def get_recorder_term_cfg(self) -> RecorderTermCfg:
         """Return the recorder term configuration for the subtask success state metric."""
-        return SubtaskSuccessStateRecorderCfg(name=self.recorder_term_name, objective_name=self.objective_name)
+        return SubtaskSuccessStateRecorderCfg(name=self.recorder_term_name)
 
     def get_metric_term_cfg(self) -> MetricTermCfg:
         """Return the metric term configuration for the subtask success rate metric."""
@@ -100,8 +93,7 @@ class SubtaskSuccessRateMetric(MetricBase):
 
 class CompositeTaskBase(TaskBase):
     """
-    A base class for composite tasks composed of multiple subtasks.
-    Completion ordering of subtasks does not matter.
+    Combine a flat list of tasks whose completion order does not matter.
 
 
     Args:
@@ -110,10 +102,8 @@ class CompositeTaskBase(TaskBase):
             subtasks' configured timeouts, giving one overall budget for completing the task.
         task_description: (Optional) Natural-language summary of the overall composite task.
         desired_subtask_success_state: (Optional) Precise success state for each subtask during the final time step.
-            Checks each subtask's current outcome after every subtask has completed its progress.
-            A leaf objective uses its final predicates. Composed objectives, including tasks with
-            multiple root objectives, retain completion history and explicit current-state requirements.
-            None entries omit only the current-outcome check.
+            True or False requires recorded completion and a matching current final condition.
+            None entries exclude that subtask from the success check.
     """
 
     subtasks_are_sequential: bool = False
@@ -127,6 +117,9 @@ class CompositeTaskBase(TaskBase):
         desired_subtask_success_state: list[bool | None] | None = None,
     ):
         assert len(subtasks) > 0, "Composite task requires at least one subtask"
+        assert not any(
+            isinstance(subtask, CompositeTaskBase) for subtask in subtasks
+        ), "Nested composite tasks are not supported; provide a flat list of tasks."
         # Default task length is the summation of the lengths of the subtasks.
         if episode_length_s is None:
             episode_length_s = self._sum_subtask_episode_lengths_s(subtasks)
@@ -194,40 +187,35 @@ class CompositeTaskBase(TaskBase):
         return events_cfg
 
     def get_termination_cfg(self) -> TaskTerminationCfg:
-        """Compose subtask success, independent failures, and one overall timeout.
-
-        Every child must complete its progress. A None desired state omits only
-        that child's current-state constraint. Multiple success objectives from
-        one subtask form a composed child whose completion history is retained.
-        """
-        children = []
+        """Collect flat subtask objectives, ordering, final conditions, failures, and one timeout."""
+        success_objectives = []
         failures = {}
         for subtask_index, subtask in enumerate(self.subtasks):
             subtask_termination = subtask.get_termination_cfg()
             assert isinstance(subtask_termination, TaskTerminationCfg), "Subtasks must return TaskTerminationCfg."
             assert subtask_termination.success, f"Subtask {subtask_index} must define success objectives."
-            namespace = f"subtask_{subtask_index}"
-            namespaced_objectives = [
-                self._namespace_progress_objective(objective, namespace) for objective in subtask_termination.success
-            ]
-            if len(namespaced_objectives) == 1:
-                children.append(namespaced_objectives[0])
-            else:
-                children.append(ProgressObjective(name=namespace, children=namespaced_objectives))
+            assert (
+                not subtask_termination.subtasks_are_sequential
+                and subtask_termination.desired_subtask_success_state is None
+                and all(objective.parent_subtask_idx is None for objective in subtask_termination.success)
+            ), "Nested subtask composition is not supported."
+            success_objectives.extend(
+                dataclasses.replace(
+                    objective,
+                    name=f"subtask_{subtask_index}/{objective.name}",
+                    parent_subtask_idx=subtask_index,
+                )
+                for objective in subtask_termination.success
+            )
             for failure_name, failure_term in subtask_termination.failures.items():
                 failures[f"{failure_name}_subtask_{subtask_index}"] = failure_term
 
         return TaskTerminationCfg(
             timeout_s=self.episode_length_s,
-            success=[
-                ProgressObjective(
-                    name="task",
-                    children=children,
-                    sequential=self.subtasks_are_sequential,
-                    desired_child_states=self.desired_subtask_success_state,
-                )
-            ],
+            success=success_objectives,
             failures=failures,
+            subtasks_are_sequential=self.subtasks_are_sequential,
+            desired_subtask_success_state=self.desired_subtask_success_state,
         )
 
     def _combine_subtask_metrics(self, subtask_idxs: list[int]) -> list[MetricBase]:
@@ -243,8 +231,6 @@ class CompositeTaskBase(TaskBase):
             subtask_metrics = self.subtasks[subtask_idx].get_metrics()
             for metric in subtask_metrics:
                 metric = copy.copy(metric)
-                if isinstance(metric, SubtaskSuccessRateMetric):
-                    metric.objective_name = f"subtask_{subtask_idx}/{metric.objective_name}"
                 if metric.name != "success_rate":
                     metric.name = f"{metric.name}_subtask_{subtask_idx}"
                     metric.recorder_term_name = f"{metric.recorder_term_name}_subtask_{subtask_idx}"
@@ -262,16 +248,6 @@ class CompositeTaskBase(TaskBase):
         subtask_metrics.append(SubtaskSuccessRateMetric())
 
         return subtask_metrics
-
-    @staticmethod
-    def _namespace_progress_objective(objective: ProgressObjective, namespace: str) -> ProgressObjective:
-        """Prefix every objective in a child task without changing its predicate definitions."""
-        children = None
-        if objective.children is not None:
-            children = [
-                CompositeTaskBase._namespace_progress_objective(child, namespace) for child in objective.children
-            ]
-        return dataclasses.replace(objective, name=f"{namespace}/{objective.name}", children=children)
 
     def _validate_consistent_mimic_eef_names(self, arm_mode: ArmMode) -> set[str]:
         "Check that all subtasks have the same Mimic eef_names."

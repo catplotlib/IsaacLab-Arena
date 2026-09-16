@@ -215,61 +215,19 @@ def _test_objective_rejects_invalid_inputs(simulation_app) -> bool:
             ProgressObjective(name="invalid_sequences", predicate_sequences=predicate_sequences)
     for predicate_sequences in ([predicate], {"object": [predicate]}):
         with pytest.raises(AssertionError, match="K is required"):
-            ProgressObjective(name="missing_k", predicate_sequences=predicate_sequences, logical="choose")
+            ProgressObjective(
+                name="missing_k",
+                predicate_sequences=predicate_sequences,
+                logical="choose",
+            )
         for invalid_count in (0, 2):
             with pytest.raises(AssertionError):
                 ProgressObjective(
-                    name="invalid_k", predicate_sequences=predicate_sequences, logical="choose", K=invalid_count
+                    name="invalid_k",
+                    predicate_sequences=predicate_sequences,
+                    logical="choose",
+                    K=invalid_count,
                 )
-    return True
-
-
-def _test_objective_requires_exactly_one_definition(simulation_app) -> bool:
-    """Predicate sequences and child composition are mutually exclusive."""
-    import pytest
-
-    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-
-    predicate = _MockPredicate(num_envs=1)
-    predicate_sequence = [predicate]
-    named_sequences = {"object": [predicate]}
-    children = [ProgressObjective(name="child", predicate_sequences=predicate_sequence)]
-    invalid_definitions = [
-        {},
-        {"predicate_sequences": predicate_sequence, "children": children},
-        {"predicate_sequences": named_sequences, "children": children},
-    ]
-    for definition in invalid_definitions:
-        with pytest.raises(AssertionError, match="exactly one"):
-            ProgressObjective(name="invalid_definition", **definition)
-    return True
-
-
-def _test_objective_rejects_invalid_composition(simulation_app) -> bool:
-    """Composition options require children and valid current-state constraints."""
-    import pytest
-
-    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-
-    predicate = _MockPredicate(num_envs=1)
-    child = ProgressObjective(name="child", predicate_sequences=[predicate])
-    with pytest.raises(AssertionError, match="at least one child"):
-        ProgressObjective(name="empty", children=[])
-    for logical in ("any", "choose"):
-        with pytest.raises(AssertionError, match="every child"):
-            ProgressObjective(name="invalid_mode", children=[child], logical=logical)
-    with pytest.raises(AssertionError, match="K"):
-        ProgressObjective(name="invalid_k", children=[child], K=1)
-    for desired_child_states in ([], [True, False], ["true"]):
-        with pytest.raises(AssertionError, match="Desired child states"):
-            ProgressObjective(name="invalid_states", children=[child], desired_child_states=desired_child_states)
-    for predicate_sequences in ([predicate], {"object": [predicate]}):
-        with pytest.raises(AssertionError, match="requires children"):
-            ProgressObjective(name="invalid_order", predicate_sequences=predicate_sequences, sequential=True)
-        with pytest.raises(AssertionError, match="require children"):
-            ProgressObjective(
-                name="invalid_states", predicate_sequences=predicate_sequences, desired_child_states=[True]
-            )
     return True
 
 
@@ -297,7 +255,10 @@ def _test_list_and_named_sequence_track_identically(simulation_app) -> bool:
                 num_envs=1,
                 device="cpu",
             )
-            for predicate_sequences in (weighted_sequence, {DEFAULT_GROUP_NAME: weighted_sequence})
+            for predicate_sequences in (
+                weighted_sequence,
+                {DEFAULT_GROUP_NAME: weighted_sequence},
+            )
         ]
         for predicate_values, expected_score, expected_complete in (
             ([False, False], 0.0, False),
@@ -329,7 +290,10 @@ def _test_named_predicate_sequences_advance_independently(simulation_app) -> boo
     right_placed = _MockPredicate(num_envs=1, name="right_placed")
     objective = ProgressObjective(
         name="place_both",
-        predicate_sequences={"left": [left_lifted, left_placed], "right": [right_lifted, right_placed]},
+        predicate_sequences={
+            "left": [left_lifted, left_placed],
+            "right": [right_lifted, right_placed],
+        },
         logical="all",
     )
     tracker = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
@@ -665,8 +629,10 @@ def _test_recorder_publishes_to_extras_and_records_nothing(simulation_app) -> bo
     return True
 
 
-def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> bool:
-    """Task termination configuration contains success objectives and preserves their hierarchy."""
+def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
+    simulation_app,
+) -> bool:
+    """Composite tasks identify each flat objective's subtask without adding parent objectives."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import make_progress_tracking_recorder_cfg
     from isaaclab_arena.tasks.no_task import NoTask
@@ -716,23 +682,37 @@ def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> 
         class _ChildA(_Base):
             def get_termination_cfg(self):
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="open", predicate_sequences=[_MockPredicate(1, name="pa")])],
+                    success=[
+                        ProgressObjective(
+                            name="open",
+                            predicate_sequences=[_MockPredicate(1, name="pa")],
+                        )
+                    ],
                     timeout_s=self.episode_length_s,
                 )
 
         class _ChildB(_Base):
             def get_termination_cfg(self):
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="close", predicate_sequences=[_MockPredicate(1, name="pb")])],
+                    success=[
+                        ProgressObjective(
+                            name="close",
+                            predicate_sequences=[_MockPredicate(1, name="pb")],
+                        )
+                    ],
                     timeout_s=self.episode_length_s,
                 )
 
         composite = CompositeTaskBase(subtasks=[_ChildA(), _ChildB()])
         progress_objectives = composite.get_termination_cfg().success
-        assert len(progress_objectives) == 1
-        assert progress_objectives[0].name == "task"
-        assert progress_objectives[0].children[0].name == "subtask_0/open"
-        assert progress_objectives[0].children[1].name == "subtask_1/close"
+        assert [objective.name for objective in progress_objectives] == [
+            "subtask_0/open",
+            "subtask_1/close",
+        ]
+        assert [objective.parent_subtask_idx for objective in progress_objectives] == [
+            0,
+            1,
+        ]
 
     except Exception as e:
         print(f"Error: {e}")
@@ -741,91 +721,48 @@ def _test_task_termination_cfg_preserves_objective_hierarchy(simulation_app) -> 
     return True
 
 
-def _test_nested_objectives_advance_in_order_and_reset_independently(simulation_app):
+def _test_flat_subtask_objectives_report_weighted_progress(simulation_app):
+    """Reports contain the configured objectives, with no additional subtask or task nodes."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
     predicates = [_MockPredicate(2, name=f"condition_{index}") for index in range(3)]
-    first, second, last = predicates
-    first.set([False, True])
-    second.set([True, True])
-    last.set([True, True])
-    objective = ProgressObjective(
-        name="task",
-        sequential=True,
-        children=[
-            ProgressObjective(
-                name="parallel",
-                children=[
-                    ProgressObjective(name="first", predicate_sequences=[first]),
-                    ProgressObjective(name="second", predicate_sequences=[second]),
-                ],
-            ),
-            ProgressObjective(name="last", predicate_sequences=[last]),
-        ],
-    )
+    objectives = [
+        ProgressObjective(
+            name=f"condition_{index}",
+            predicate_sequences=[predicate],
+            parent_subtask_idx=0 if index < 2 else 1,
+            score=score,
+        )
+        for index, (predicate, score) in enumerate(zip(predicates, [0.1, 0.3, 0.2], strict=True))
+    ]
+    predicates[0].set([True, False])
+    predicates[2].set([True, False])
     env = _MockEnv(2)
-    tracker = ProgressTracker([objective], 2, "cpu")
+    tracker = ProgressTracker(objectives, 2, "cpu")
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[False, False], [True, False]]
-    first.set([True, True])
-    second.set([False, False])
-    tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, False], [True, True]]
-    tracker.step(env)
-    previous_completion = tracker.is_complete()
-    assert previous_completion.tolist() == [True, True]
-    assert tracker.get_state()[0].all_complete
-    tracker.reset([0])
-    assert previous_completion.tolist() == [True, True]
-    assert tracker.get_child_completion("parallel").tolist() == [[False, False], [True, True]]
-    assert [len(events) for events in tracker.get_events()] == [0, 3]
-    tracker.reset(slice(None))
+    assert tracker.get_subtask_completion().tolist() == [[False, True], [False, False]]
     assert tracker.is_complete().tolist() == [False, False]
-    tracker.reset()
-    assert tracker.get_events() == [[], []]
-    return True
-
-
-def _test_composed_objective_requires_history_and_current_states(simulation_app):
-    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-
-    predicates = [_MockPredicate(1, name=f"condition_{index}") for index in range(3)]
-    first, second, third = predicates
-    objective = ProgressObjective(
-        name="task",
-        children=[
-            ProgressObjective(name=f"child_{index}", predicate_sequences=[predicate])
-            for index, predicate in enumerate(predicates)
-        ],
-        desired_child_states=[False, True, None],
-    )
-    env = _MockEnv()
-    tracker = ProgressTracker([objective], 1, "cpu")
-    first.set([True])
-    second.set([True])
+    states = tracker.get_state()
+    assert set(states[0].progress_objectives) == {
+        "condition_0",
+        "condition_1",
+        "condition_2",
+    }
+    assert abs(states[0].overall_score - 0.5) < SCORE_TOL
+    assert states[1].overall_score == 0.0
+    predicates[0].set([False, False])
+    predicates[1].set([True, False])
     tracker.step(env)
-    first.set([False])
-    tracker.step(env)
-    assert not tracker.is_complete().item(), "None still requires its child's history."
-    third.set([True])
-    second.set([False])
-    tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, True, True]]
-    assert not tracker.is_complete().item(), "True must hold in the current state."
-    first.set([True])
-    second.set([True])
-    tracker.step(env)
-    assert not tracker.is_complete().item(), "False must hold in the current state."
-    first.set([False])
-    tracker.step(env)
-    assert tracker.is_complete().item()
+    assert tracker.get_subtask_completion().tolist() == [[True, True], [False, False]]
+    assert tracker.is_complete().tolist() == [True, False]
+    assert abs(tracker.get_state()[0].overall_score - 1.0) < SCORE_TOL
     assert len(tracker.get_events()[0]) == 3
     return True
 
 
-def _test_composed_final_reads_reuse_predicate_results(simulation_app):
+def _test_shared_predicate_results_are_reused_across_objectives(simulation_app):
+    """Progress updates and current-condition checks share one evaluation of each callable per step."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
@@ -838,85 +775,36 @@ def _test_composed_final_reads_reuse_predicate_results(simulation_app):
 
     predicate = CountingPredicate(1)
     predicate.set([True])
-    objective = ProgressObjective(
-        name="task",
-        children=[ProgressObjective(name="child", predicate_sequences=[predicate])],
-        desired_child_states=[True],
-    )
-    tracker = ProgressTracker([objective], 1, "cpu")
+    objectives = [
+        ProgressObjective(
+            name=f"objective_{index}",
+            predicate_sequences=[predicate],
+            parent_subtask_idx=index,
+        )
+        for index in range(2)
+    ]
+    tracker = ProgressTracker(objectives, 1, "cpu", desired_subtask_success_state=[True, True])
     tracker.step(_MockEnv())
     assert tracker.is_complete().item()
     tracker.get_state()
+    tracker.get_subtask_completion()
     assert predicate.calls == 1
+    predicate.set([False])
+    tracker.step(_MockEnv())
+    assert not tracker.is_complete().item()
+    assert predicate.calls == 2
     return True
 
 
-def _test_nested_sequence_current_success_respects_task_semantics(simulation_app):
-    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-
-    for desired_inner_states in (None, [False, True]):
-        opened, closed, checkpoint = (_MockPredicate(1) for _ in range(3))
-        objective = ProgressObjective(
-            name="outer",
-            children=[
-                ProgressObjective(
-                    name="open_then_close",
-                    sequential=True,
-                    children=[
-                        ProgressObjective(name="opened", predicate_sequences=[opened]),
-                        ProgressObjective(name="closed", predicate_sequences=[closed]),
-                    ],
-                    desired_child_states=desired_inner_states,
-                ),
-                ProgressObjective(name="checkpoint", predicate_sequences=[checkpoint]),
-            ],
-            desired_child_states=[True, None],
-        )
-        env = _MockEnv()
-        tracker = ProgressTracker([objective], 1, "cpu")
-        opened.set([True])
-        tracker.step(env)
-        opened.set([False])
-        closed.set([True])
-        tracker.step(env)
-        assert tracker.get_child_completion("outer").tolist() == [[True, False]]
-
-        checkpoint.set([True])
-        if desired_inner_states is not None:
-            closed.set([False])
-        tracker.step(env)
-        if desired_inner_states is None:
-            assert tracker.is_complete().item(), "Open and closed need not hold simultaneously."
-        else:
-            assert not tracker.is_complete().item(), "The inner task's explicit current requirement still applies."
-            closed.set([True])
-            tracker.step(env)
-            assert tracker.is_complete().item()
-    return True
-
-
-def test_nested_sequence_current_success_respects_task_semantics():
+def test_flat_subtask_objectives_report_weighted_progress():
     assert run_function_with_persistent_simulation_app(
-        _test_nested_sequence_current_success_respects_task_semantics, headless=HEADLESS
+        _test_flat_subtask_objectives_report_weighted_progress, headless=HEADLESS
     )
 
 
-def test_nested_objectives_advance_in_order_and_reset_independently():
+def test_shared_predicate_results_are_reused_across_objectives():
     assert run_function_with_persistent_simulation_app(
-        _test_nested_objectives_advance_in_order_and_reset_independently, headless=HEADLESS
-    )
-
-
-def test_composed_objective_requires_history_and_current_states():
-    assert run_function_with_persistent_simulation_app(
-        _test_composed_objective_requires_history_and_current_states, headless=HEADLESS
-    )
-
-
-def test_composed_final_reads_reuse_predicate_results():
-    assert run_function_with_persistent_simulation_app(
-        _test_composed_final_reads_reuse_predicate_results, headless=HEADLESS
+        _test_shared_predicate_results_are_reused_across_objectives, headless=HEADLESS
     )
 
 
@@ -942,16 +830,6 @@ def test_named_predicate_sequences():
 
 def test_objective_rejects_invalid_inputs():
     assert run_function_with_persistent_simulation_app(_test_objective_rejects_invalid_inputs, headless=HEADLESS)
-
-
-def test_objective_requires_exactly_one_definition():
-    assert run_function_with_persistent_simulation_app(
-        _test_objective_requires_exactly_one_definition, headless=HEADLESS
-    )
-
-
-def test_objective_rejects_invalid_composition():
-    assert run_function_with_persistent_simulation_app(_test_objective_rejects_invalid_composition, headless=HEADLESS)
 
 
 def test_list_and_named_sequence_track_identically():
@@ -998,9 +876,10 @@ def test_recorder_publishes_to_extras_and_records_nothing():
     )
 
 
-def test_task_termination_cfg_preserves_objective_hierarchy():
+def test_task_termination_cfg_assigns_flat_objectives_to_subtasks():
     assert run_function_with_persistent_simulation_app(
-        _test_task_termination_cfg_preserves_objective_hierarchy, headless=HEADLESS
+        _test_task_termination_cfg_assigns_flat_objectives_to_subtasks,
+        headless=HEADLESS,
     )
 
 
@@ -1011,8 +890,6 @@ if __name__ == "__main__":
     test_sequence_weighted_predicates()
     test_named_predicate_sequences()
     test_objective_rejects_invalid_inputs()
-    test_objective_requires_exactly_one_definition()
-    test_objective_rejects_invalid_composition()
     test_list_and_named_sequence_track_identically()
     test_named_predicate_sequences_advance_independently()
     test_state_machine_advances_sequentially()
@@ -1022,4 +899,6 @@ if __name__ == "__main__":
     test_state_machine_logical_choose()
     test_state_machine_reset_clears_state()
     test_recorder_publishes_to_extras_and_records_nothing()
-    test_task_termination_cfg_preserves_objective_hierarchy()
+    test_task_termination_cfg_assigns_flat_objectives_to_subtasks()
+    test_flat_subtask_objectives_report_weighted_progress()
+    test_shared_predicate_results_are_reused_across_objectives()

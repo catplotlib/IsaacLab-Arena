@@ -13,13 +13,22 @@ def _test_sequential_progress_requires_order(simulation_app):
     task = SequentialTaskBase([_ControlledTask(_ControlledPredicate(index)) for index in range(3)])
     env, tracker = _make_tracker(task, [[False, True, True], [True, True, True]])
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[False, False, False], [True, False, False]]
+    assert tracker.get_subtask_completion().tolist() == [
+        [False, False, False],
+        [True, False, False],
+    ]
     env.conditions[0, 0] = True
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, False, False], [True, True, False]]
+    assert tracker.get_subtask_completion().tolist() == [
+        [True, False, False],
+        [True, True, False],
+    ]
     env.conditions[:, 0] = False
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, True, False], [True, True, True]]
+    assert tracker.get_subtask_completion().tolist() == [
+        [True, True, False],
+        [True, True, True],
+    ]
     assert tracker.is_complete().tolist() == [False, True]
     tracker.step(env)
     assert tracker.is_complete().tolist() == [True, True]
@@ -38,7 +47,7 @@ def _test_sequential_final_states_use_current_conditions(simulation_app):
     env, tracker = _make_tracker(task, [[True, True]])
     tracker.step(env)
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, True]]
+    assert tracker.get_subtask_completion().tolist() == [[True, True]]
     assert tracker.is_complete().tolist() == [False]
     env.conditions[0, 0] = False
     tracker.step(env)
@@ -60,15 +69,62 @@ def _test_sequential_reset_preserves_other_environments(simulation_app):
     previous_completion = tracker.is_complete()
     tracker.reset(torch.tensor([0]))
     assert previous_completion.tolist() == [True, True]
-    assert tracker.get_child_completion("task").tolist() == [[False, False], [True, True]]
+    assert tracker.get_subtask_completion().tolist() == [[False, False], [True, True]]
     assert [len(events) for events in tracker.get_events()] == [0, 2]
     tracker.step(env)
-    assert tracker.get_child_completion("task").tolist() == [[True, False], [True, True]]
+    assert tracker.get_subtask_completion().tolist() == [[True, False], [True, True]]
     tracker.reset(slice(None))
-    assert tracker.get_child_completion("task").tolist() == [[False, False], [False, False]]
+    assert tracker.get_subtask_completion().tolist() == [[False, False], [False, False]]
     tracker.step(env)
     tracker.reset()
-    assert tracker.get_child_completion("task").tolist() == [[False, False], [False, False]]
+    assert tracker.get_subtask_completion().tolist() == [[False, False], [False, False]]
+    return True
+
+
+def _test_sequential_waits_for_every_objective_in_active_subtask(simulation_app):
+    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tests.test_composite_task_base import (
+        _ControlledPredicate,
+        _ControlledTask,
+        _make_tracker,
+        _MultipleObjectiveTask,
+    )
+
+    predicates = [_ControlledPredicate(index) for index in range(3)]
+    task = SequentialTaskBase([_MultipleObjectiveTask(predicates[:2]), _ControlledTask(predicates[2])])
+    env, tracker = _make_tracker(task, [[True, False, True]])
+    tracker.step(env)
+    assert tracker.get_subtask_completion().tolist() == [[False, False]]
+    assert predicates[2].calls == 0, "Inactive subtasks must not evaluate their predicates."
+    env.conditions[0, 0] = False
+    env.conditions[0, 1] = True
+    tracker.step(env)
+    assert tracker.get_subtask_completion().tolist() == [[True, False]]
+    assert predicates[2].calls == 0, "The next subtask starts on the following step."
+    tracker.step(env)
+    assert tracker.get_subtask_completion().tolist() == [[True, True]]
+    assert tracker.is_complete().tolist() == [True]
+    assert predicates[2].calls == 1
+    return True
+
+
+def _test_none_final_state_does_not_bypass_sequential_order(simulation_app):
+    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tests.test_composite_task_base import _ControlledPredicate, _ControlledTask, _make_tracker
+
+    task = SequentialTaskBase(
+        [_ControlledTask(_ControlledPredicate(index)) for index in range(2)],
+        desired_subtask_success_state=[None, True],
+    )
+    env, tracker = _make_tracker(task, [[False, True]])
+    tracker.step(env)
+    assert tracker.get_subtask_completion().tolist() == [[False, False]]
+    assert tracker.is_complete().tolist() == [False]
+    env.conditions[0, 0] = True
+    tracker.step(env)
+    assert tracker.get_subtask_completion().tolist() == [[True, False]]
+    tracker.step(env)
+    assert tracker.is_complete().tolist() == [True]
     return True
 
 
@@ -82,3 +138,11 @@ def test_sequential_final_states_use_current_conditions():
 
 def test_sequential_reset_preserves_other_environments():
     assert run_function_with_persistent_simulation_app(_test_sequential_reset_preserves_other_environments)
+
+
+def test_sequential_waits_for_every_objective_in_active_subtask():
+    assert run_function_with_persistent_simulation_app(_test_sequential_waits_for_every_objective_in_active_subtask)
+
+
+def test_none_final_state_does_not_bypass_sequential_order():
+    assert run_function_with_persistent_simulation_app(_test_none_final_state_does_not_bypass_sequential_order)

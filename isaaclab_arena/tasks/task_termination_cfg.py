@@ -19,10 +19,16 @@ class TaskTerminationCfg:
     """Overall episode time budget in seconds."""
 
     success: list[ProgressObjective] = field(default_factory=list)
-    """Objectives that must all complete for success; an empty list disables success termination."""
+    """Objectives required for success by default; an empty list disables success termination."""
 
     failures: dict[str, TerminationTermCfg] = field(default_factory=dict)
     """Named failure conditions; any true condition ends the episode."""
+
+    subtasks_are_sequential: bool = False
+    """Whether ProgressTracker waits for each subtask's objectives before advancing the next subtask."""
+
+    desired_subtask_success_state: list[bool | None] | None = None
+    """Optional final subtask conditions; None entries exclude that subtask from the success check."""
 
     def __post_init__(self):
         assert math.isfinite(self.timeout_s) and self.timeout_s > 0, "timeout_s must be finite and positive."

@@ -9,10 +9,11 @@ Arena can combine multiple tasks (subtasks) into one longer-horizon task in two 
   requires subtasks to succeed in the listed order.
 
 Both classes collect their subtasks' scene configuration, reset events, failure terminations,
-metrics, and Mimic configuration. Their ``get_termination_cfg()`` combines each child's
-``TaskTerminationCfg.success`` objectives under one root objective, namespaces the child failures,
-and supplies the overall ``timeout_s`` budget. The environment builder uses this definition to
-create the complete task's termination terms; individual subtasks do not register separate success terms.
+metrics, and Mimic configuration. Their ``get_termination_cfg()`` collects the subtasks'
+``TaskTerminationCfg.success`` objectives into a flat list, adds subtask indices and ordering,
+namespaces failure conditions, and supplies the overall ``timeout_s`` budget. The environment builder
+uses this definition to create the complete task's termination terms; individual subtasks do not register
+separate success terms.
 
 .. note::
 
@@ -44,7 +45,8 @@ Choosing the composition type
 Composing tasks
 ---------------
 
-Pass ordinary ``TaskBase`` instances to the composition class. For example, use ``CompositeTaskBase`` to
+Pass ordinary ``TaskBase`` instances to the composition class. Nested composite or sequential tasks
+are not supported. For example, use ``CompositeTaskBase`` to
 create an order-independent packing task for two objects:
 
 .. code-block:: python
@@ -98,8 +100,11 @@ Each entry corresponds to one subtask with ordering corresponding to the order o
 
 * ``True`` requires the subtask to have completed and its final condition to hold now.
 * ``False`` requires the subtask to have completed and its final condition to be false now.
-* ``None`` adds no final-state requirement. The subtask must still complete its progress.
+* ``None`` excludes the subtask from the success check: neither its completion history nor its
+  current final condition is required. In a sequential task, it still gates the start of later subtasks.
 
-For an atomic task with an ordered predicate chain, the final condition is the last predicate.
+For a task with one ordered predicate sequence, the final condition is the last predicate.
 Earlier milestones stay recorded: a placed object does not need to remain above its initial lift
 height, for example. Conditions that must hold together belong in the same final predicate.
+For named sequences, the objective's ``ALL``, ``ANY``, or ``CHOOSE`` setting combines their final predicates.
+If a subtask defines multiple objectives, all their final conditions must hold for its current result to be true.

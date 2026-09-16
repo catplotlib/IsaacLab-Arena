@@ -16,7 +16,13 @@ def _controlled_predicate(env, predicate_name):
     return env.predicate_results[predicate_name]
 
 
-def _make_environment_and_manager(predicate_names):
+def _make_environment_and_manager(
+    predicate_names,
+    *,
+    success_objectives=None,
+    subtasks_are_sequential=False,
+    desired_subtask_success_state=None,
+):
     import torch
 
     from isaaclab.managers import TerminationManager, TerminationTermCfg
@@ -38,22 +44,115 @@ def _make_environment_and_manager(predicate_names):
         predicate_calls={name: 0 for name in predicate_names},
         object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(num_envs=2, device="cpu"),
     )
-    objectives = [
-        ProgressObjective(
-            name="pick_and_place",
-            predicate_sequences=[partial(_controlled_predicate, predicate_name=name) for name in predicate_names],
-        )
-    ]
+    if success_objectives is None:
+        success_objectives = [
+            ProgressObjective(
+                name="pick_and_place",
+                predicate_sequences=[partial(_controlled_predicate, predicate_name=name) for name in predicate_names],
+            )
+        ]
     # Isaac Lab constructs recorders before the termination manager that owns progress.
     recorder_cfg = ProgressTrackingRecorderCfg()
     recorder = recorder_cfg.class_type(recorder_cfg, env)
     assert env._progress_tracker is None
     manager = TerminationManager(
-        {"success": TerminationTermCfg(func=TaskSuccessTerm, params={"success_objectives": objectives})},
+        {
+            "success": TerminationTermCfg(
+                func=TaskSuccessTerm,
+                params={
+                    "success_objectives": success_objectives,
+                    "subtasks_are_sequential": subtasks_are_sequential,
+                    "desired_subtask_success_state": desired_subtask_success_state,
+                },
+            )
+        },
         env,
     )
     env.termination_manager = manager
     return env, manager, recorder
+
+
+def _test_flat_subtasks_share_manager_ordering_final_checks_and_reset(simulation_app):
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+
+    predicate_names = ["lifted", "placed", "closed"]
+    success_objectives = [
+        ProgressObjective(
+            name=predicate_name,
+            predicate_sequences=[partial(_controlled_predicate, predicate_name=predicate_name)],
+            parent_subtask_idx=subtask_index,
+        )
+        for predicate_name, subtask_index in zip(predicate_names, [0, 0, 1])
+    ]
+    env, manager, recorder = _make_environment_and_manager(
+        predicate_names,
+        success_objectives=success_objectives,
+        subtasks_are_sequential=True,
+        desired_subtask_success_state=[True, True],
+    )
+    env.predicate_results["placed"][0] = False
+    manager.compute()
+    assert env._progress_tracker.get_subtask_completion().tolist() == [[False, False], [True, False]]
+    assert env.predicate_calls["closed"] == 0
+
+    env.predicate_results["placed"][0] = True
+    manager.compute()
+    assert env._progress_tracker.get_subtask_completion().tolist() == [[True, False], [True, True]]
+    assert manager.get_term("success").tolist() == [False, True]
+    assert env.predicate_calls["closed"] == 1, "Progress and final checks must reuse the same result."
+
+    env.predicate_results["placed"][0] = False
+    manager.compute()
+    assert env._progress_tracker.get_subtask_completion().tolist() == [[True, True], [True, True]]
+    assert manager.get_term("success").tolist() == [False, True]
+    env.predicate_results["placed"][0] = True
+    manager.compute()
+    assert manager.get_term("success").tolist() == [True, True]
+
+    previous_calls = dict(env.predicate_calls)
+    recorder.record_post_step()
+    assert env.predicate_calls == previous_calls
+    assert set(env.extras["progress_tracking"]["states"][0].progress_objectives) == set(predicate_names)
+
+    manager.reset(env_ids=[0])
+    assert env._progress_tracker.get_subtask_completion().tolist() == [[False, False], [True, True]]
+    assert env._progress_tracker.is_complete().tolist() == [False, True]
+    manager.compute()
+    assert manager.get_term("success").tolist() == [False, True]
+    manager.compute()
+    assert manager.get_term("success").tolist() == [True, True]
+    return True
+
+
+def _test_flat_subtask_none_state_skips_history_and_current_condition(simulation_app):
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+
+    predicate_names = ["required", "ignored"]
+    success_objectives = [
+        ProgressObjective(
+            name=predicate_name,
+            predicate_sequences=[partial(_controlled_predicate, predicate_name=predicate_name)],
+            parent_subtask_idx=subtask_index,
+        )
+        for subtask_index, predicate_name in enumerate(predicate_names)
+    ]
+    env, manager, _ = _make_environment_and_manager(
+        predicate_names,
+        success_objectives=success_objectives,
+        desired_subtask_success_state=[False, None],
+    )
+    env.predicate_results["required"][:] = False
+    env.predicate_results["ignored"][:] = False
+    manager.compute()
+    assert not manager.get_term("success").any(), "False still requires a recorded completion first."
+    env.predicate_results["required"][:] = True
+    manager.compute()
+    assert not manager.get_term("success").any()
+    env.predicate_results["required"][:] = False
+    manager.compute()
+    assert manager.get_term("success").all()
+    assert env._progress_tracker.get_subtask_completion().tolist() == [[True, False], [True, False]]
+    return True
 
 
 def _test_success_advances_once_and_reporting_is_passive(simulation_app):
@@ -257,6 +356,8 @@ def _test_builder_installs_success_only_for_success_objectives(simulation_app):
             assert success_term.func is TaskSuccessTerm
             assert len(success_term.params["success_objectives"]) == 1
             assert success_term.params["success_objectives"][0].name == "done"
+            assert success_term.params["subtasks_are_sequential"] is False
+            assert success_term.params["desired_subtask_success_state"] is None
             assert env_cfg.terminations["object_dropped"].func is _controlled_predicate
             assert env_cfg.terminations["object_dropped"].params == {"predicate_name": "object_dropped"}
             assert set(progress_task_termination_cfg.failures) == {"object_dropped"}
@@ -411,6 +512,18 @@ def _test_open_door_uses_existing_sequence_and_thresholds(simulation_app):
         assert opened.func is door.is_open
         assert opened.keywords == ({} if openness_threshold is None else {"threshold": openness_threshold})
     return True
+
+
+def test_flat_subtasks_share_manager_ordering_final_checks_and_reset():
+    assert run_function_with_persistent_simulation_app(
+        _test_flat_subtasks_share_manager_ordering_final_checks_and_reset
+    )
+
+
+def test_flat_subtask_none_state_skips_history_and_current_condition():
+    assert run_function_with_persistent_simulation_app(
+        _test_flat_subtask_none_state_skips_history_and_current_condition
+    )
 
 
 def test_success_advances_once_and_reporting_is_passive():

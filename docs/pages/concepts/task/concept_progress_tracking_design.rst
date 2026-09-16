@@ -67,9 +67,8 @@ Defining a progress objective
 -----------------------------
 
 Put the required milestones in ``TaskTerminationCfg.success``. A ``ProgressObjective`` accepts
-either ``predicate_sequences`` or ``children``. For ``predicate_sequences``, a list defines one
-ordered sequence and a dictionary defines named independent sequences. Use ``children`` to
-compose objectives instead; do not supply both arguments.
+``predicate_sequences``: a list defines one ordered sequence and a dictionary defines named
+independent sequences. ``ProgressObjective`` does not contain other objectives.
 
 A sequence is an explicit list, even when it contains only one predicate. The tracker evaluates
 its active predicate, ignores later predicates until their turn, and advances by at most one
@@ -202,20 +201,23 @@ require any predicate to remain true for multiple steps. No ``ForSteps`` API is 
 Subtask progress tracking in composite and sequential tasks
 -----------------------------------------------------------
 
-``CompositeTaskBase`` combines child objectives under one root objective named ``task``.
-It namespaces child objectives as ``subtask_<index>/<objective_name>``. Standalone tasks retain
-their original objective names, such as ``pick_and_place``. Nested tasks preserve their composition
-and ordering inside the same progress tracker.
+``CompositeTaskBase`` collects subtask objectives in a flat ``TaskTerminationCfg.success`` list.
+It prefixes their names with ``subtask_<index>/`` and sets ``parent_subtask_idx`` to identify
+which subtask each objective belongs to. Standalone tasks retain their original objective names,
+such as ``pick_and_place``. Nested composite or sequential tasks are not supported.
 
-For an order-independent composite task, every child's progress objectives are active. For a
-``SequentialTaskBase``, Arena activates each child only after the preceding child completes in that
-environment. The next child starts on the following environment step. A later child's predicates
-cannot advance before that child becomes active, even if their physical conditions already happen
+For an order-independent composite task, every subtask's progress objectives are active.
+``SequentialTaskBase`` sets ``TaskTerminationCfg.subtasks_are_sequential`` so ``ProgressTracker``
+activates each subtask only after all objectives of the preceding subtask complete in that
+environment. The next subtask starts on the following environment step. A later subtask's predicates
+cannot advance before that subtask becomes active, even if their physical conditions already happen
 to be true.
 
-The composed objective determines both task success and reported progress. Completed child
-milestones remain recorded. ``desired_subtask_success_state`` can additionally require selected
-children's final conditions to hold, or not hold, when the composed task finishes. See
+``ProgressTracker`` determines task success and reports the same objective completion history.
+Completed milestones remain recorded. ``TaskTerminationCfg.desired_subtask_success_state``
+preserves the composition's optional final-condition checks. Reports contain the flat objectives
+and their weighted overall progress; subtask metrics read ``ProgressTracker.get_subtask_completion()``.
+There are no additional parent-objective reports. See
 :doc:`concept_composite_tasks_design` for composition and success semantics.
 
 .. figure:: ../../../images/composite_vs_sequential_progress_tracking.png
