@@ -7,10 +7,13 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 
 
 def _test_sequential_progress_requires_order(simulation_app):
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tests.test_composite_task_base import _ControlledPredicate, _ControlledTask, _make_tracker
 
-    task = SequentialTaskBase([_ControlledTask(_ControlledPredicate(index)) for index in range(3)])
+    task = CompositeTaskBase(
+        [_ControlledTask(_ControlledPredicate(index)) for index in range(3)],
+        subtasks_are_sequential=True,
+    )
     env, tracker = _make_tracker(task, [[False, True, True], [True, True, True]])
     tracker.step(env)
     assert tracker.get_subtask_completion().tolist() == [
@@ -37,12 +40,13 @@ def _test_sequential_progress_requires_order(simulation_app):
 
 
 def _test_sequential_final_states_use_current_conditions(simulation_app):
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tests.test_composite_task_base import _ControlledPredicate, _ControlledTask, _make_tracker
 
-    task = SequentialTaskBase(
+    task = CompositeTaskBase(
         [_ControlledTask(_ControlledPredicate(index)) for index in range(2)],
         desired_subtask_success_state=[False, True],
+        subtasks_are_sequential=True,
     )
     env, tracker = _make_tracker(task, [[True, True]])
     tracker.step(env)
@@ -59,10 +63,13 @@ def _test_sequential_final_states_use_current_conditions(simulation_app):
 def _test_sequential_reset_preserves_other_environments(simulation_app):
     import torch
 
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tests.test_composite_task_base import _ControlledPredicate, _ControlledTask, _make_tracker
 
-    task = SequentialTaskBase([_ControlledTask(_ControlledPredicate(index)) for index in range(2)])
+    task = CompositeTaskBase(
+        [_ControlledTask(_ControlledPredicate(index)) for index in range(2)],
+        subtasks_are_sequential=True,
+    )
     env, tracker = _make_tracker(task, [[True, True], [True, True]])
     tracker.step(env)
     tracker.step(env)
@@ -82,7 +89,7 @@ def _test_sequential_reset_preserves_other_environments(simulation_app):
 
 
 def _test_sequential_waits_for_every_objective_in_active_subtask(simulation_app):
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tests.test_composite_task_base import (
         _ControlledPredicate,
         _ControlledTask,
@@ -91,7 +98,10 @@ def _test_sequential_waits_for_every_objective_in_active_subtask(simulation_app)
     )
 
     predicates = [_ControlledPredicate(index) for index in range(3)]
-    task = SequentialTaskBase([_MultipleObjectiveTask(predicates[:2]), _ControlledTask(predicates[2])])
+    task = CompositeTaskBase(
+        [_MultipleObjectiveTask(predicates[:2]), _ControlledTask(predicates[2])],
+        subtasks_are_sequential=True,
+    )
     env, tracker = _make_tracker(task, [[True, False, True]])
     tracker.step(env)
     assert tracker.get_subtask_completion().tolist() == [[False, False]]
@@ -109,12 +119,13 @@ def _test_sequential_waits_for_every_objective_in_active_subtask(simulation_app)
 
 
 def _test_none_final_state_does_not_bypass_sequential_order(simulation_app):
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tests.test_composite_task_base import _ControlledPredicate, _ControlledTask, _make_tracker
 
-    task = SequentialTaskBase(
+    task = CompositeTaskBase(
         [_ControlledTask(_ControlledPredicate(index)) for index in range(2)],
         desired_subtask_success_state=[None, True],
+        subtasks_are_sequential=True,
     )
     env, tracker = _make_tracker(task, [[False, True]])
     tracker.step(env)

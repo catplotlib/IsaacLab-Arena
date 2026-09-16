@@ -92,9 +92,7 @@ class SubtaskSuccessRateMetric(MetricBase):
 
 
 class CompositeTaskBase(TaskBase):
-    """
-    Combine a flat list of tasks whose completion order does not matter.
-
+    """Combine a flat list of tasks, optionally requiring completion in order.
 
     Args:
         subtasks: List of TaskBase instances representing the subtasks that compose this composite task.
@@ -104,10 +102,9 @@ class CompositeTaskBase(TaskBase):
         desired_subtask_success_state: (Optional) Precise success state for each subtask during the final time step.
             True or False requires recorded completion and a matching current final condition.
             None entries exclude that subtask from the success check.
+        subtasks_are_sequential: Whether each subtask waits for the preceding subtask to complete.
+            Defaults to False, allowing subtasks to complete in any order.
     """
-
-    subtasks_are_sequential: bool = False
-    """Whether each subtask waits for the preceding subtask to complete."""
 
     def __init__(
         self,
@@ -115,6 +112,7 @@ class CompositeTaskBase(TaskBase):
         episode_length_s: float | None = None,
         task_description: str | None = None,
         desired_subtask_success_state: list[bool | None] | None = None,
+        subtasks_are_sequential: bool = False,
     ):
         assert len(subtasks) > 0, "Composite task requires at least one subtask"
         assert not any(
@@ -125,6 +123,7 @@ class CompositeTaskBase(TaskBase):
             episode_length_s = self._sum_subtask_episode_lengths_s(subtasks)
         super().__init__(episode_length_s, task_description)
         self.subtasks = subtasks
+        self.subtasks_are_sequential = subtasks_are_sequential
 
         if desired_subtask_success_state is not None:
             assert len(desired_subtask_success_state) == len(

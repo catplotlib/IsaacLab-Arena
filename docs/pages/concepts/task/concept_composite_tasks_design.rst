@@ -1,53 +1,26 @@
 Composite and Sequential Tasks
 ==============================
 
-An Arena task describes what the robot should do in an environment, such as opening a door or placing an object in a bin.
-Arena can combine multiple tasks (subtasks) into one longer-horizon task in two ways:
+``CompositeTaskBase`` combines tasks, such as placing an object and closing a door:
 
-* ``CompositeTaskBase`` creates an **order-independent** task. Its subtasks may succeed in any order.
-* ``SequentialTaskBase`` creates an **ordered** task. It is a ``CompositeTaskBase`` subclass that
-  requires subtasks to succeed in the listed order.
+* By default, subtasks may finish in any order.
+* ``subtasks_are_sequential=True`` requires them to finish in the listed order.
 
-Both classes collect their subtasks' scene configuration, reset events, failure terminations,
-metrics, and Mimic configuration. Their ``get_termination_cfg()`` collects the subtasks'
-``TaskTerminationCfg.success`` objectives into a flat list, adds subtask indices and ordering,
-namespaces failure conditions, and supplies the overall ``timeout_s`` budget. The environment builder
-uses this definition to create the complete task's termination terms; individual subtasks do not register
-separate success terms.
-
-.. note::
-
-    "Order-independent" does not mean every subtask must be satisfied simultaneously. The environment tracks and remembers
-    which subtasks have succeeded during the episode. This makes ``CompositeTaskBase`` appropriate for
-    goals such as placing several objects into a bin, where the policy may choose the object order.
+The class combines the subtasks' scene settings, reset events, and metrics.
+Its ``get_termination_cfg()`` returns one ``TaskTerminationCfg`` with the subtasks' success
+objectives, failure conditions, and a time limit for the whole task.
 
 
-Choosing the composition type
------------------------------
-
-.. list-table::
-   :widths: 25 30 45
-   :header-rows: 1
-
-   * - Class
-     - Ordering
-     - Completion Criteria
-   * - ``CompositeTaskBase``
-     - No required order
-     - Every subtask must complete its required progress. Its final physical condition may
-       subsequently become false.
-   * - ``SequentialTaskBase``
-     - List order
-     - Each subtask becomes active after the preceding subtask completes. A completed
-       subtask's final physical condition may subsequently become false.
+By default, a finished subtask stays marked complete. For example, placing the can still counts
+if it moves while the robot places the bottle. Use ``desired_subtask_success_state`` below to
+require the can to be in place when the whole task finishes.
 
 
 Composing tasks
 ---------------
 
-Pass ordinary ``TaskBase`` instances to the composition class. Nested composite or sequential tasks
-are not supported. For example, use ``CompositeTaskBase`` to
-create an order-independent packing task for two objects:
+Pass a flat list of ``TaskBase`` instances. Composite tasks cannot contain other composite tasks.
+For example, let the robot place two objects in either order:
 
 .. code-block:: python
 
@@ -62,20 +35,21 @@ create an order-independent packing task for two objects:
        task_description="Place the can and bottle into the bin.",
    )
 
-Use ``SequentialTaskBase`` when the order is part of the task. Here, placing the object must happen
+Set ``subtasks_are_sequential=True`` when the order is part of the task. Here, placing the object must happen
 before closing the refrigerator:
 
 .. code-block:: python
 
    from isaaclab_arena.tasks.close_door_task import CloseDoorTask
+   from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-   from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
 
    pick_and_place_task = PickAndPlaceTask(pick_object, refrigerator_shelf, kitchen)
    close_door_task = CloseDoorTask(refrigerator, closedness_threshold=0.10)
 
-   put_away_task = SequentialTaskBase(
+   put_away_task = CompositeTaskBase(
        subtasks=[pick_and_place_task, close_door_task],
+       subtasks_are_sequential=True,
        task_description="Place the object in the refrigerator, then close the door.",
    )
 
@@ -86,22 +60,22 @@ workflow that places an object in a refrigerator and then closes the door.
 Specifying a final subtask state
 --------------------------------
 
-By default, both composite and sequential tasks require every subtask to complete its progress.
-Use ``desired_subtask_success_state`` to add requirements on the final simulator state:
+Use ``desired_subtask_success_state`` to check subtask conditions when the whole task finishes:
 
 .. code-block:: python
 
-   task = SequentialTaskBase(
+   task = CompositeTaskBase(
        subtasks=[pick_and_place_task, close_door_task],
+       subtasks_are_sequential=True,
        desired_subtask_success_state=[True, True],
    )
 
-Each entry corresponds to one subtask with ordering corresponding to the order of the subtask list in the definition:
+The entries follow the order of ``subtasks``:
 
 * ``True`` requires the subtask to have completed and its final condition to hold now.
 * ``False`` requires the subtask to have completed and its final condition to be false now.
-* ``None`` excludes the subtask from the success check: neither its completion history nor its
-  current final condition is required. In a sequential task, it still gates the start of later subtasks.
+* ``None`` ignores the subtask in the success check. In a sequential task, it must still finish
+  before the next subtask starts.
 
 For a task with one ordered predicate sequence, the final condition is the last predicate.
 Earlier milestones stay recorded: a placed object does not need to remain above its initial lift

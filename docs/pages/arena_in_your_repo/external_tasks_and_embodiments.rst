@@ -10,21 +10,14 @@ Defining a Custom Task
 ----------------------
 
 A custom task is defined by subclassing ``TaskBase`` and implementing the required methods.
-The example below defines a task that succeeds after a fixed number of steps.
-``get_termination_cfg()`` declares success, failure,
-and timeout together; the builder creates the corresponding Isaac Lab termination terms.
+The excerpt below shows a task that succeeds after a fixed number of steps.
+``get_termination_cfg()`` declares its success objectives, failure conditions, and time limit.
 This task can be passed to the ``ArenaEnvBuilder`` to create an environment
 (see :ref:`putting_it_all_together` below for an example).
 
 .. code-block:: python
 
    # my_package/isaaclab_arena_environments/my_environment_with_task.py
-
-   from isaaclab_arena.metrics.metric_base import MetricBase
-   from isaaclab_arena.metrics.success_rate import SuccessRateMetric
-   from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-   from isaaclab_arena.tasks.task_base import TaskBase
-   from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
    class SuccessAfterNStepsTask(TaskBase):
        """Minimal task: the episode succeeds after a fixed number of steps."""
@@ -41,7 +34,6 @@ This task can be passed to the ``ArenaEnvBuilder`` to create an environment
                success=[
                    ProgressObjective(name="wait", predicate_sequences=[self.has_reached_step_count]),
                ],
-               failures={},
                timeout_s=self.episode_length_s,
            )
 
@@ -51,15 +43,10 @@ This task can be passed to the ``ArenaEnvBuilder`` to create an environment
        def get_metrics(self) -> list[MetricBase]:
            return [SuccessRateMetric()]
 
-       def get_scene_cfg(self):
-           return None
-
-       def get_events_cfg(self):
-           return None
-
-       def get_mimic_env_cfg(self, arm_mode):
-           return None
-
+Imports and the required ``get_scene_cfg()``, ``get_events_cfg()``, and ``get_mimic_env_cfg()``
+methods are omitted here. See the
+`complete example <https://github.com/isaac-sim/IsaacLab-Arena/blob/main/isaaclab_arena_examples/external_environments/advanced.py>`_
+for their definitions.
 
 Defining a Custom Embodiment
 ----------------------------

@@ -10,9 +10,6 @@ declares its ``success`` objectives, named ``failures``, and ``timeout_s`` in on
 environment builder creates one success termination that advances the objectives and reports
 success when all required objectives are complete.
 
-``NoTask`` declares no success objectives, so environments used for inspection have no success
-termination. A task with one success condition uses a single objective with ``predicate_sequences=[predicate]``.
-
 
 Predicates
 ----------
@@ -66,19 +63,10 @@ The arguments after ``env`` are configured when the predicate is added to a prog
 Defining a progress objective
 -----------------------------
 
-Put the required milestones in ``TaskTerminationCfg.success``. A ``ProgressObjective`` accepts
-``predicate_sequences``: a list defines one ordered sequence and a dictionary defines named
-independent sequences. ``ProgressObjective`` does not contain other objectives.
+Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. The ``predicate_sequences``
+argument accepts a list of predicates or a dictionary of named lists.
 
-A sequence is an explicit list, even when it contains only one predicate. The tracker evaluates
-its active predicate, ignores later predicates until their turn, and advances by at most one
-position per environment step. To weight the predicates, use ``predicate_sequences=[(settled, 1.0), (placed, 3.0)]``;
-the tracker normalizes those weights within the sequence.
-
-For example, the built-in pick-and-place task tracks a single progress objective with
-a single three-predicate chain: settle, lift, then place.
-All three stages must complete in order for the task to succeed. Starting with the object already
-on its destination does not complete the lift stage.
+``PickAndPlaceTask`` requires the object to settle, be lifted, and be placed, in that order:
 
 .. code-block:: python
 
@@ -128,18 +116,10 @@ on its destination does not complete the lift stage.
            timeout_s=self.episode_length_s,
        )
 
-.. note::
+Use ``functools.partial`` to pass task-specific arguments to a predicate.
 
-    The progress tracker calls each predicate with only ``env``. When a predicate accepts additional
-    arguments, use ``functools.partial`` in the progress objective to bind their task-specific values.
-    Predicates must be callable directly. The tracker does not initialize manager-term classes or
-    resolve scene selections inside bound arguments; predicates that need resolved joint or body
-    indices must arrange that preparation explicitly.
-
-For named independent sequences, pass a dictionary to ``predicate_sequences``. Each value is an
-explicit predicate list, optionally paired with score weights. Predicates within each sequence
-must hold in order, while the named sequences advance independently. A single predicate must
-also be wrapped in a list:
+Use a dictionary to track several sequences independently. This example requires any two
+objects to be lifted and placed:
 
 .. code-block:: python
 
@@ -159,10 +139,6 @@ also be wrapped in a list:
 * ``all`` — every sequence must complete. This is the default.
 * ``any`` — one sequence must complete.
 * ``choose`` — at least ``K`` sequences must complete.
-
-These rules apply to both input forms; a single list counts as one sequence. The type aliases
-are ``PredicateSequence`` for one list and ``PredicateSequences`` for a dictionary of named lists.
-Progress reports retain their existing group identifiers and fields.
 
 Completed stages are remembered until the environment resets. Separate chains therefore describe
 milestones that may complete at different times. If several conditions must hold simultaneously,
@@ -207,7 +183,7 @@ which subtask each objective belongs to. Standalone tasks retain their original 
 such as ``pick_and_place``. Nested composite or sequential tasks are not supported.
 
 For an order-independent composite task, every subtask's progress objectives are active.
-``SequentialTaskBase`` sets ``TaskTerminationCfg.subtasks_are_sequential`` so ``ProgressTracker``
+With ``CompositeTaskBase(..., subtasks_are_sequential=True)``, ``ProgressTracker``
 activates each subtask only after all objectives of the preceding subtask complete in that
 environment. The next subtask starts on the following environment step. A later subtask's predicates
 cannot advance before that subtask becomes active, even if their physical conditions already happen
@@ -232,9 +208,8 @@ There are no additional parent-objective reports. See
 Reading subtask progress tracking at runtime
 --------------------------------------------
 
-When a task provides progress objectives, Arena will track and record the progress of the task according to the
-supplied progress objectives. The current per-environment state and the episode's accumulated predicate
-transitions are available through ``env.extras``:
+``ProgressTrackingRecorder`` puts progress results in the environment's ``extras`` dictionary.
+Read each environment's state and completed-predicate events as follows:
 
 .. code-block:: python
 
@@ -250,13 +225,8 @@ transitions are available through ``env.extras``:
    for event in progress["events"][env_id]:
        print(event.step, event.progress_objective, event.group, event.predicate_name)
 
-Each ``ProgressObjectiveState`` reports its score, completion state, completed and total group
-counts, and the currently active predicate in each group. Each ``PredicateEvent`` records when a
-predicate advanced, which objective and group it belongs to, and how much score it contributed.
-State and event history are isolated per parallel environment. Reset clears only the selected
-environments' tracker state. The published ``extras`` snapshot describes the last evaluated step;
-after automatic reset it can still show the episode that just finished until the next step is
-published.
+After an automatic reset, ``env.extras["progress_tracking"]`` still shows the finished episode
+until the next step.
 
 Arena's episode recorder also serializes the final progress state and predicate events into the
 episode's JSONL record when an output path is configured. Tasks without progress objectives have
@@ -302,8 +272,5 @@ For example, one entry of the JSONL record may look like:
      }
    }
 
-In this example, the object has settled and then been lifted, completing two of the three predicates
-and producing a progress score of ``0.67``. The objective is not complete however because the final predicate
-(``object_on_destination``) has not been satisfied. The events record when each completed predicate advanced
-the task and how much it contributed to the score. Here, there have been two events recorded so far, one for when
-the ``objects_settled`` predicate was satisfied and one for when the ``object_is_above_height`` predicate was satisfied.
+The object has settled and been lifted: two of three predicates are complete, giving a score of ``0.67``.
+Placement is still required. The two events record when settling and lifting completed.

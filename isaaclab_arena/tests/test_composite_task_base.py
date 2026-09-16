@@ -213,13 +213,16 @@ def _test_nested_composition_is_rejected(simulation_app):
     import pytest
 
     from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
 
     subtasks = [_ControlledTask(_ControlledPredicate(index)) for index in range(2)]
-    for outer_task_type in (CompositeTaskBase, SequentialTaskBase):
-        for inner_task_type in (CompositeTaskBase, SequentialTaskBase):
+    for outer_subtasks_are_sequential in (False, True):
+        for inner_subtasks_are_sequential in (False, True):
+            nested_task = CompositeTaskBase(subtasks, subtasks_are_sequential=inner_subtasks_are_sequential)
             with pytest.raises(AssertionError, match="[Nn]ested"):
-                outer_task_type([inner_task_type(subtasks), subtasks[0]])
+                CompositeTaskBase(
+                    [nested_task, subtasks[0]],
+                    subtasks_are_sequential=outer_subtasks_are_sequential,
+                )
     return True
 
 
@@ -325,20 +328,26 @@ def _test_composite_preserves_each_subtask_failure_condition(simulation_app):
 
 def _test_composed_task_has_one_overall_timeout(simulation_app):
     from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
-    from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
 
     children = [
         _ControlledTask(_ControlledPredicate(0), timeout_s=2.0),
         _ControlledTask(_ControlledPredicate(1), timeout_s=3.0),
     ]
-    for task_type in (CompositeTaskBase, SequentialTaskBase):
-        default_task = task_type(children)
+    default_order_task = CompositeTaskBase(children)
+    assert default_order_task.subtasks_are_sequential is False
+    assert default_order_task.get_termination_cfg().subtasks_are_sequential is False
+
+    for subtasks_are_sequential in (False, True):
+        default_task = CompositeTaskBase(children, subtasks_are_sequential=subtasks_are_sequential)
         default_termination = default_task.get_termination_cfg()
         assert default_termination.timeout_s == 5.0
         assert default_termination.failures == {}
-        assert default_termination.subtasks_are_sequential == (task_type is SequentialTaskBase)
+        assert default_task.subtasks_are_sequential is subtasks_are_sequential
+        assert default_termination.subtasks_are_sequential is subtasks_are_sequential
 
-        overridden_task = task_type(children, episode_length_s=8.0)
+        overridden_task = CompositeTaskBase(
+            children, episode_length_s=8.0, subtasks_are_sequential=subtasks_are_sequential
+        )
         assert overridden_task.get_termination_cfg().timeout_s == 8.0
 
     return True
