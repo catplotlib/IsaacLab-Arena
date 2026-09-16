@@ -3,6 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# TODO(alexmillane) [physics-parameters-overrides-missing-feature]: Remove this file once we can
+# control the physics parameters in the yaml files.
+
 """Registered Isaac Cap bimanual YAM cable-routing environments."""
 
 from __future__ import annotations

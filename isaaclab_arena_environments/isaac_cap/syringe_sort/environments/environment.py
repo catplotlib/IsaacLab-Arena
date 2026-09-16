@@ -3,13 +3,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# TODO(alexmillane) [physics-parameters-overrides-missing-feature]: Remove this file once we can
+# control the physics parameters in the yaml files.
+
 """Syringe sorting with the shared CAP FR3 embodiment and task-owned physics."""
 
 from dataclasses import dataclass
 from pathlib import Path
 
 from isaaclab.utils.configclass import configclass
-from isaaclab_newton.physics import MJWarpSolverCfg
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
 
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
 
@@ -22,8 +25,6 @@ class SyringeSolverCfg(MJWarpSolverCfg):
 
 def configure_syringe_physics(env_cfg):
     """Apply CAP's 50 Hz, ten-substep Newton tool-sort profile."""
-    from isaaclab_newton.physics import NewtonCfg, NewtonShapeCfg
-
     env_cfg.sim.dt = 0.02
     env_cfg.sim.render_interval = 1
     env_cfg.sim.gravity = (0.0, 0.0, -9.81)
@@ -57,14 +58,12 @@ class SyringeSortEnvironmentCfg(ArenaEnvironmentCfg):
 
     enable_cameras: bool = False
     episode_length_s: float | None = None
-    variant: str = "single"
 
 
-class SyringeSortEnvironment(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
+class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
     """Pick a syringe from its tray and release it into the sharps container."""
 
-    name = "syringe_single_newton"
-    _legacy_argparse_cfg_type = SyringeSortEnvironmentCfg
+    yaml_file: str
 
     def build(self, cfg: SyringeSortEnvironmentCfg):
         from isaaclab.envs.mdp.actions.actions_cfg import JointPositionActionCfg
@@ -73,8 +72,7 @@ class SyringeSortEnvironment(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg])
 
         from .cameras import configure_syringe_cameras
 
-        assert cfg.variant in ("single", "both", "cluttered")
-        spec = ArenaEnvGraphSpec.from_yaml(str(Path(__file__).with_name(f"syringe_{cfg.variant}.yaml")))
+        spec = ArenaEnvGraphSpec.from_yaml(str(Path(__file__).with_name(self.yaml_file)))
         arena_env = spec.to_arena_env(enable_cameras=cfg.enable_cameras)
 
         # TODO(alexmillane) [berkley-cap-align-embodiments]: Remove these per-task custom
@@ -90,12 +88,6 @@ class SyringeSortEnvironment(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg])
             scale=0.8,
             offset=0.0,
         )
-        if cfg.variant in ("both", "cluttered"):
-            arena_env.placer_params.random_yaw_init = False
-            arena_env.placer_params.allow_best_loss_fallbacks = False
-        if cfg.variant == "cluttered":
-            arena_env.placer_params.solver_params.clearance_m = 0.015
-            arena_env.placer_params.max_placement_attempts = 30
         if cfg.episode_length_s is not None:
             assert cfg.episode_length_s > 0
             arena_env.task.episode_length_s = cfg.episode_length_s
@@ -103,37 +95,47 @@ class SyringeSortEnvironment(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg])
         return arena_env
 
 
+class SyringeSingleEnvironment(SyringeBase):
+    """Dispose of one syringe from a fixed layout."""
+
+    name = "syringe_single_newton"
+    yaml_file = "syringe_single.yaml"
+    _legacy_argparse_cfg_type = SyringeSortEnvironmentCfg
+
+
 @dataclass
 class SyringeBothEnvironmentCfg(SyringeSortEnvironmentCfg):
-    """Select the randomized two-syringe benchmark."""
-
-    variant: str = "both"
+    """Configure the randomized two-syringe benchmark."""
 
 
-class SyringeBothEnvironment(ArenaEnvironmentFactory[SyringeBothEnvironmentCfg]):
-    """Dispose of both the red-cap and bare syringes."""
+class SyringeBothEnvironment(SyringeBase):
+    """Dispose of both the red-cap and white-cap syringes."""
 
     name = "syringe_both_newton"
+    yaml_file = "syringe_both.yaml"
     _legacy_argparse_cfg_type = SyringeBothEnvironmentCfg
 
     def build(self, cfg: SyringeBothEnvironmentCfg):
-        assert cfg.variant == "both"
-        return SyringeSortEnvironment().build(cfg)
+        arena_env = super().build(cfg)
+        arena_env.placer_params.random_yaw_init = False
+        arena_env.placer_params.allow_best_loss_fallbacks = False
+        return arena_env
 
 
 @dataclass
-class SyringeClutteredEnvironmentCfg(SyringeSortEnvironmentCfg):
-    """Select the randomized four-syringe benchmark."""
-
-    variant: str = "cluttered"
+class SyringeClutteredEnvironmentCfg(SyringeBothEnvironmentCfg):
+    """Configure the randomized four-syringe benchmark."""
 
 
-class SyringeClutteredEnvironment(ArenaEnvironmentFactory[SyringeClutteredEnvironmentCfg]):
+class SyringeClutteredEnvironment(SyringeBothEnvironment):
     """Dispose of all four syringes from the cluttered tray."""
 
     name = "syringe_cluttered_newton"
+    yaml_file = "syringe_cluttered.yaml"
     _legacy_argparse_cfg_type = SyringeClutteredEnvironmentCfg
 
     def build(self, cfg: SyringeClutteredEnvironmentCfg):
-        assert cfg.variant == "cluttered"
-        return SyringeSortEnvironment().build(cfg)
+        arena_env = super().build(cfg)
+        arena_env.placer_params.solver_params.clearance_m = 0.015
+        arena_env.placer_params.max_placement_attempts = 30
+        return arena_env

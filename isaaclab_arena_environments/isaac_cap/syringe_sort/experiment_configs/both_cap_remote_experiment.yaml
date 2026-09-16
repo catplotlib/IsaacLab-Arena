@@ -6,7 +6,6 @@
 shared:
   environment:
     type: syringe_both_newton
-    variant: both
     enable_cameras: true
     episode_length_s: null
   environment_builder:

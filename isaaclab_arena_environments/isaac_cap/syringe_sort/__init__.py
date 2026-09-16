@@ -4,11 +4,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """CAP syringe-sorting environment, without policy implementations."""
-
-from .. import register_components
-
-register_components()
-
-from .environments.environment import SyringeSortEnvironment, SyringeSortEnvironmentCfg  # noqa: E402
-
-__all__ = ["SyringeSortEnvironment", "SyringeSortEnvironmentCfg"]

@@ -6,7 +6,6 @@
 shared:
   environment:
     type: syringe_cluttered_newton
-    variant: cluttered
     enable_cameras: true
     episode_length_s: null
   environment_builder:

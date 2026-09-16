@@ -35,15 +35,7 @@ class Pose:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Sequence[float]] | None) -> Pose | None:
-        """Build a Pose from a graph/YAML pose mapping, passing None through unchanged.
-
-        Args:
-            data: A mapping with ``position_xyz`` and optional ``rotation_xyzw`` (defaulting
-                to the identity rotation), or None.
-
-        Returns:
-            The corresponding Pose, or None when data is None.
-        """
+        """Build a pose from a dict containing position and orientation fields. Other fields are ignored."""
         if data is None:
             return None
         return cls(

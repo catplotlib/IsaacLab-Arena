@@ -3,17 +3,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Released, settled syringe containment using Arena's managed predicates."""
+"""Settled syringe containment using Arena's managed predicates."""
 
 from __future__ import annotations
 
-import json
 import math
 import torch
 from dataclasses import MISSING
 
 import isaaclab.envs.mdp as mdp
-from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
+from isaaclab.managers import TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import quat_apply_inverse
 
@@ -35,35 +34,11 @@ def center_of_mass_in_region(env, object_name: str, region_name: str, bounds: tu
     return ((center_R >= limits[:3]) & (center_R <= limits[3:])).all(dim=-1)
 
 
-def gripper_is_open(env, robot_cfg: SceneEntityCfg, threshold: float) -> torch.Tensor:
-    """Require the Robotiq driver to be within the open-position tolerance."""
-    positions = env.scene[robot_cfg.name].data.joint_pos.torch[:, robot_cfg.joint_ids]
-    return (positions.abs() <= threshold).all(dim=-1)
-
-
-def cap_episode_finished(env, object_names: list[str], region_names: list[str]):
+# TODO(alexmillane): Replace this CAP-only hook with a framework episode-stop request.
+# See ../docs/policy_termination.md for the proposed API and Isaac Lab lifecycle findings.
+def cap_episode_finished(env) -> torch.Tensor:
     """End a disconnected CAP episode after settling; never count it as success."""
-    finished = getattr(env, "cap_episode_finished", False)
-    if finished:
-        # Evaluation diagnostics stay on the environment side of the bridge.
-        success = env.termination_manager.get_term_cfg("success").func
-        robot = env.scene["robot"]
-        driver = list(robot.joint_names).index("left_driver_joint")
-        state = {
-            "predicate_results": success.results.cpu().tolist(),
-            "consecutive_success_steps": success.consecutive_true_steps.cpu().tolist(),
-            "gripper_position": robot.data.joint_pos.torch[:, driver].cpu().tolist(),
-        }
-        for name in dict.fromkeys([*object_names, *region_names]):
-            data = env.scene[name].data
-            state[name] = {
-                "center_w": data.root_com_pos_w.torch.cpu().tolist(),
-                "root_pose_w": data.root_pose_w.torch.cpu().tolist(),
-                "linear_speed": torch.linalg.vector_norm(data.root_lin_vel_w.torch, dim=-1).cpu().tolist(),
-                "angular_speed": torch.linalg.vector_norm(data.root_ang_vel_w.torch, dim=-1).cpu().tolist(),
-            }
-        print("[SyringeSort] Final state: " + json.dumps(state), flush=True)
-    return torch.full((env.num_envs,), finished, device=env.device, dtype=torch.bool)
+    return torch.full((env.num_envs,), getattr(env, "cap_episode_finished", False), device=env.device, dtype=torch.bool)
 
 
 @configclass
@@ -75,10 +50,9 @@ class TerminationsCfg:
     cap_finished: TerminationTermCfg = MISSING
 
 
-# TODO(alexmillane) [berley-specific-tasks]: Generalize this task to work with any object and region,
-# and move it into core Arena code.
+# TODO(alexmillane): [object-in-missing-feature]: Move to a more general ObjectIn task once we have it.
 class SyringeSortTask(TaskBase):
-    """Require released syringes to remain settled inside their disposal regions."""
+    """Require syringes to remain settled inside their disposal regions."""
 
     def __init__(
         self,
@@ -87,7 +61,6 @@ class SyringeSortTask(TaskBase):
         bounds_xyzxyz: list[tuple[float, ...]],
         linear_velocity_threshold: float = 0.01,
         angular_velocity_threshold: float = 0.05,
-        gripper_open_position_threshold: float = 0.1,
         consecutive_success_steps: int = 50,
         episode_length_s: float = 228.0,
         task_description: str | None = None,
@@ -98,7 +71,6 @@ class SyringeSortTask(TaskBase):
         for value in (
             linear_velocity_threshold,
             angular_velocity_threshold,
-            gripper_open_position_threshold,
             episode_length_s,
         ):
             assert math.isfinite(value) and value > 0
@@ -109,16 +81,16 @@ class SyringeSortTask(TaskBase):
         self.objects = object_list
         self.regions = region_list
         self.consecutive_success_steps = consecutive_success_steps
-        predicates = [
-            TerminationTermCfg(
-                func=gripper_is_open,
-                params={
-                    "robot_cfg": SceneEntityCfg("robot", joint_names=["left_driver_joint"]),
-                    "threshold": gripper_open_position_threshold,
-                },
-            )
-        ]
-        for obj, region, bounds in zip(object_list, region_list, bounds_xyzxyz, strict=True):
+        self.bounds = bounds_xyzxyz
+        self.linear_velocity_threshold = linear_velocity_threshold
+        self.angular_velocity_threshold = angular_velocity_threshold
+
+    def get_scene_cfg(self):
+        return None
+
+    def get_termination_cfg(self):
+        predicates = []
+        for obj, region, bounds in zip(self.objects, self.regions, self.bounds, strict=True):
             predicates.extend([
                 TerminationTermCfg(
                     func=center_of_mass_in_region,
@@ -128,34 +100,22 @@ class SyringeSortTask(TaskBase):
                     func=velocity_below_threshold,
                     params={
                         "subject_name": obj.name,
-                        "linear_velocity_threshold": linear_velocity_threshold,
-                        "angular_velocity_threshold": angular_velocity_threshold,
+                        "linear_velocity_threshold": self.linear_velocity_threshold,
+                        "angular_velocity_threshold": self.angular_velocity_threshold,
                     },
                 ),
             ])
-        self.termination_cfg = TerminationsCfg(
-            cap_finished=TerminationTermCfg(
-                func=cap_episode_finished,
-                params={
-                    "object_names": [obj.name for obj in object_list],
-                    "region_names": [obj.name for obj in region_list],
-                },
-            ),
+        return TerminationsCfg(
+            cap_finished=TerminationTermCfg(func=cap_episode_finished),
             success=TerminationTermCfg(
                 func=CompositePredicate,
                 params={
                     "predicates": predicates,
                     "mode": SuccessMode.ALL,
-                    "consecutive_steps": consecutive_success_steps,
+                    "consecutive_steps": self.consecutive_success_steps,
                 },
             ),
         )
-
-    def get_scene_cfg(self):
-        return None
-
-    def get_termination_cfg(self):
-        return self.termination_cfg
 
     def get_events_cfg(self):
         return None

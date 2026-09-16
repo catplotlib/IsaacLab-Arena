@@ -1,6 +1,6 @@
 # Syringe disposal
 
-Dispose of every syringe in the sharps container, release the gripper, and let
+Dispose of every syringe in the sharps container and let
 all syringes settle for 50 consecutive simulation steps. Scene layouts and goals
 live in YAML; `environment.py` applies Newton physics and the task's camera and
 gripper settings to Arena's shared FR3/Robotiq embodiment. Policy code stays in Isaac-cap.

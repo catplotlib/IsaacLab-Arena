@@ -135,7 +135,7 @@ def _register_syringe_sort_components(asset_registry: AssetRegistry) -> None:
         SyringeBothEnvironmentCfg,
         SyringeClutteredEnvironment,
         SyringeClutteredEnvironmentCfg,
-        SyringeSortEnvironment,
+        SyringeSingleEnvironment,
         SyringeSortEnvironmentCfg,
     )
     from .syringe_sort.tasks.task import SyringeSortTask
@@ -145,7 +145,7 @@ def _register_syringe_sort_components(asset_registry: AssetRegistry) -> None:
     _register(TaskRegistry(), SyringeSortTask, SyringeSortTask.__name__)
     environment_registry = EnvironmentRegistry()
     for factory, cfg in (
-        (SyringeSortEnvironment, SyringeSortEnvironmentCfg),
+        (SyringeSingleEnvironment, SyringeSortEnvironmentCfg),
         (SyringeBothEnvironment, SyringeBothEnvironmentCfg),
         (SyringeClutteredEnvironment, SyringeClutteredEnvironmentCfg),
     ):

@@ -48,6 +48,7 @@ task:
   composition: atomic
   description: pick up the syringe from the instrument tray and drop it through the hole in the top of the yellow sharps disposal box
   subtasks:
+    # TODO(alexmillane): [object-in-missing-feature]: Move to a more general ObjectIn task once we have it.
     - kind: SyringeSortTask
       params:
         object_list: [syringe_0]

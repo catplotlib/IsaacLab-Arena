@@ -44,7 +44,6 @@ objects:
   registry_name: instrument_tray
   params:
     instance_name: instrument_tray
-    fixed: false
 - id: benchmark_light
   registry_name: empty_warehouse_dome_light
   params: {}
@@ -112,6 +111,7 @@ task:
   description: pick up both syringes from the instrument tray and drop each through
     the hole in the yellow sharps disposal box
   subtasks:
+  # TODO(alexmillane): [object-in-missing-feature]: Move to a more general ObjectIn task once we have it.
   - kind: SyringeSortTask
     params:
       object_list:

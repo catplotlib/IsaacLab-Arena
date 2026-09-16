@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.assets.asset import Asset
+from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.assets.object_reference import (
     ObjectReference,
     OpenableObjectReference,
@@ -185,7 +186,14 @@ def instantiate_assets_from_spec(
     for obj in graph_spec.objects:
         params = dict(obj.params)
         params.setdefault("instance_name", obj.id)
-        assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
+        factory = asset_registry.get_asset_by_name(obj.registry_name)
+        if (
+            isinstance(factory, type)
+            and issubclass(factory, LibraryObject)
+            and isinstance(params.get("initial_pose"), dict)
+        ):
+            params["initial_pose"] = Pose.from_dict(params["initial_pose"])
+        assets_by_node_id[obj.id] = factory(**params)
 
     for object_set in graph_spec.object_sets or []:
         assets_by_node_id[object_set.id] = RigidObjectSet(
