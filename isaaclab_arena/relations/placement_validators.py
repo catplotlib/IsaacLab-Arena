@@ -136,8 +136,8 @@ class OnRelationValidator(PlacementValidator):
     ) -> bool:
         """Validate each On relation; keep in sync with OnLossStrategy in relation_loss_strategies.py.
 
-        1. X: child's footprint is contained by or overlaps the parent's inset X extent.
-        2. Y: child's footprint is contained by or overlaps the parent's inset Y extent.
+        1. X: child's footprint is contained by the parent's inset X extent or overlaps its original extent.
+        2. Y: child's footprint is contained by the parent's inset Y extent or overlaps its original extent.
         3. Z: child_bottom in (parent_top, parent_top+clearance_m], within on_relation_z_tolerance_m.
 
         Args:
@@ -158,40 +158,26 @@ class OnRelationValidator(PlacementValidator):
                 parent_size = parent_world.max_point - parent_world.min_point
                 child_size = child_world.max_point - child_world.min_point
 
-                m = rel.edge_margin_m
-                freespace = parent_size - child_size
-                footprint_constraints = (rel.footprint_constraint_x, rel.footprint_constraint_y)
-                # 1) Checking that with the specified margin, the parent is wide enough to place the child on top.
-                contained_axes = [
-                    axis
-                    for axis, constraint in enumerate(footprint_constraints)
-                    if constraint is FootprintConstraint.CONTAINED
-                ]
-                if m > 0.0:
-                    # Every policy requires a non-inverted parent inset on both horizontal axes.
-                    if torch.any(parent_size[0, :2] < 2 * m):
+                m = rel.edge_margin_m if rel.footprint_constraint is FootprintConstraint.CONTAINED else 0.0
+                # 1) Check that the child fits inside the inset support for containment only.
+                if rel.footprint_constraint is FootprintConstraint.CONTAINED and m > 0.0:
+                    freespace = (parent_size - child_size)[0, :2]
+                    if torch.any(freespace < 2 * m):
+                        max_feasible_margin = max(0.0, float(torch.min(freespace).item()) / 2.0)
+                        if self._params.verbose and max_feasible_margin > 0.0:
+                            print(
+                                f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
+                                f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
+                                " edge_margin_m."
+                            )
                         return False
-                    if contained_axes:
-                        contained_freespace = freespace[0, contained_axes]
-                        # A margin too large for the surface inverts the inset band so containment can never pass.
-                        if torch.any(contained_freespace < 2 * m):
-                            # The maximum feasible margin is the minimum freespace on the contained axes.
-                            max_feasible_margin = max(0.0, float(torch.min(contained_freespace).item()) / 2.0)
-                            # When the parent is smaller than the child, the feasible margin is 0.0.
-                            if self._params.verbose and max_feasible_margin > 0.0:
-                                print(
-                                    f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
-                                    f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
-                                    " edge_margin_m."
-                                )
-                            return False
                 # 2) Checking that the child lies within or overlaps the parent's xy footprint.
                 # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
-                # OVERLAP: c_max >= p_min + m and c_min <= p_max - m.
-                child_x_min, child_x_max = rel.footprint_constraint_x.child_extents(
+                # OVERLAP: c_max >= p_min and c_min <= p_max.
+                child_x_min, child_x_max = rel.footprint_constraint.child_extents(
                     child_world.min_point[0, 0], child_world.max_point[0, 0]
                 )
-                child_y_min, child_y_max = rel.footprint_constraint_y.child_extents(
+                child_y_min, child_y_max = rel.footprint_constraint.child_extents(
                     child_world.min_point[0, 1], child_world.max_point[0, 1]
                 )
                 if (

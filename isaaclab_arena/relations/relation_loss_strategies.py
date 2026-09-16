@@ -341,15 +341,14 @@ class OnLossStrategy(RelationLossStrategy):
         parent_y_max = parent_world_bbox.max_point[:, 1]
         parent_z_max = parent_world_bbox.max_point[:, 2]  # Top surface
 
-        # Compute valid position ranges such that the child's footprint satisfies each axis policy,
-        # with the parent's extent inset by edge_margin_m so the footprint stays off the rim.
+        # Containment uses the parent's inset extent; overlap uses its original footprint.
         # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
-        # OVERLAP: c_max >= p_min + m and c_min <= p_max - m.
-        m = relation.edge_margin_m
-        child_x_min, child_x_max = relation.footprint_constraint_x.child_extents(
+        # OVERLAP: c_max >= p_min and c_min <= p_max.
+        m = relation.edge_margin_m if relation.footprint_constraint is FootprintConstraint.CONTAINED else 0.0
+        child_x_min, child_x_max = relation.footprint_constraint.child_extents(
             child_bbox.min_point[:, 0], child_bbox.max_point[:, 0]
         )
-        child_y_min, child_y_max = relation.footprint_constraint_y.child_extents(
+        child_y_min, child_y_max = relation.footprint_constraint.child_extents(
             child_bbox.min_point[:, 1], child_bbox.max_point[:, 1]
         )
         valid_x_min = parent_x_min + m - child_x_min  # Child's left/right at parent's left + margin.
@@ -357,8 +356,7 @@ class OnLossStrategy(RelationLossStrategy):
         valid_y_min = parent_y_min + m - child_y_min
         valid_y_max = parent_y_max - m - child_y_max
 
-        # For containment, infeasible bounds produce a non-zero constant loss. For overlap,
-        # the feasibility term below rejects an inverted parent inset.
+        # For containment, infeasible bounds produce a non-zero constant loss.
 
         # 1. X band loss: child is contained by or overlaps the parent's X extent.
         x_band_loss = linear_band_loss(
@@ -367,8 +365,6 @@ class OnLossStrategy(RelationLossStrategy):
             upper_bound=valid_x_max,
             slope=self.slope,
         )
-        if relation.footprint_constraint_x is FootprintConstraint.OVERLAP:
-            x_band_loss = x_band_loss + self.slope * torch.relu(2 * m - (parent_x_max - parent_x_min))
 
         # 2. Y band loss: child is contained by or overlaps the parent's Y extent.
         y_band_loss = linear_band_loss(
@@ -377,8 +373,6 @@ class OnLossStrategy(RelationLossStrategy):
             upper_bound=valid_y_max,
             slope=self.slope,
         )
-        if relation.footprint_constraint_y is FootprintConstraint.OVERLAP:
-            y_band_loss = y_band_loss + self.slope * torch.relu(2 * m - (parent_y_max - parent_y_min))
 
         # 3. Z point loss: child bottom = parent top + clearance
         target_z = parent_z_max + relation.clearance_m - child_bbox.min_point[:, 2]

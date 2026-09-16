@@ -208,8 +208,8 @@ class On(Relation):
     This relation specifies that a child object should be placed on top of
     the parent object, with X/Y bounded within the parent's extent (optionally
     inset by ``edge_margin_m`` so the child stays off the rim) and Z positioned
-    on the parent's top surface. Either horizontal axis can instead require
-    footprint overlap.
+    on the parent's top surface. The overlap policy instead requires intersection
+    with the parent's original footprint on both horizontal axes, ignoring the margin.
 
     Note: Loss computation is handled by OnLossStrategy in relation_loss_strategies.py.
     """
@@ -222,8 +222,7 @@ class On(Relation):
         relation_loss_weight: float = 1.0,
         clearance_m: float = 0.01,
         edge_margin_m: float = DEFAULT_ON_EDGE_MARGIN_M,
-        footprint_constraint_x: FootprintConstraint | str = FootprintConstraint.CONTAINED,
-        footprint_constraint_y: FootprintConstraint | str = FootprintConstraint.CONTAINED,
+        footprint_constraint: FootprintConstraint | str = FootprintConstraint.CONTAINED,
     ):
         """
         Args:
@@ -231,18 +230,15 @@ class On(Relation):
             relation_loss_weight: Weight for the relationship loss function.
             clearance_m: Safety clearance above parent's surface in meters (default: 1cm).
             edge_margin_m: Inward inset from each X/Y edge of the parent's surface in
-                meters (default: 5cm). The configured footprint constraint is applied
-                against this inset extent.
-            footprint_constraint_x: Horizontal footprint policy on the X-axis.
-            footprint_constraint_y: Horizontal footprint policy on the Y-axis.
+                meters (default: 5cm), applied only for containment. Ignored for overlap.
+            footprint_constraint: Horizontal footprint policy on both X and Y axes.
         """
         super().__init__(parent, relation_loss_weight)
         assert clearance_m >= 0.0, f"Clearance must be non-negative, got {clearance_m}"
         assert edge_margin_m >= 0.0, f"edge_margin_m must be non-negative, got {edge_margin_m}"
         self.clearance_m = clearance_m
         self.edge_margin_m = edge_margin_m
-        self.footprint_constraint_x = FootprintConstraint(footprint_constraint_x)
-        self.footprint_constraint_y = FootprintConstraint(footprint_constraint_y)
+        self.footprint_constraint = FootprintConstraint(footprint_constraint)
 
 
 @agent_ready

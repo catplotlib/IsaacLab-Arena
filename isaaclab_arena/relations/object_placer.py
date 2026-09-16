@@ -515,7 +515,7 @@ class ObjectPlacer:
         """Compute an initial position for an object with an On relation.
 
         Places the object within the parent's X/Y footprint at the correct Z height,
-        so the solver starts from a valid region. Per-axis overlap constraints extend
+        so the solver starts from a valid region. Overlap constraints extend
         that region beyond the parent's footprint.
 
         Args:
@@ -527,10 +527,10 @@ class ObjectPlacer:
         parent_bbox = self._get_on_parent_world_bbox(on_relation.parent, anchor_objects, anchor_bbox, env_bboxes)
         child_bbox = env_bboxes[obj]
 
-        child_x_min, child_x_max = on_relation.footprint_constraint_x.child_extents(
+        child_x_min, child_x_max = on_relation.footprint_constraint.child_extents(
             child_bbox.min_point[0, 0], child_bbox.max_point[0, 0]
         )
-        child_y_min, child_y_max = on_relation.footprint_constraint_y.child_extents(
+        child_y_min, child_y_max = on_relation.footprint_constraint.child_extents(
             child_bbox.min_point[0, 1], child_bbox.max_point[0, 1]
         )
         x = self._sample_axis_position(

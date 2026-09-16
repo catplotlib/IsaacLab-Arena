@@ -143,68 +143,27 @@ def test_on_loss_strategy_constrains_entire_footprint():
     assert loss > 0.0, "Loss should penalize child footprint extending beyond parent"
 
 
-def test_on_loss_strategy_overlap_requires_footprint_intersection():
-    """The overlap policy permits partial support but still penalizes separation and wrong height."""
+@pytest.mark.parametrize("edge_margin_m", [0.0, 0.05, 0.6])
+def test_on_loss_strategy_overlap_ignores_margin(edge_margin_m):
+    """Overlap uses both original support extents and still penalizes separation and wrong height."""
     table = _create_table()
     box = _create_box()
     strategy = OnLossStrategy(slope=10.0)
-    strict = On(table, clearance_m=0.0, edge_margin_m=0.0)
     overlap = On(
         table,
         clearance_m=0.0,
-        edge_margin_m=0.0,
-        footprint_constraint_x=FootprintConstraint.OVERLAP,
-        footprint_constraint_y=FootprintConstraint.OVERLAP,
+        edge_margin_m=edge_margin_m,
+        footprint_constraint=FootprintConstraint.OVERLAP,
     )
-    partial_support = torch.tensor([-0.1, 0.4, 0.1])
-
-    assert strategy.compute_loss(strict, partial_support, box.bounding_box, table.bounding_box) > 0.0
-    assert torch.isclose(
-        strategy.compute_loss(overlap, partial_support, box.bounding_box, table.bounding_box),
-        torch.tensor(0.0),
-        atol=1e-4,
-    )
-    for invalid_pose in ([-0.21, 0.4, 0.1], [-0.1, 0.4, 0.2]):
+    # Partial overlap in X, Y, and both; exact edge contact also remains valid.
+    for valid_pose in ([-0.19, 0.4, 0.1], [0.4, 0.99, 0.1], [-0.19, 0.99, 0.1], [-0.2, 1.0, 0.1]):
+        assert torch.isclose(
+            strategy.compute_loss(overlap, torch.tensor(valid_pose), box.bounding_box, table.bounding_box),
+            torch.tensor(0.0),
+            atol=1e-4,
+        )
+    for invalid_pose in ([-0.21, 0.4, 0.1], [0.4, 1.01, 0.1], [-0.1, 0.4, 0.2], [-0.1, 0.4, 0.0]):
         assert strategy.compute_loss(overlap, torch.tensor(invalid_pose), box.bounding_box, table.bounding_box) > 0.0
-
-
-def test_on_loss_strategy_overlap_rejects_empty_inset():
-    """An overlap policy cannot have zero loss when edge margins invert the parent inset."""
-    table = _create_table()
-    box = _create_box()
-    strategy = OnLossStrategy(slope=10.0)
-    overlap = On(
-        table,
-        clearance_m=0.0,
-        edge_margin_m=0.6,
-        footprint_constraint_x=FootprintConstraint.OVERLAP,
-        footprint_constraint_y=FootprintConstraint.OVERLAP,
-    )
-
-    loss = strategy.compute_loss(overlap, torch.tensor([0.4, 0.4, 0.1]), box.bounding_box, table.bounding_box)
-    assert loss > 0.0
-
-
-def test_on_loss_strategy_supports_per_axis_footprint_constraints():
-    """One axis can allow overlap while the other continues to require containment."""
-    table = _create_table()
-    box = _create_box()
-    strategy = OnLossStrategy(slope=10.0)
-    relation = On(
-        table,
-        clearance_m=0.0,
-        edge_margin_m=0.0,
-        footprint_constraint_y=FootprintConstraint.OVERLAP,
-    )
-
-    y_partial_support = torch.tensor([0.4, 0.9, 0.1])
-    x_partial_support = torch.tensor([0.9, 0.4, 0.1])
-    assert torch.isclose(
-        strategy.compute_loss(relation, y_partial_support, box.bounding_box, table.bounding_box),
-        torch.tensor(0.0),
-        atol=1e-4,
-    )
-    assert strategy.compute_loss(relation, x_partial_support, box.bounding_box, table.bounding_box) > 0.0
 
 
 def test_on_loss_strategy_edge_margin_insets_band_by_margin():
