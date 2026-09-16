@@ -79,7 +79,7 @@ class GearInsertionEasyNewtonEnvironmentCfg(GearInsertionNewtonEnvironmentCfg):
 class GearInsertionNewtonEnvironment(ArenaEnvironmentFactory[GearInsertionNewtonEnvironmentCfg]):
     """Build gear insertion from its graph and task-owned Newton profile."""
 
-    name = "vabar_contact_rich_insertion__gear_medium"
+    name = "contact_rich_insertion__gear_medium"
     _legacy_argparse_cfg_type = GearInsertionNewtonEnvironmentCfg
     scene_spec = _MEDIUM_SCENE_SPEC
 
@@ -103,6 +103,6 @@ class GearInsertionNewtonEnvironment(ArenaEnvironmentFactory[GearInsertionNewton
 class GearInsertionEasyNewtonEnvironment(GearInsertionNewtonEnvironment):
     """Build the two-gear easy variant with the shared Newton profile."""
 
-    name = "vabar_contact_rich_insertion__gear_easy"
+    name = "contact_rich_insertion__gear_easy"
     _legacy_argparse_cfg_type = GearInsertionEasyNewtonEnvironmentCfg
     scene_spec = _EASY_SCENE_SPEC

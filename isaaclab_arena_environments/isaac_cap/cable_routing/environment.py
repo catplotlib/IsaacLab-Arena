@@ -78,7 +78,7 @@ def _build_environment(
         viewer_lookat=(TABLE_CENTER_X, 0.0, BOARD_TOP_Z),
     )
     return IsaacLabArenaEnvironment(
-        name=f"vabar_cable_routing__{variant.name}",
+        name=f"cable_routing__{variant.name}",
         embodiment=embodiment,
         scene=built_scene.scene,
         task=task,
@@ -89,7 +89,7 @@ def _build_environment(
 class CableRoutingMediumEnvironment(ArenaEnvironmentFactory[CableRoutingMediumEnvironmentCfg]):
     """Build Cap's medium cable-routing environment on native Arena APIs."""
 
-    name = "vabar_cable_routing__medium"
+    name = "cable_routing__medium"
     _legacy_argparse_cfg_type = CableRoutingMediumEnvironmentCfg
 
     def build(self, cfg: CableRoutingMediumEnvironmentCfg) -> IsaacLabArenaEnvironment:
@@ -100,7 +100,7 @@ class CableRoutingMediumEnvironment(ArenaEnvironmentFactory[CableRoutingMediumEn
 class CableRoutingEasyEnvironment(ArenaEnvironmentFactory[CableRoutingEasyEnvironmentCfg]):
     """Build Cap's easy cable-routing environment on native Arena APIs."""
 
-    name = "vabar_cable_routing__easy"
+    name = "cable_routing__easy"
     _legacy_argparse_cfg_type = CableRoutingEasyEnvironmentCfg
 
     def build(self, cfg: CableRoutingEasyEnvironmentCfg) -> IsaacLabArenaEnvironment:
