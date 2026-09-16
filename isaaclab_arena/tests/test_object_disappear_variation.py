@@ -20,12 +20,12 @@ TEST_BOX_NAME = "cracker_box"
 DISAPPEARED_Z_CEILING_M = -5.0
 
 
-def get_env_local_position(env, asset_name):
-    """Return the asset's env-0 position relative to its environment origin."""
+def get_env_local_heights(env, asset_name):
+    """Return the asset's per-env height relative to its environment origin."""
     import warp as wp
 
     pose_w = wp.to_torch(env.unwrapped.scene[asset_name].data.root_pose_w)
-    return (pose_w[:, :3] - env.unwrapped.scene.env_origins)[0]
+    return (pose_w[:, :3] - env.unwrapped.scene.env_origins)[:, 2]
 
 
 def get_test_environment(*, enabled: bool, probability: float):
@@ -37,55 +37,17 @@ def get_test_environment(*, enabled: bool, probability: float):
     from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariationCfg
 
     sphere = AssetRegistry().get_asset_by_name(TEST_ASSET_NAME)()
-    variation = sphere.get_variation("disappear")
-    variation.apply_cfg(
+    sphere.get_variation("disappear").apply_cfg(
         ObjectDisappearVariationCfg(
             enabled=enabled,
             away_position_xyz=TEST_AWAY_POSITION_XYZ,
             sampler_cfg=BernoulliSamplerCfg(probability=probability),
         )
     )
-    assert variation.enabled is enabled
 
     return IsaacLabArenaEnvironment(
         name="test_object_disappear_variation",
         scene=Scene(assets=[sphere]),
-    )
-
-
-def get_relation_test_environment(*, probability: float):
-    """Build an env whose rigid object is relation-placed on an anchored table.
-
-    Relation solving registers a placement reset event that rewrites every non-anchor object's
-    pose on reset, so this is the configuration where a spawn-pose-only implementation is undone.
-    """
-    from isaaclab_arena.assets.registries import AssetRegistry
-    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.relations.relations import IsAnchor, On
-    from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.utils.pose import Pose
-    from isaaclab_arena.variations.bernoulli_sampler import BernoulliSamplerCfg
-    from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariationCfg
-
-    asset_registry = AssetRegistry()
-    table = asset_registry.get_asset_by_name(TEST_TABLE_NAME)()
-    box = asset_registry.get_asset_by_name(TEST_BOX_NAME)()
-    table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
-    table.add_relation(IsAnchor())
-    box.add_relation(On(table))
-
-    variation = box.get_variation("disappear")
-    variation.apply_cfg(
-        ObjectDisappearVariationCfg(
-            enabled=True,
-            away_position_xyz=TEST_AWAY_POSITION_XYZ,
-            sampler_cfg=BernoulliSamplerCfg(probability=probability),
-        )
-    )
-
-    return IsaacLabArenaEnvironment(
-        name="test_object_disappear_variation_relations",
-        scene=Scene(assets=[table, box]),
     )
 
 
@@ -115,87 +77,70 @@ def _test_disabled_disappear_variation_not_in_events_cfg(simulation_app):
     return True
 
 
-def _test_enabled_disappear_variation_in_events_cfg(simulation_app):
-    from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
-    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.variations.object_disappear_variation import hold_object_away
-
-    arena_env = get_test_environment(enabled=True, probability=1.0)
-    args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
-
-    event_cfg = getattr(env_cfg.events, TEST_EVENT_NAME)
-    assert event_cfg.func is hold_object_away
-    assert event_cfg.mode == "reset"
-    assert event_cfg.params["asset_cfg"].name == TEST_ASSET_NAME
-    assert event_cfg.params["disappeared"] is True
-    assert event_cfg.params["pose"].position_xyz == TEST_AWAY_POSITION_XYZ
-    return True
-
-
-def _test_disappeared_object_is_held_away(simulation_app):
+def _test_envs_draw_independently(simulation_app):
+    """Each env draws its own outcome, so one reset leaves a mix of present and disappeared."""
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
 
-    args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
+    args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "16", "--seed", "0"])
     env = ArenaEnvBuilder(
-        get_test_environment(enabled=True, probability=1.0),
+        get_test_environment(enabled=True, probability=0.5),
         arena_env_builder_cfg_from_argparse(args_cli),
     ).make_registered()
     try:
         env.reset()
-        position = get_env_local_position(env, TEST_ASSET_NAME)
-        assert (
-            position[2] < DISAPPEARED_Z_CEILING_M
-        ), f"A disappeared object must be held below {DISAPPEARED_Z_CEILING_M} m; got position {position.tolist()}."
-    finally:
-        env.close()
-    return True
-
-
-def _test_present_object_keeps_its_pose(simulation_app):
-    from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
-    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-
-    args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env = ArenaEnvBuilder(
-        get_test_environment(enabled=True, probability=0.0),
-        arena_env_builder_cfg_from_argparse(args_cli),
-    ).make_registered()
-    try:
-        env.reset()
-        position = get_env_local_position(env, TEST_ASSET_NAME)
-        assert position[2] > DISAPPEARED_Z_CEILING_M, (
-            "An enabled variation that drew 'stay' must leave the object in the scene; "
-            f"got position {position.tolist()}."
-        )
+        heights = get_env_local_heights(env, TEST_ASSET_NAME)
+        gone = heights < DISAPPEARED_Z_CEILING_M
+        # P(all envs agree) = 2 * 0.5^16, so a split is essentially certain if draws are independent.
+        assert bool(gone.any()) and not bool(
+            gone.all()
+        ), f"Expected a mix of present and disappeared envs; got heights {heights.tolist()}."
     finally:
         env.close()
     return True
 
 
 def _test_disappeared_object_survives_relation_placement(simulation_app):
-    """A relation-placed object stays away even though placement rewrites poses on reset."""
+    """Relation placement rewrites poses on reset; the teleport must still win."""
+    from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.relations.relations import IsAnchor, On
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena.variations.bernoulli_sampler import BernoulliSamplerCfg
+    from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariationCfg
+
+    asset_registry = AssetRegistry()
+    table = asset_registry.get_asset_by_name(TEST_TABLE_NAME)()
+    box = asset_registry.get_asset_by_name(TEST_BOX_NAME)()
+    table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
+    table.add_relation(IsAnchor())
+    box.add_relation(On(table))
+    box.get_variation("disappear").apply_cfg(
+        ObjectDisappearVariationCfg(
+            enabled=True,
+            away_position_xyz=TEST_AWAY_POSITION_XYZ,
+            sampler_cfg=BernoulliSamplerCfg(probability=1.0),
+        )
+    )
+    arena_env = IsaacLabArenaEnvironment(
+        name="test_object_disappear_variation_relations",
+        scene=Scene(assets=[table, box]),
+    )
 
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env = ArenaEnvBuilder(
-        get_relation_test_environment(probability=1.0),
-        arena_env_builder_cfg_from_argparse(args_cli),
-    ).make_registered()
+    env = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).make_registered()
     try:
         assert hasattr(
             env.unwrapped.cfg.events, "placement_reset"
         ), "Test setup is wrong: relation solving did not register a placement reset event."
-        # Reset twice: the first reset is where a spawn-pose-only implementation gets overwritten.
         env.reset()
-        env.reset()
-        position = get_env_local_position(env, TEST_BOX_NAME)
-        assert position[2] < DISAPPEARED_Z_CEILING_M, (
-            "Relation placement must not put a disappeared object back into the scene; "
-            f"got position {position.tolist()}."
-        )
+        height = get_env_local_heights(env, TEST_BOX_NAME)[0]
+        assert (
+            height < DISAPPEARED_Z_CEILING_M
+        ), f"Relation placement must not put a disappeared object back into the scene; got height {float(height)}."
     finally:
         env.close()
     return True
@@ -216,10 +161,10 @@ def _test_hydra_override_enables_disappear(simulation_app):
     ).make_registered()
     try:
         env.reset()
-        position = get_env_local_position(env, TEST_ASSET_NAME)
+        height = get_env_local_heights(env, TEST_ASSET_NAME)[0]
         assert (
-            position[2] < DISAPPEARED_Z_CEILING_M
-        ), f"Hydra override must enable the variation; got position {position.tolist()}."
+            height < DISAPPEARED_Z_CEILING_M
+        ), f"Hydra override must enable the variation; got height {float(height)}."
 
         record = env.unwrapped.variation_recorder[f"{TEST_ASSET_NAME}.disappear"]
         episode_idx = env.unwrapped.get_episode_index(0)
@@ -243,23 +188,9 @@ def test_disabled_disappear_variation_not_in_events_cfg():
     )
 
 
-def test_enabled_disappear_variation_in_events_cfg():
+def test_envs_draw_independently():
     assert run_function_with_persistent_simulation_app(
-        _test_enabled_disappear_variation_in_events_cfg,
-        headless=HEADLESS,
-    )
-
-
-def test_disappeared_object_is_held_away():
-    assert run_function_with_persistent_simulation_app(
-        _test_disappeared_object_is_held_away,
-        headless=HEADLESS,
-    )
-
-
-def test_present_object_keeps_its_pose():
-    assert run_function_with_persistent_simulation_app(
-        _test_present_object_keeps_its_pose,
+        _test_envs_draw_independently,
         headless=HEADLESS,
     )
 

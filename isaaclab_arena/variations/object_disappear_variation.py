@@ -6,16 +6,21 @@
 """Variation that removes an object from the scene with a given probability.
 
 Typical use is thinning out distractor clutter, so a policy sees a different subset of
-non-task objects from run to run.
+non-task objects from episode to episode.
 
-The draw happens once at build time, so an object is either present or gone for the whole run.
-Realizing it needs a reset event rather than a spawn pose: relation placement rewrites every
-non-anchor object's pose on reset, and per-object pose events restore their own. Variation events
-are composed after both, so the teleport is what survives.
+Each resetting environment draws independently, so parallel envs disagree and an object that was
+gone last episode can be back this one. Coming back relies on something else restoring the pose:
+relation placement, or the object's own pose reset event. An object with neither stays away once
+it has drawn "gone".
+
+Teleporting is realized in a reset event rather than a spawn pose because relation placement
+rewrites every non-anchor object's pose on reset, and per-object pose events restore their own.
+Variation events are composed after both, so the teleport is what survives.
 """
 
 from __future__ import annotations
 
+import torch
 from dataclasses import field
 from typing import TYPE_CHECKING
 
@@ -24,12 +29,10 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.terms.events import set_object_pose
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.variations.bernoulli_sampler import BernoulliSamplerCfg
+from isaaclab_arena.variations.bernoulli_sampler import BernoulliSampler, BernoulliSamplerCfg
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
-    import torch
-
     from isaaclab.envs import ManagerBasedEnv
 
 
@@ -40,11 +43,11 @@ class ObjectDisappearVariationCfg(VariationBaseCfg):
     away_position_xyz: tuple[float, float, float] = (0.0, 0.0, -10.0)
     """Env-local position to hold a disappeared object at, far enough out to never be seen or touched.
 
-    The object free-falls from here for the rest of the episode; every reset puts it back.
+    The object free-falls from here for the rest of the episode.
     """
 
     sampler_cfg: BernoulliSamplerCfg = field(default_factory=BernoulliSamplerCfg)
-    """Probability that the object disappears."""
+    """Probability that the object disappears, drawn per environment on every reset."""
 
 
 def hold_object_away(
@@ -52,16 +55,20 @@ def hold_object_away(
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg,
     pose: Pose,
-    disappeared: bool,
+    sampler: BernoulliSampler,
 ) -> None:
-    """Reset event that pins a disappeared object to ``pose``, overriding earlier placement writes."""
-    if not disappeared:
+    """Reset event that teleports the resetting envs which drew "gone" out to ``pose``."""
+    if env_ids is None or len(env_ids) == 0:
         return
-    set_object_pose(env, env_ids, asset_cfg=asset_cfg, pose=pose)
+    env_ids = torch.as_tensor(env_ids, device=env.device).reshape(-1)
+    disappeared = torch.as_tensor(sampler.sample(num_samples=len(env_ids), env_ids=env_ids), device=env.device)
+    away_env_ids = env_ids[disappeared]
+    if len(away_env_ids) > 0:
+        set_object_pose(env, away_env_ids, asset_cfg=asset_cfg, pose=pose)
 
 
 class ObjectDisappearVariation(RunTimeVariationBase):
-    """Remove an object from the scene with a build-time sampled probability.
+    """Remove an object from the scene with a per-env, per-reset probability.
 
     Args:
         asset_name: Scene-entity name of the target object. Holding the name rather than the object
@@ -82,14 +89,9 @@ class ObjectDisappearVariation(RunTimeVariationBase):
     ):
         super().__init__(cfg=cfg if cfg is not None else ObjectDisappearVariationCfg(), name=name)
         self.asset_name = asset_name
-        self._disappeared = False
-
-    def _prepare_at_build_time(self) -> None:
-        """Draw once, so the reset event below replays one decision for the whole run."""
-        assert self.sampler is not None, "ObjectDisappearVariation: sampler not set."
-        self._disappeared = self.sampler.sample(num_samples=1)[0]
 
     def build_event_cfg(self) -> tuple[str, EventTermCfg]:
+        assert self._sampler is not None, f"ObjectDisappearVariation on '{self.asset_name}': sampler not set."
         return (
             f"{self.asset_name}_{self.name}",
             EventTermCfg(
@@ -99,7 +101,7 @@ class ObjectDisappearVariation(RunTimeVariationBase):
                     "asset_cfg": SceneEntityCfg(self.asset_name),
                     # Re-tupled because Hydra overrides arrive as lists.
                     "pose": Pose(position_xyz=tuple(self.cfg.away_position_xyz)),
-                    "disappeared": self._disappeared,
+                    "sampler": self._sampler,
                 },
             ),
         )
