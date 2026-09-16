@@ -8,6 +8,16 @@ Keep the detail proportional to the change; a small fix needs only a few sentenc
 Remove sections that do not apply.
 -->
 
+<!--
+Start every PR body with 1–2 concise sentences stating the main changes.
+Name what this PR adds, changes, or removes.
+A reader should understand the scope from these sentences alone.
+
+Put this summary before the first heading, without a separate Summary heading.
+Save motivation, background, and implementation details for the sections below.
+Replace this comment with the summary.
+-->
+
 ## Why this change?
 
 <!--
