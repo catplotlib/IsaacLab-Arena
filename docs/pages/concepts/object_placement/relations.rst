@@ -76,6 +76,16 @@ Most environments can be described with a small set of relations:
    Both settings retain the same vertical support-height constraint.
    Footprint overlap does not guarantee stable support; the object may tip or fall.
 
+   To visualize the solver moving the same box with and without overlap, run:
+
+   .. code-block:: bash
+
+      python -m isaaclab_arena_examples.relations.on_overlap_comparison --output /tmp/on_overlap_comparison.png
+
+   The example saves PNG and SVG top/side views with before/after outlines and
+   geometric validation results. It uses zero edge margin in both cases and
+   does not run physics settling.
+
    ``On`` uses the top and horizontal footprint of the parent's axis-aligned
    bounding box. For L-shaped, hollow, or concave supports, anchor an
    ``ObjectReference`` that identifies the valid support surface.
