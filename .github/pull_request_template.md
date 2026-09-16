@@ -10,7 +10,9 @@ Remove sections that do not apply.
 
 <!--
 Start every PR body with 1–2 concise sentences stating the main changes.
-Name what this PR adds, changes, or removes.
+Use imperative verbs such as "Add", "Fix", or "Update" to state the changes directly.
+For example: "Add a DROID pick-and-place example."
+Omit introductory phrases such as "This PR adds".
 A reader should understand the scope from these sentences alone.
 
 Put this summary before the first heading, without a separate Summary heading.

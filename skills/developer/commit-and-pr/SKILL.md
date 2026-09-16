@@ -64,8 +64,10 @@ Do not use top-level type prefixes that omit the username (e.g. `feature/foo`, `
 
 3. PR title follows the same rules as a commit subject: imperative, ~70 chars max, no trailing period.
 
-4. Read `.github/pull_request_template.md` and follow its guidance. Explain the motivation
-   and solution in plain English for a teammate who has not followed the discussion.
+4. Read `.github/pull_request_template.md` and follow its guidance. Use imperative verbs
+   in the opening summary (for example, "Add", "Fix", or "Update"); omit introductory
+   phrases such as "This PR adds". Explain the motivation and solution in plain English
+   for a teammate who has not followed the discussion.
    Include a before/after example when usage changes, and state how the change was
    validated. Prefer concise paragraphs; use lists where they improve readability.
    Scale the detail to the change and remove sections that do not apply.
