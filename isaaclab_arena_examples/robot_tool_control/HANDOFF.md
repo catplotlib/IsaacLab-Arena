@@ -5,6 +5,12 @@ It accepts one flange pose and gripper target per decision, executes bounded mot
 and returns camera images, calibration, measured robot state, and the command outcome. Physics pauses
 between commands. See [README.md](README.md) for the interface and launch instructions.
 
+For another installed checkout with its Docker container and an Astra session already running,
+[CONTROLLER_PROMPT.md](CONTROLLER_PROMPT.md) provides portable instructions for starting the simulator,
+running one episode from current observations, exporting videos, and shutting down. Its container name,
+username, and session paths are discovered at runtime. The original local prompt below is retained as a record
+of the historical evaluation; it is not required to run the example.
+
 ## Implemented changes
 
 - `server.py` maintains the simulation and records commands, observations, trajectories, and episode results.

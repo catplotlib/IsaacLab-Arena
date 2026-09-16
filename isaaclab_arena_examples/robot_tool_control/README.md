@@ -4,7 +4,30 @@ This example keeps one DROID pick-and-place environment running and accepts comm
 The server has no model dependency. A person or a model session can inspect the saved camera images, choose a command,
 and inspect the resulting robot state. Physics does not advance while the server waits for the next command.
 
-See [HANDOFF.md](HANDOFF.md) for the recorded demo result, local artifact locations, validation, and runtime notes.
+## Run with an existing Astra session
+
+Use the demo branch in an installed Arena checkout whose Docker container is already running. Open an Astra
+conversation with terminal access to that checkout and a tool for viewing local images. Give it this instruction:
+
+```text
+Read isaaclab_arena_examples/robot_tool_control/CONTROLLER_PROMPT.md and run one DROID pick-and-place episode.
+```
+
+The [controller prompt](CONTROLLER_PROMPT.md) tells the session how to discover the container, create a new output
+directory, start the simulator, inspect observations, issue commands, export videos, and shut down. It uses the
+existing model session; no separate model service or API client setup is needed for this example.
+
+The conversation must not contain earlier demo observations, target coordinates, action sequences, or result
+reports. If it does, open a new conversation before giving the instruction. Each attempt uses its own observations
+and runs one episode, including any corrections made from feedback within that episode.
+
+Arena and the container must already use the dependencies supported by this branch. The workflow reports missing
+prerequisites instead of changing the runtime. It does not rely on the original author's local outputs or paths.
+
+For development history, recorded results, and validation, see [HANDOFF.md](HANDOFF.md). Do not supply that historical
+report to a conversation that will control a new episode.
+
+## Manual server and client use
 
 Use a checkout with its supported Docker environment and pinned dependencies ready; see the
 [dev-container skill](../../skills/developer/dev-container/SKILL.md). From the repository root on the host, discover
