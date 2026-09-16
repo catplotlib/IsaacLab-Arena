@@ -343,7 +343,8 @@ class OnLossStrategy(RelationLossStrategy):
 
         # Compute valid position ranges such that the child's footprint satisfies each axis policy,
         # with the parent's extent inset by edge_margin_m so the footprint stays off the rim.
-        # OVERLAP swaps min/max, turning containment inequalities into intersection inequalities.
+        # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
+        # OVERLAP: c_max >= p_min + m and c_min <= p_max - m.
         m = relation.edge_margin_m
         child_x_min, child_x_max = relation.footprint_constraint_x.child_extents(
             child_bbox.min_point[:, 0], child_bbox.max_point[:, 0]
