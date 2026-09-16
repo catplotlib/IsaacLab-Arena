@@ -1,0 +1,101 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+env_name: vabar_contact_rich_insertion__usbc_insertion_easy
+embodiment:
+  id: robot
+  registry_name: industrial_bimanual_yam
+  params:
+    robot_usd_path: omniverse://isaac-dev.ov.nvidia.com/Projects/nvblox/isaac_arena/newton_envs/cap_envs/usbc_insertion/assets/industrial__i2rt_yam/i2rt_yam_default.usda
+    instanceable_robot_usd_path: omniverse://isaac-dev.ov.nvidia.com/Projects/nvblox/isaac_arena/newton_envs/cap_envs/usbc_insertion/assets/industrial__i2rt_yam/i2rt_yam_instanceable.usda
+    left_mount_position: [0.2525, 0.31, 0.75]
+    right_mount_position: [0.2525, -0.31, 0.75]
+background:
+  id: table
+  registry_name: usbc_insertion_yam_table
+  params:
+    instance_name: table
+    prim_path: "{ENV_REGEX_NS}/Table"
+    initial_pose:
+      position_xyz: [0.2525, 0.0, 0.75]
+objects:
+- id: bench
+  registry_name: usbc_insertion_bench
+  params:
+    prim_path: "{ENV_REGEX_NS}/Bench"
+    initial_pose:
+      position_xyz: [0.44, -0.06285, 0.775]
+- id: cradle_front
+  registry_name: usbc_insertion_cradle_front
+  params:
+    prim_path: "{ENV_REGEX_NS}/CradleFront"
+    initial_pose:
+      position_xyz: [0.44, 0.0228, 0.7717]
+- id: cradle_rear
+  registry_name: usbc_insertion_cradle_rear
+  params:
+    prim_path: "{ENV_REGEX_NS}/CradleRear"
+    initial_pose:
+      position_xyz: [0.44, 0.0448, 0.7762]
+- id: bulkhead
+  registry_name: usbc_insertion_bulkhead
+  params:
+    prim_path: "{ENV_REGEX_NS}/Bulkhead"
+    initial_pose:
+      position_xyz: [0.44, 0.0148, 0.8234]
+      rotation_xyzw: [0.5, 0.5, 0.5, 0.5]
+- id: plug
+  registry_name: usbc_insertion_plug
+  params:
+    prim_path: "{ENV_REGEX_NS}/Plug"
+    initial_pose:
+      position_xyz_min: [0.42, -0.09, 0.811]
+      position_xyz_max: [0.46, -0.05, 0.811]
+      rpy_min: [-1.5707963267948966, -1.5707963267948966, 0.0]
+      rpy_max: [-1.5707963267948966, -1.5707963267948966, 0.0]
+- id: plug_cable
+  registry_name: usbc_insertion_connector_cable
+  params:
+    prim_path: "{ENV_REGEX_NS}/UsbcConnectorCablePlug"
+    connector_prim_path: "{ENV_REGEX_NS}/Plug"
+    attachment: plug
+- id: bulkhead_cable
+  registry_name: usbc_insertion_connector_cable
+  params:
+    prim_path: "{ENV_REGEX_NS}/UsbcConnectorCableBulkhead"
+    connector_prim_path: "{ENV_REGEX_NS}/Bulkhead"
+    attachment: bulkhead
+- id: hdr_shadow_receiver
+  registry_name: usbc_insertion_hdr_shadow_receiver
+  params:
+    prim_path: "{ENV_REGEX_NS}/HdrShadowReceiver"
+    initial_pose:
+      position_xyz: [0.0, 0.0, 0.0005]
+- id: sky_light
+  registry_name: usbc_insertion_dome_light
+  params:
+    prim_path: /World/skyLight
+    hdr_name: empty_warehouse_robolab
+    intensity: 1500.0
+    color: [0.75, 0.75, 0.75]
+task:
+  composition: atomic
+  description: Insert the USB-C plug into the bulkhead the other hand is holding.
+  subtasks:
+  - kind: UsbcInsertionTask
+    params:
+      plug: plug
+      receiver: bulkhead
+      receiver_mouth_offset_xyz: [-0.0045, 0.0, 0.0]
+      receiver_axis: [1.0, 0.0, 0.0]
+      subject_tip_offset_xyz: [0.0, 0.0, 0.0133]
+      subject_axis: [0.0, 0.0, 1.0]
+      depth_min: 0.0104
+      lateral_max: 0.0087931792
+      tilt_max: 0.0873
+      speed_max: 0.05
+      allow_antiparallel_axes: true
+      consecutive_success_steps: 1
+      episode_length_s: 150.0

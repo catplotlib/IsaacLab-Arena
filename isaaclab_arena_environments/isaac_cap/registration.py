@@ -37,6 +37,7 @@ def register_components() -> None:
         _register_gear_insertion_components(asset_registry)
         _register_cable_routing_components()
         _register_syringe_sort_components(asset_registry)
+        _register_usbc_insertion_components(asset_registry)
         _registered = True
     finally:
         _registering = False
@@ -79,6 +80,34 @@ def _register_cable_routing_components() -> None:
     for factory, cfg_type in (
         (CableRoutingMediumEnvironment, CableRoutingMediumEnvironmentCfg),
         (CableRoutingEasyEnvironment, CableRoutingEasyEnvironmentCfg),
+    ):
+        if environment_registry.is_registered(factory.name, ensure_loaded=False):
+            existing = environment_registry.get_component_by_name(factory.name)
+            assert existing is factory, f"Conflicting Isaac Cap environment {factory.name!r}."
+            continue
+        environment_registry.register_environment(factory, cfg_type)
+
+
+def _register_usbc_insertion_components(asset_registry: AssetRegistry) -> None:
+    """Register the USB-C assets, shared task, and both environments."""
+    from .usbc_insertion import (
+        UsbcInsertionEasyEnvironment,
+        UsbcInsertionEasyEnvironmentCfg,
+        UsbcInsertionMediumEnvironment,
+        UsbcInsertionMediumEnvironmentCfg,
+        UsbcInsertionTask,
+    )
+    from .usbc_insertion.assets import USBC_ASSET_CLASSES
+
+    for asset_class in USBC_ASSET_CLASSES:
+        _register(asset_registry, asset_class, asset_class.name)
+
+    _register(TaskRegistry(), UsbcInsertionTask, UsbcInsertionTask.__name__)
+
+    environment_registry = EnvironmentRegistry()
+    for factory, cfg_type in (
+        (UsbcInsertionEasyEnvironment, UsbcInsertionEasyEnvironmentCfg),
+        (UsbcInsertionMediumEnvironment, UsbcInsertionMediumEnvironmentCfg),
     ):
         if environment_registry.is_registered(factory.name, ensure_loaded=False):
             existing = environment_registry.get_component_by_name(factory.name)
