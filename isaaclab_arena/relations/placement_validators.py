@@ -158,7 +158,7 @@ class OnRelationValidator(PlacementValidator):
                 parent_size = parent_world.max_point - parent_world.min_point
                 child_size = child_world.max_point - child_world.min_point
 
-                m = 0.0 if rel.overlap else rel.edge_margin_m
+                m = 0.0 if rel.overlap else rel.edge_margin_m  # Ignore edge_margin_m when overlap=True.
                 # 1) Check that the child fits inside the inset support for containment only.
                 if m > 0.0:
                     freespace = (parent_size - child_size)[0, :2]

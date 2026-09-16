@@ -74,7 +74,7 @@ Most environments can be described with a small set of relations:
    ``edge_margin_m`` and checks intersection with the original support footprint.
    Overlap includes exact edge contact and does not require a minimum support area.
    Both settings retain the same vertical support-height constraint.
-   Overlap does not guarantee physical stability.
+   Footprint overlap does not guarantee stable support; the object may tip or fall.
 
    ``On`` uses the top and horizontal footprint of the parent's axis-aligned
    bounding box. For L-shaped, hollow, or concave supports, anchor an

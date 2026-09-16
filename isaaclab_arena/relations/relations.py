@@ -187,6 +187,8 @@ class On(Relation):
     on the parent's top surface. With ``overlap=True``, only intersection with
     the parent's original footprint is required on both horizontal axes; the margin is ignored.
 
+    Note: Footprint overlap does not guarantee stable support; the child may tip or fall.
+
     Note: Loss computation is handled by OnLossStrategy in relation_loss_strategies.py.
     """
 

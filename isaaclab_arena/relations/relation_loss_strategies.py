@@ -344,7 +344,7 @@ class OnLossStrategy(RelationLossStrategy):
         # Containment uses the parent's inset extent; overlap uses its original footprint.
         # CONTAINED: c_min >= p_min + m and c_max <= p_max - m.
         # OVERLAP: c_max >= p_min and c_min <= p_max.
-        m = 0.0 if relation.overlap else relation.edge_margin_m
+        m = 0.0 if relation.overlap else relation.edge_margin_m  # Ignore edge_margin_m when overlap=True.
         child_min, child_max = child_bbox.min_point, child_bbox.max_point
         if relation.overlap:
             child_min, child_max = child_max, child_min
