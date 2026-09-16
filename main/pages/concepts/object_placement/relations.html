@@ -622,6 +622,13 @@ similar prim should support placement.</p>
 <dt><code class="docutils literal notranslate"><span class="pre">On(parent)</span></code></dt><dd><p>Places an object on a support surface and keeps its footprint within the
 support bounds. Use <code class="docutils literal notranslate"><span class="pre">clearance_m</span></code> to leave a vertical gap and
 <code class="docutils literal notranslate"><span class="pre">edge_margin_m</span></code> to keep the object away from the support edges.</p>
+<p>Set <code class="docutils literal notranslate"><span class="pre">overlap=True</span></code> to allow the object to extend beyond the support:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">box</span><span class="o">.</span><span class="n">add_relation</span><span class="p">(</span><span class="n">On</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">overlap</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>This requires overlap in both X and Y (edge contact counts), ignores
+<code class="docutils literal notranslate"><span class="pre">edge_margin_m</span></code>, and keeps the same height constraint. It does not guarantee
+stable support: the object may tip or fall. The default is <code class="docutils literal notranslate"><span class="pre">overlap=False</span></code>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">On</span></code> uses the top and horizontal footprint of the parent’s axis-aligned
 bounding box. For L-shaped, hollow, or concave supports, anchor an
 <code class="docutils literal notranslate"><span class="pre">ObjectReference</span></code> that identifies the valid support surface.</p>
