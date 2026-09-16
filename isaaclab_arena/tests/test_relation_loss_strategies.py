@@ -168,6 +168,23 @@ def test_on_loss_strategy_overlap_requires_footprint_intersection():
         assert strategy.compute_loss(overlap, torch.tensor(invalid_pose), box.bounding_box, table.bounding_box) > 0.0
 
 
+def test_on_loss_strategy_overlap_rejects_empty_inset():
+    """An overlap policy cannot have zero loss when edge margins invert the parent inset."""
+    table = _create_table()
+    box = _create_box()
+    strategy = OnLossStrategy(slope=10.0)
+    overlap = On(
+        table,
+        clearance_m=0.0,
+        edge_margin_m=0.6,
+        footprint_constraint_x=FootprintConstraint.OVERLAP,
+        footprint_constraint_y=FootprintConstraint.OVERLAP,
+    )
+
+    loss = strategy.compute_loss(overlap, torch.tensor([0.4, 0.4, 0.1]), box.bounding_box, table.bounding_box)
+    assert loss > 0.0
+
+
 def test_on_loss_strategy_supports_per_axis_footprint_constraints():
     """One axis can allow overlap while the other continues to require containment."""
     table = _create_table()

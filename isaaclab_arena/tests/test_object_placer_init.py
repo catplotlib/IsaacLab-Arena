@@ -60,16 +60,18 @@ def test_on_init_applies_footprint_constraint_per_axis():
         name="box",
         bounding_box=AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.2, 0.2, 0.2)),
     )
-    box.add_relation(On(desk, footprint_constraint_y=FootprintConstraint.OVERLAP))
+    relation = On(desk, footprint_constraint_y="overlap")
+    box.add_relation(relation)
     placer = ObjectPlacer(params=ObjectPlacerParams())
 
     with patch.object(placer, "_sample_axis_position", return_value=0.0) as sample_axis:
         placer._generate_initial_positions([desk, box], {desk}, _env_bboxes([desk, box]))
 
+    assert relation.footprint_constraint_y is FootprintConstraint.OVERLAP
     x_call, y_call = sample_axis.call_args_list
-    for actual, expected in zip(x_call.args[2:4], (0.0, 0.2)):
+    for actual, expected in zip(x_call.args[:4], (0.0, 1.0, 0.0, 0.2)):
         assert abs(float(actual) - expected) < 1e-6
-    for actual, expected in zip(y_call.args[2:4], (0.2, 0.0)):
+    for actual, expected in zip(y_call.args[:4], (0.0, 1.0, 0.2, 0.0)):
         assert abs(float(actual) - expected) < 1e-6
 
 

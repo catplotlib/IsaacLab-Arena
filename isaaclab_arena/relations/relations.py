@@ -40,6 +40,15 @@ class FootprintConstraint(str, Enum):
     CONTAINED = "contained"
     OVERLAP = "overlap"
 
+    def child_extents(self, min_extent: torch.Tensor, max_extent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return child extents ordered for the parent-bound inequalities.
+
+        ``CONTAINED`` keeps ``(min, max)`` so both child edges stay inside the
+        parent. ``OVERLAP`` swaps them so the child's far edge must reach each
+        parent edge.
+        """
+        return (max_extent, min_extent) if self is FootprintConstraint.OVERLAP else (min_extent, max_extent)
+
 
 class RelationBase:
     """Base for all relation-like concepts on objects.
@@ -189,9 +198,10 @@ class On(Relation):
     """Represents an 'on top of' relationship between objects.
 
     This relation specifies that a child object should be placed on top of
-    the parent object, with its X/Y footprint contained by the parent's extent
-    by default and Z positioned on the parent's top surface. Footprint
-    containment can be relaxed to overlap on both or either horizontal axis.
+    the parent object, with X/Y bounded within the parent's extent (optionally
+    inset by ``edge_margin_m`` so the child stays off the rim) and Z positioned
+    on the parent's top surface. Either horizontal axis can instead require
+    footprint overlap.
 
     Note: Loss computation is handled by OnLossStrategy in relation_loss_strategies.py.
     """
@@ -204,8 +214,8 @@ class On(Relation):
         relation_loss_weight: float = 1.0,
         clearance_m: float = 0.01,
         edge_margin_m: float = DEFAULT_ON_EDGE_MARGIN_M,
-        footprint_constraint_x: FootprintConstraint = FootprintConstraint.CONTAINED,
-        footprint_constraint_y: FootprintConstraint = FootprintConstraint.CONTAINED,
+        footprint_constraint_x: FootprintConstraint | str = FootprintConstraint.CONTAINED,
+        footprint_constraint_y: FootprintConstraint | str = FootprintConstraint.CONTAINED,
     ):
         """
         Args:
@@ -213,8 +223,8 @@ class On(Relation):
             relation_loss_weight: Weight for the relationship loss function.
             clearance_m: Safety clearance above parent's surface in meters (default: 1cm).
             edge_margin_m: Inward inset from each X/Y edge of the parent's surface in
-                meters (default: 5cm). A contained footprint stays this far from the
-                rim; an overlapping footprint must intersect the inset extent.
+                meters (default: 5cm). The configured footprint constraint is applied
+                against this inset extent.
             footprint_constraint_x: Horizontal footprint policy on the X-axis.
             footprint_constraint_y: Horizontal footprint policy on the Y-axis.
         """

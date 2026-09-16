@@ -62,12 +62,14 @@ Most environments can be described with a small set of relations:
    support bounds. Use ``clearance_m`` to leave a vertical gap and
    ``edge_margin_m`` to keep the object away from the support edges.
 
-   Set ``footprint_constraint_x`` or ``footprint_constraint_y`` to
-   ``FootprintConstraint.OVERLAP`` to relax containment on either horizontal
-   axis. Set both for overlap behavior in X and Y. The child still sits at the
-   parent's support height. Overlap is based on axis-aligned bounding boxes and
-   does not enforce a minimum support area; ``edge_margin_m`` can require the
-   child to reach into the parent's inset footprint.
+   For example, allow a box to extend past the table in Y while keeping it
+   contained in X:
+
+   .. code-block:: python
+
+      box.add_relation(On(table, footprint_constraint_y="overlap"))
+
+   Overlap includes exact edge contact and does not require a minimum support area.
 
    ``On`` uses the top and horizontal footprint of the parent's axis-aligned
    bounding box. For L-shaped, hollow, or concave supports, anchor an

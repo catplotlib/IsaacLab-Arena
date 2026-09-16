@@ -353,6 +353,25 @@ def test_on_relation_margin_feasibility_applies_only_to_contained_axes():
     assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is True
 
 
+def test_on_relation_overlap_rejects_empty_inset():
+    """Overlap validation rejects an edge margin that inverts the parent's inset footprint."""
+    placer = ObjectPlacer(params=ObjectPlacerParams())
+    desk = _make_desk()
+    box = _make_box("box", size=0.2)
+    box.add_relation(
+        On(
+            desk,
+            clearance_m=0.0,
+            edge_margin_m=0.6,
+            footprint_constraint_x=FootprintConstraint.OVERLAP,
+            footprint_constraint_y=FootprintConstraint.OVERLAP,
+        )
+    )
+    positions = {desk: (0.0, 0.0, 0.0), box: (0.0, 0.0, 0.15)}
+
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is False
+
+
 # --- NextTo validation (parent box XY in [-0.2, 0.2], child box half-extent 0.1) ---
 # Side + offset only (cross position is a soft preference, not gated).
 # Zero-loss +X placement: child x = parent_max(0.2) + distance(0.05) - child_min(-0.1) = 0.35.

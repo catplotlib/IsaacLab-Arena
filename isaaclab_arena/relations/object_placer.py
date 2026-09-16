@@ -18,7 +18,6 @@ from isaaclab_arena.relations.placement_visualizer import get_or_create_placemen
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relations import (
     FaceTo,
-    FootprintConstraint,
     On,
     RandomAroundSolution,
     RotateAroundSolution,
@@ -515,8 +514,9 @@ class ObjectPlacer:
     ) -> tuple[float, float, float]:
         """Compute an initial position for an object with an On relation.
 
-        Places the object within or overlapping the parent's X/Y footprint, according
-        to the relation's per-axis footprint constraints, at the correct Z height.
+        Places the object within the parent's X/Y footprint at the correct Z height,
+        so the solver starts from a valid region. Per-axis overlap constraints extend
+        that region beyond the parent's footprint.
 
         Args:
             env_bboxes: Per-object bboxes for the current env, each with shape (1, 3).
@@ -527,12 +527,12 @@ class ObjectPlacer:
         parent_bbox = self._get_on_parent_world_bbox(on_relation.parent, anchor_objects, anchor_bbox, env_bboxes)
         child_bbox = env_bboxes[obj]
 
-        overlap_x = on_relation.footprint_constraint_x is FootprintConstraint.OVERLAP
-        overlap_y = on_relation.footprint_constraint_y is FootprintConstraint.OVERLAP
-        child_x_min = child_bbox.max_point[0, 0] if overlap_x else child_bbox.min_point[0, 0]
-        child_x_max = child_bbox.min_point[0, 0] if overlap_x else child_bbox.max_point[0, 0]
-        child_y_min = child_bbox.max_point[0, 1] if overlap_y else child_bbox.min_point[0, 1]
-        child_y_max = child_bbox.min_point[0, 1] if overlap_y else child_bbox.max_point[0, 1]
+        child_x_min, child_x_max = on_relation.footprint_constraint_x.child_extents(
+            child_bbox.min_point[0, 0], child_bbox.max_point[0, 0]
+        )
+        child_y_min, child_y_max = on_relation.footprint_constraint_y.child_extents(
+            child_bbox.min_point[0, 1], child_bbox.max_point[0, 1]
+        )
         x = self._sample_axis_position(
             parent_bbox.min_point[0, 0],
             parent_bbox.max_point[0, 0],
@@ -561,11 +561,11 @@ class ObjectPlacer:
         child_max: float,
         generator: torch.Generator | None = None,
     ) -> float:
-        """Sample a child origin along one axis so the child's extent stays within the parent's extent.
+        """Sample a child origin from the range defined by parent and child extents.
 
         The valid range for the child origin is [parent_min - child_min, parent_max - child_max].
-        When low >= high, the child is wider than the parent on this axis, so
-        return the parent center as a stable seed.
+        Callers pass normal child extents for containment and swapped extents for overlap.
+        When low >= high, no interval is available, so return the parent center as a stable seed.
 
         Args:
             parent_min: Parent world-space min extent on this axis.

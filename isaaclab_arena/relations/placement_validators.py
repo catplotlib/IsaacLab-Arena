@@ -161,31 +161,38 @@ class OnRelationValidator(PlacementValidator):
                 m = rel.edge_margin_m
                 freespace = parent_size - child_size
                 footprint_constraints = (rel.footprint_constraint_x, rel.footprint_constraint_y)
+                # 1) Checking that with the specified margin, the parent is wide enough to place the child on top.
                 contained_axes = [
                     axis
                     for axis, constraint in enumerate(footprint_constraints)
                     if constraint is FootprintConstraint.CONTAINED
                 ]
-                # 1) Check that the inset parent is large enough on axes that require containment.
-                if m > 0.0 and contained_axes:
-                    contained_freespace = freespace[0, contained_axes]
-                    # A margin too large for the surface inverts the inset band so containment can never pass.
-                    if torch.any(contained_freespace < 2 * m):
-                        max_feasible_margin = max(0.0, float(torch.min(contained_freespace).item()) / 2.0)
-                        if self._params.verbose and max_feasible_margin > 0.0:
-                            print(
-                                f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
-                                f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
-                                " edge_margin_m."
-                            )
+                if m > 0.0:
+                    # Every policy requires a non-inverted parent inset on both horizontal axes.
+                    if torch.any(parent_size[0, :2] < 2 * m):
                         return False
-                # 2) Check containment or overlap on each horizontal axis.
-                overlap_x = rel.footprint_constraint_x is FootprintConstraint.OVERLAP
-                overlap_y = rel.footprint_constraint_y is FootprintConstraint.OVERLAP
-                child_x_min = child_world.max_point[0, 0] if overlap_x else child_world.min_point[0, 0]
-                child_x_max = child_world.min_point[0, 0] if overlap_x else child_world.max_point[0, 0]
-                child_y_min = child_world.max_point[0, 1] if overlap_y else child_world.min_point[0, 1]
-                child_y_max = child_world.min_point[0, 1] if overlap_y else child_world.max_point[0, 1]
+                    if contained_axes:
+                        contained_freespace = freespace[0, contained_axes]
+                        # A margin too large for the surface inverts the inset band so containment can never pass.
+                        if torch.any(contained_freespace < 2 * m):
+                            # The maximum feasible margin is the minimum freespace on the contained axes.
+                            max_feasible_margin = max(0.0, float(torch.min(contained_freespace).item()) / 2.0)
+                            # When the parent is smaller than the child, the feasible margin is 0.0.
+                            if self._params.verbose and max_feasible_margin > 0.0:
+                                print(
+                                    f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
+                                    f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
+                                    " edge_margin_m."
+                                )
+                            return False
+                # 2) Checking that the child lies within or overlaps the parent's xy footprint.
+                # OVERLAP swaps min/max, turning containment inequalities into intersection inequalities.
+                child_x_min, child_x_max = rel.footprint_constraint_x.child_extents(
+                    child_world.min_point[0, 0], child_world.max_point[0, 0]
+                )
+                child_y_min, child_y_max = rel.footprint_constraint_y.child_extents(
+                    child_world.min_point[0, 1], child_world.max_point[0, 1]
+                )
                 if (
                     child_x_min < parent_world.min_point[0, 0] + m
                     or child_x_max > parent_world.max_point[0, 0] - m
