@@ -84,7 +84,8 @@ class ObjectDisappearVariation(RunTimeVariationBase):
         self.asset_name = asset_name
         self._disappeared = False
 
-    def _realize_at_build_time(self) -> None:
+    def _prepare_at_build_time(self) -> None:
+        """Draw once, so the reset event below replays one decision for the whole run."""
         assert self.sampler is not None, "ObjectDisappearVariation: sampler not set."
         self._disappeared = self.sampler.sample(num_samples=1)[0]
 
