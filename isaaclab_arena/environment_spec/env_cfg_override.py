@@ -13,7 +13,7 @@ import sys
 import types
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
-from hydra.utils import get_class, instantiate
+from hydra.utils import get_class
 
 _ALLOWED_TARGET_MODULE_PREFIXES = (
     "isaaclab.",
@@ -29,8 +29,9 @@ def apply_env_cfg_override(env_cfg: Any, override: dict[str, Any] | None) -> Any
     """Apply a validated environment-config override in place.
 
     Hydra ``_target_`` nodes first replace polymorphic config fields with concrete
-    Isaac Lab configclass instances. Remaining values are then merged against the
-    concrete schema and applied through ``from_dict``.
+    Isaac Lab configclass instances on a working copy. Remaining values are merged
+    against that concrete schema, then published to ``env_cfg`` only after the
+    complete override succeeds.
 
     Args:
         env_cfg: Concrete Isaac Lab environment configuration to update.
@@ -45,17 +46,22 @@ def apply_env_cfg_override(env_cfg: Any, override: dict[str, Any] | None) -> Any
 
     values = copy.deepcopy(override)
     _validate_data_only(values, path="env")
-    _materialize_targets(env_cfg, values, path="env")
+    working_cfg = copy.deepcopy(env_cfg)
+    _materialize_targets(working_cfg, values, path="env")
 
     try:
-        env_cfg.from_dict(values)
+        working_cfg.from_dict(values)
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError(f"Invalid env_cfg_override: {exc}") from exc
+
+    assert type(working_cfg) is type(env_cfg)
+    for field in dataclasses.fields(env_cfg):
+        setattr(env_cfg, field.name, getattr(working_cfg, field.name))
     return env_cfg
 
 
 def _materialize_targets(target_obj: Any, values: dict[str, Any], *, path: str) -> None:
-    """Replace ``_target_`` mappings with validated configclass instances."""
+    """Materialize targets on a working config and consume their copied mappings."""
     if not dataclasses.is_dataclass(target_obj):
         return
 
@@ -71,11 +77,9 @@ def _materialize_targets(target_obj: Any, values: dict[str, Any], *, path: str) 
             expected_type = _field_annotation(type(target_obj), key)
             target_cls = _validated_target_class(target_path, expected_type, path=child_path)
             _validate_nested_targets(target_cls, value, path=child_path)
+            _materialize_nested_values(target_cls, value, path=child_path)
             try:
-                child_obj = instantiate(
-                    {_HYDRA_TARGET_KEY: target_path, **value},
-                    _convert_="object",
-                )
+                child_obj = target_cls(**value)
             except Exception as exc:
                 raise ValueError(f"Could not instantiate {target_path!r} at '{child_path}': {exc}") from exc
             assert isinstance(child_obj, target_cls)
@@ -90,27 +94,92 @@ def _materialize_targets(target_obj: Any, values: dict[str, Any], *, path: str) 
             _materialize_targets(child_obj, value, path=child_path)
 
 
+def _materialize_nested_values(target_cls: type, values: dict[str, Any], *, path: str) -> None:
+    """Materialize validated target payload values in place."""
+    for key, value in values.items():
+        annotation = _field_annotation(target_cls, key)
+        values[key] = _materialize_nested_value(annotation, value, path=f"{path}.{key}")
+
+
+def _materialize_nested_value(annotation: Any, value: Any, *, path: str) -> Any:
+    """Construct validated configclass values nested in dictionaries and lists."""
+    if isinstance(value, list):
+        element_annotation = _list_element_annotation(annotation)
+        return [
+            _materialize_nested_value(element_annotation, item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if not isinstance(value, dict):
+        return value
+
+    if _HYDRA_TARGET_KEY in value:
+        target_path = value[_HYDRA_TARGET_KEY]
+        target_cls = _validated_target_class(target_path, annotation, path=path)
+        payload = _override_payload(value)
+        _materialize_nested_values(target_cls, payload, path=path)
+        try:
+            target_obj = target_cls(**payload)
+        except Exception as exc:
+            raise ValueError(f"Could not instantiate {target_path!r} at '{path}': {exc}") from exc
+        assert isinstance(target_obj, target_cls)
+        return target_obj
+
+    nested_cls = _dataclass_type(annotation)
+    if nested_cls is not None:
+        _materialize_nested_values(nested_cls, value, path=path)
+        return nested_cls(**value)
+
+    value_annotation = _dict_value_annotation(annotation)
+    return {key: _materialize_nested_value(value_annotation, item, path=f"{path}.{key}") for key, item in value.items()}
+
+
 def _validate_nested_targets(target_cls: type, values: dict[str, Any], *, path: str) -> None:
     """Validate nested Hydra targets before recursively instantiating a config tree."""
     field_names = _dataclass_field_names(target_cls)
     for key, value in values.items():
         child_path = f"{path}.{key}"
         assert key in field_names, f"Unknown config field '{child_path}'"
-        if not isinstance(value, dict):
-            continue
         annotation = _field_annotation(target_cls, key)
-        if _HYDRA_TARGET_KEY not in value:
-            assert not _annotation_contains_dataclass(
-                annotation
-            ), f"Nested config '{child_path}' requires {_HYDRA_TARGET_KEY!r} when its parent is constructed by Hydra"
-            continue
-        nested_target = value[_HYDRA_TARGET_KEY]
-        nested_cls = _validated_target_class(
-            nested_target,
-            annotation,
-            path=child_path,
-        )
-        _validate_nested_targets(nested_cls, _override_payload(value), path=child_path)
+        _validate_nested_value(annotation, value, path=child_path)
+
+
+def _validate_nested_value(
+    annotation: Any,
+    value: Any,
+    *,
+    path: str,
+    allow_dataclass_mapping: bool = False,
+) -> None:
+    """Validate Hydra targets nested in typed dictionaries and lists."""
+    if isinstance(value, list):
+        element_annotation = _list_element_annotation(annotation)
+        for index, item in enumerate(value):
+            _validate_nested_value(
+                element_annotation,
+                item,
+                path=f"{path}[{index}]",
+                allow_dataclass_mapping=True,
+            )
+        return
+    if not isinstance(value, dict):
+        return
+
+    if _HYDRA_TARGET_KEY in value:
+        nested_cls = _validated_target_class(value[_HYDRA_TARGET_KEY], annotation, path=path)
+        _validate_nested_targets(nested_cls, _override_payload(value), path=path)
+        return
+
+    nested_cls = _dataclass_type(annotation)
+    if nested_cls is not None:
+        assert (
+            allow_dataclass_mapping
+        ), f"Nested config '{path}' requires {_HYDRA_TARGET_KEY!r} when its parent is constructed by Hydra"
+        _validate_nested_targets(nested_cls, value, path=path)
+        return
+
+    value_annotation = _dict_value_annotation(annotation)
+    for key, item in value.items():
+        _validate_nested_value(value_annotation, item, path=f"{path}.{key}")
 
 
 def _validated_target_class(target_path: Any, expected_type: Any, *, path: str) -> type:
@@ -163,18 +232,50 @@ def _union_members(annotation: Any) -> tuple[Any, ...] | None:
 
 def _annotation_accepts_type(annotation: Any, target_cls: type) -> bool:
     """Return whether ``target_cls`` is compatible with a field annotation."""
+    if annotation is Any:
+        return True
     members = _union_members(annotation)
     if members is not None:
         return any(_annotation_accepts_type(member, target_cls) for member in members)
     return isinstance(annotation, type) and issubclass(target_cls, annotation)
 
 
-def _annotation_contains_dataclass(annotation: Any) -> bool:
-    """Return whether an annotation contains a dataclass type."""
+def _dataclass_type(annotation: Any) -> type | None:
+    """Return the dataclass type contained in an annotation, if any."""
     members = _union_members(annotation)
     if members is not None:
-        return any(_annotation_contains_dataclass(member) for member in members)
-    return isinstance(annotation, type) and dataclasses.is_dataclass(annotation)
+        for member in members:
+            member_type = _dataclass_type(member)
+            if member_type is not None:
+                return member_type
+        return None
+    return annotation if isinstance(annotation, type) and dataclasses.is_dataclass(annotation) else None
+
+
+def _list_element_annotation(annotation: Any) -> Any:
+    """Return a list annotation's element type, or ``Any``."""
+    members = _union_members(annotation)
+    if members is not None:
+        for member in members:
+            element_annotation = _list_element_annotation(member)
+            if element_annotation is not Any:
+                return element_annotation
+        return Any
+    args = get_args(annotation)
+    return args[0] if get_origin(annotation) is list and args else Any
+
+
+def _dict_value_annotation(annotation: Any) -> Any:
+    """Return a dict annotation's value type, or ``Any``."""
+    members = _union_members(annotation)
+    if members is not None:
+        for member in members:
+            value_annotation = _dict_value_annotation(member)
+            if value_annotation is not Any:
+                return value_annotation
+        return Any
+    args = get_args(annotation)
+    return args[1] if get_origin(annotation) is dict and len(args) == 2 else Any
 
 
 def _dataclass_field_names(owner: type) -> set[str]:

@@ -309,11 +309,27 @@ def _test_builder_applies_nested_env_cfg_override(simulation_app) -> bool:
 def _test_env_cfg_override_does_not_partially_mutate_on_failure(simulation_app) -> bool:
     from isaaclab_arena.environment_spec.env_cfg_override import apply_env_cfg_override
 
-    env_cfg = _build_env_cfg(presets=None)
+    env_cfg = _build_env_cfg(presets="newton")
     original_dt = env_cfg.sim.dt
+    original_collision_cfg = env_cfg.sim.physics.collision_cfg
     with pytest.raises(ValueError, match="Invalid env_cfg_override"):
-        apply_env_cfg_override(env_cfg, {"sim": {"unknown_field": 1}})
+        apply_env_cfg_override(
+            env_cfg,
+            {
+                "sim": {
+                    "physics": {
+                        "collision_cfg": {
+                            "_target_": "isaaclab_newton.physics.NewtonCollisionPipelineCfg",
+                            "reduce_contacts": True,
+                        },
+                    },
+                    "dt": 0.02,
+                    "unknown_field": 1,
+                },
+            },
+        )
     assert env_cfg.sim.dt == original_dt
+    assert env_cfg.sim.physics.collision_cfg is original_collision_cfg
     return True
 
 
@@ -325,6 +341,25 @@ def _test_builder_rejects_unsafe_or_incompatible_targets(simulation_app) -> bool
     incompatible = {"sim": {"physics": {"_target_": "isaaclab_newton.physics.MJWarpSolverCfg"}}}
     with pytest.raises(AssertionError, match="incompatible"):
         _build_env_cfg(presets=None, env_cfg_override=incompatible)
+
+    unsafe_nested = {
+        "sim": {
+            "physics": {
+                "solver_cfg": {
+                    "_target_": "isaaclab_contrib.coupling.coupler_cfg.CouplerProxyCfg",
+                    "entries": [
+                        {
+                            "name": "rigid",
+                            "solver_cfg": {"_target_": "builtins.dict"},
+                        },
+                    ],
+                },
+            },
+        },
+    }
+    with pytest.raises(AssertionError, match="outside the approved") as exc_info:
+        _build_env_cfg(presets="newton", env_cfg_override=unsafe_nested)
+    assert "env.sim.physics.solver_cfg.entries[0].solver_cfg" in str(exc_info.value)
 
     with pytest.raises(AssertionError, match="cannot be overridden"):
         _build_env_cfg(presets=None, env_cfg_override={"sim": {"physics": {"class_type": "malicious"}}})
@@ -339,7 +374,7 @@ def _test_builder_rejects_unsafe_or_incompatible_targets(simulation_app) -> bool
 
 def _test_cli_preset_rejects_conflicting_yaml_backend(simulation_app) -> bool:
     override = {"sim": {"physics": {"_target_": "isaaclab_newton.physics.NewtonCfg"}}}
-    with pytest.raises(ValueError, match="Invalid env_cfg_override"):
+    with pytest.raises(AssertionError, match="env_cfg_callback changed the physics backend away from PhysX"):
         _build_env_cfg(presets="physx", env_cfg_override=override)
     return True
 

@@ -30,6 +30,10 @@ Data-only overrides
 Scalar and nested dict fields merge into the composed ``ManagerBasedRLEnvCfg`` when they match
 known Isaac Lab config fields. Examples:
 
+There is no separate override schema or duplicated defaults table: available fields and their
+defaults come from the concrete environment config produced by the builder and the selected
+physics backend.
+
 .. code-block:: yaml
 
    env_cfg_override:
@@ -43,9 +47,10 @@ known Isaac Lab config fields. Examples:
 Hydra ``_target_`` nodes
 ------------------------
 
-Use ``_target_`` when replacing a nested **configclass** field with a concrete Isaac Lab type
-(for example a Newton solver or collision pipeline). The target must live under an approved
-``isaaclab*`` package prefix and match the field annotation on the parent config.
+Use a plain mapping to patch a configclass instance that already exists. Use ``_target_`` when
+selecting or replacing its concrete type, especially when the current field is ``None`` (for
+example a Newton collision pipeline). The target must live under an approved ``isaaclab*``
+package prefix and match the field annotation on the parent config.
 
 .. code-block:: yaml
 
