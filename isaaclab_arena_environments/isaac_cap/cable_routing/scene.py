@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 _PACKAGE_DIRECTORY = Path(__file__).resolve().parent
 _MEDIUM_SCENE_SPEC = _PACKAGE_DIRECTORY / "cable_routing_medium.yaml"
 _EASY_SCENE_SPEC = _PACKAGE_DIRECTORY / "cable_routing_easy.yaml"
-_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/temp_newton_envs/cap_envs/cable_routing/assets"
+_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/cable_routing/assets"
 YAM_USD_PATH = f"{_ASSET_ROOT}/yam/i2rt_yam_cable_routing.usda"
 YAM_INSTANCEABLE_USD_PATH = f"{_ASSET_ROOT}/yam/i2rt_yam_cable_routing_instanceable.usda"
 _TABLE_USD_PATH = f"{_ASSET_ROOT}/industrial__yam_workcell_table/industrial__yam_workcell_table.usda"

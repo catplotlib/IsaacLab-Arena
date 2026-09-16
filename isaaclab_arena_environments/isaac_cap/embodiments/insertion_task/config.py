@@ -29,7 +29,7 @@ END_EFFECTOR_BODY_NAME = "robotiq_base"
 GRIPPER_CLOSED_ANGLE = math.radians(51.5662)
 _DROID_WORKING_HEIGHT_M = 1.35
 _ROBOT_ON_CART_USD_PATH = (
-    f"{ARENA_NUCLEUS_DIR}/Arena/assets/temp_newton_envs/cap_envs/gear_assembly/assets/"
+    f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/gear_assembly/assets/"
     "industrial__fr3_robotiq_2f85_on_cart/industrial__fr3_robotiq_2f85_on_cart.usda"
 )
 
