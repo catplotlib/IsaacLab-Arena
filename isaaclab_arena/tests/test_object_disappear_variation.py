@@ -9,23 +9,27 @@ HEADLESS = True
 
 TEST_ASSET_NAME = "sphere"
 TEST_EVENT_NAME = f"{TEST_ASSET_NAME}_disappear"
-TEST_AWAY_POSITION_XYZ = (0.0, 0.0, -10.0)
 
 # Relation-placement regression case: a rigid object placed on an anchored table.
 TEST_TABLE_NAME = "table"
 TEST_BOX_NAME = "cracker_box"
 
-# Comfortably below anything the scene places, but well above the away pose even after a few
-# frames of free fall, so the check distinguishes "held away" from "placed in the scene".
-DISAPPEARED_Z_CEILING_M = -5.0
+# The derived park position sits at 0.45 * env_spacing; anything past a third of the cell is
+# far outside where the scene places objects, so this distinguishes "parked" from "in the scene".
+PARKED_CELL_FRACTION_FLOOR = 1.0 / 3.0
 
 
-def get_env_local_heights(env, asset_name):
-    """Return the asset's per-env height relative to its environment origin."""
+def get_parked_distance_floor_m(env):
+    """Return the distance past which an object can only be parked, not placed."""
+    return PARKED_CELL_FRACTION_FLOOR * env.unwrapped.scene.cfg.env_spacing
+
+
+def get_env_local_distances(env, asset_name):
+    """Return the asset's per-env horizontal distance from its environment origin."""
     import warp as wp
 
     pose_w = wp.to_torch(env.unwrapped.scene[asset_name].data.root_pose_w)
-    return (pose_w[:, :3] - env.unwrapped.scene.env_origins)[:, 2]
+    return (pose_w[:, :3] - env.unwrapped.scene.env_origins)[:, :2].norm(dim=-1)
 
 
 def get_test_environment(*, enabled: bool, probability: float):
@@ -40,7 +44,6 @@ def get_test_environment(*, enabled: bool, probability: float):
     sphere.get_variation("disappear").apply_cfg(
         ObjectDisappearVariationCfg(
             enabled=enabled,
-            away_position_xyz=TEST_AWAY_POSITION_XYZ,
             sampler_cfg=BernoulliSamplerCfg(probability=probability),
         )
     )
@@ -89,12 +92,12 @@ def _test_envs_draw_independently(simulation_app):
     ).make_registered()
     try:
         env.reset()
-        heights = get_env_local_heights(env, TEST_ASSET_NAME)
-        gone = heights < DISAPPEARED_Z_CEILING_M
+        distances = get_env_local_distances(env, TEST_ASSET_NAME)
+        gone = distances > get_parked_distance_floor_m(env)
         # P(all envs agree) = 2 * 0.5^16, so a split is essentially certain if draws are independent.
         assert bool(gone.any()) and not bool(
             gone.all()
-        ), f"Expected a mix of present and disappeared envs; got heights {heights.tolist()}."
+        ), f"Expected a mix of present and disappeared envs; got distances {distances.tolist()}."
     finally:
         env.close()
     return True
@@ -121,7 +124,6 @@ def _test_disappeared_object_survives_relation_placement(simulation_app):
     box.get_variation("disappear").apply_cfg(
         ObjectDisappearVariationCfg(
             enabled=True,
-            away_position_xyz=TEST_AWAY_POSITION_XYZ,
             sampler_cfg=BernoulliSamplerCfg(probability=1.0),
         )
     )
@@ -137,10 +139,10 @@ def _test_disappeared_object_survives_relation_placement(simulation_app):
             env.unwrapped.cfg.events, "placement_reset"
         ), "Test setup is wrong: relation solving did not register a placement reset event."
         env.reset()
-        height = get_env_local_heights(env, TEST_BOX_NAME)[0]
-        assert (
-            height < DISAPPEARED_Z_CEILING_M
-        ), f"Relation placement must not put a disappeared object back into the scene; got height {float(height)}."
+        distance = get_env_local_distances(env, TEST_BOX_NAME)[0]
+        assert distance > get_parked_distance_floor_m(
+            env
+        ), f"Relation placement must not put a disappeared object back into the scene; got {float(distance)} m."
     finally:
         env.close()
     return True
@@ -161,10 +163,10 @@ def _test_hydra_override_enables_disappear(simulation_app):
     ).make_registered()
     try:
         env.reset()
-        height = get_env_local_heights(env, TEST_ASSET_NAME)[0]
-        assert (
-            height < DISAPPEARED_Z_CEILING_M
-        ), f"Hydra override must enable the variation; got height {float(height)}."
+        distance = get_env_local_distances(env, TEST_ASSET_NAME)[0]
+        assert distance > get_parked_distance_floor_m(
+            env
+        ), f"Hydra override must enable the variation; got {float(distance)} m."
 
         record = env.unwrapped.variation_recorder[f"{TEST_ASSET_NAME}.disappear"]
         episode_idx = env.unwrapped.get_episode_index(0)
