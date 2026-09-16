@@ -96,7 +96,7 @@ class _ControlledTask:
 
         return TaskTerminationCfg(
             timeout_s=self.timeout_s,
-            success=[ProgressObjective(name="condition", predicate_sequences=[self.predicate])],
+            success=[ProgressObjective(name="condition", predicate_sequence=[self.predicate])],
         )
 
     def get_metrics(self):
@@ -117,7 +117,7 @@ class _MultipleObjectiveTask(_ControlledTask):
         return TaskTerminationCfg(
             timeout_s=self.timeout_s,
             success=[
-                ProgressObjective(name=f"condition_{index}", predicate_sequences=[predicate])
+                ProgressObjective(name=f"condition_{index}", predicate_sequence=[predicate])
                 for index, predicate in enumerate(self.predicates)
             ],
         )

@@ -75,7 +75,7 @@ class GoalPoseTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="reach_goal_pose",
-                    predicate_sequences=[partial(goal_pose_task_termination, **params)],
+                    predicate_sequence=[partial(goal_pose_task_termination, **params)],
                 )
             ],
         )

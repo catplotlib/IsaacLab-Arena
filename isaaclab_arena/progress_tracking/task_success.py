@@ -36,6 +36,7 @@ class TaskSuccessTerm(ManagerTermBase):
             success_objectives,
             num_envs=env.num_envs,
             device=env.device,
+            env=env,
             subtasks_are_sequential=cfg.params.get("subtasks_are_sequential", False),
             desired_subtask_success_state=cfg.params.get("desired_subtask_success_state"),
         )

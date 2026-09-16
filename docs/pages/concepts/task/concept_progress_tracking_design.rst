@@ -63,8 +63,8 @@ The arguments after ``env`` are configured when the predicate is added to a prog
 Defining a progress objective
 -----------------------------
 
-Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. The ``predicate_sequences``
-argument accepts a list of predicates or a dictionary of named lists.
+Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exactly one of
+``predicate_sequence`` for a list of predicates or ``predicate_sequences`` for a dictionary of named lists.
 
 ``PickAndPlaceTask`` requires the object to settle, be lifted, and be placed, in that order:
 
@@ -85,7 +85,7 @@ argument accepts a list of predicates or a dictionary of named lists.
            success=[
                ProgressObjective(
                    name="pick_and_place",
-                   predicate_sequences=[
+                   predicate_sequence=[
                        partial(objects_settled, object_names=[self.pick_up_object.name]),
                        partial(
                            object_is_above_height,
@@ -165,13 +165,14 @@ calls its ``reset()`` when an episode resets. A plain success function could rea
 but the tracker would need its updates and resets connected elsewhere.
 
 The tracker stores progress state; the root success term manages its updates and resets.
-Individual predicates remain ordinary callables;
-they do not each need a ``ManagerTermBase`` adapter. Progress tracking needs no separate reset
-event or updating recorder. If progress reporting is disabled, success evaluation and resets still work.
+Predicates can be ordinary callables or managed predicate configurations. ``ProgressTracker``
+creates managed predicate instances and resets them for the selected environments.
+Progress tracking needs no separate reset event or updating recorder. If progress reporting is
+disabled, success evaluation and resets still work.
 Inspect the cached success result through ``env.unwrapped.termination_manager.get_term("success")``.
 
-Consecutive-step predicates remain follow-up work. A sequence orders milestones; it does not
-require any predicate to remain true for multiple steps. No ``ForSteps`` API is implemented yet.
+A sequence orders milestones; it does not require any predicate to remain true for multiple steps.
+The existing ``ConsecutivePredicate`` supports that requirement. Redesigning its API remains follow-up work.
 
 
 Subtask progress tracking in composite and sequential tasks

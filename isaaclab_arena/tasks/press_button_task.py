@@ -53,7 +53,7 @@ class PressButtonTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="press_button",
-                    predicate_sequences=[partial(self.pressable_object.is_pressed, **params)],
+                    predicate_sequence=[partial(self.pressable_object.is_pressed, **params)],
                 )
             ],
         )

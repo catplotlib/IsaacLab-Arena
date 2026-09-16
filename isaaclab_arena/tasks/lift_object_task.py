@@ -92,7 +92,7 @@ class LiftObjectTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="lift_object",
-                    predicate_sequences=[
+                    predicate_sequence=[
                         partial(
                             lift_object_il_success,
                             object_cfg=SceneEntityCfg(self.lift_object.name),
@@ -200,7 +200,7 @@ class LiftObjectTaskRL(LiftObjectTask):
         termination_cfg.success = [
             ProgressObjective(
                 name="lift_object",
-                predicate_sequences=[
+                predicate_sequence=[
                     partial(
                         lift_object_rl_success,
                         object_cfg=SceneEntityCfg(self.lift_object.name),
@@ -366,7 +366,7 @@ class DexsuiteLiftTask(LiftObjectTask):
             success=[
                 ProgressObjective(
                     name="lift_object",
-                    predicate_sequences=[
+                    predicate_sequence=[
                         partial(
                             lift_object_rl_success,
                             command_name="object_pose",

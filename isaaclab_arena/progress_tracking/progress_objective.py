@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
 from isaaclab_arena.progress_tracking.progress_tracking_utils import (
+    DEFAULT_GROUP_NAME,
+    Predicate,
     PredicateSequence,
     PredicateSequences,
     _format_predicate_sequences,
@@ -34,14 +35,14 @@ class ProgressObjectiveCompletionMode(str, Enum):
 class ProgressObjective:
     """Define task progress using one predicate sequence or named independent sequences.
 
-    A list defines one sequence; a dictionary defines named independent sequences.
-    Predicates within each sequence must hold in order. The logical setting determines
-    how many sequences must complete.
+    Provide exactly one of predicate_sequence or predicate_sequences. Predicates within
+    each sequence must hold in order. The logical setting determines how many sequences
+    must complete.
 
     Args:
         name: Identifies the ProgressObjective within the TaskBase.
-        predicate_sequences: One ordered list of predicates or a dictionary of named lists.
-            Each list contains callables or (callable, score) pairs.
+        predicate_sequence: One ordered list of predicates, optionally paired with scores.
+        predicate_sequences: Named independent lists of predicates, optionally paired with scores.
         score: Weight of the ProgressObjective in the TaskBase-level overall_score.
         logical: How completed sequences combine to determine if the ProgressObjective is complete.
             A ProgressObjectiveCompletionMode (ALL, ANY, or CHOOSE); a matching string value is also accepted.
@@ -51,13 +52,18 @@ class ProgressObjective:
     """
 
     name: str
-    predicate_sequences: PredicateSequence | PredicateSequences
+    predicate_sequence: PredicateSequence | None = None
+    """One ordered sequence of predicates."""
+
+    predicate_sequences: PredicateSequences | None = None
+    """Named predicate sequences that progress independently."""
+
     score: float = 1.0
     logical: ProgressObjectiveCompletionMode = ProgressObjectiveCompletionMode.ALL
     K: int | None = None
     description: str | None = None
 
-    canonical_predicate_sequences: dict[str, list[tuple[Callable, float]]] = field(init=False, repr=False)
+    canonical_predicate_sequences: dict[str, list[tuple[Predicate, float]]] = field(init=False, repr=False)
 
     parent_subtask_idx: int | None = None
     """Subtask index assigned by CompositeTaskBase; None for standalone task objectives."""
@@ -71,7 +77,21 @@ class ProgressObjective:
             isinstance(self.parent_subtask_idx, int) and self.parent_subtask_idx >= 0
         ), "parent_subtask_idx must be a non-negative integer or None."
 
-        formatted_sequences = _format_predicate_sequences(self.predicate_sequences)
+        has_single_sequence = self.predicate_sequence is not None
+        has_named_sequences = self.predicate_sequences is not None
+        assert (
+            has_single_sequence != has_named_sequences
+        ), "Provide exactly one of predicate_sequence or predicate_sequences."
+
+        if self.predicate_sequence is not None:
+            named_sequences = {DEFAULT_GROUP_NAME: self.predicate_sequence}
+        else:
+            assert isinstance(
+                self.predicate_sequences, dict
+            ), "predicate_sequences must map names to predicate sequences."
+            named_sequences = self.predicate_sequences
+
+        formatted_sequences = _format_predicate_sequences(named_sequences)
         self.canonical_predicate_sequences = _normalize_scores(formatted_sequences)
 
         # Validate the logical and K parameters.
@@ -87,6 +107,6 @@ class ProgressObjective:
         """Return the sequence names used as group identifiers in progress reports."""
         return list(self.canonical_predicate_sequences.keys())
 
-    def get_chain(self, group_name: str) -> list[tuple[Callable, float]]:
+    def get_chain(self, group_name: str) -> list[tuple[Predicate, float]]:
         """Return the weighted predicate sequence for a progress-report group."""
         return self.canonical_predicate_sequences[group_name]

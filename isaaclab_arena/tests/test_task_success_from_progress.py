@@ -48,7 +48,7 @@ def _make_environment_and_manager(
         success_objectives = [
             ProgressObjective(
                 name="pick_and_place",
-                predicate_sequences=[partial(_controlled_predicate, predicate_name=name) for name in predicate_names],
+                predicate_sequence=[partial(_controlled_predicate, predicate_name=name) for name in predicate_names],
             )
         ]
     # Isaac Lab constructs recorders before the termination manager that owns progress.
@@ -79,7 +79,7 @@ def _test_flat_subtasks_share_manager_ordering_final_checks_and_reset(simulation
     success_objectives = [
         ProgressObjective(
             name=predicate_name,
-            predicate_sequences=[partial(_controlled_predicate, predicate_name=predicate_name)],
+            predicate_sequence=[partial(_controlled_predicate, predicate_name=predicate_name)],
             parent_subtask_idx=subtask_index,
         )
         for predicate_name, subtask_index in zip(predicate_names, [0, 0, 1])
@@ -131,7 +131,7 @@ def _test_flat_subtask_none_state_skips_history_and_current_condition(simulation
     success_objectives = [
         ProgressObjective(
             name=predicate_name,
-            predicate_sequences=[partial(_controlled_predicate, predicate_name=predicate_name)],
+            predicate_sequence=[partial(_controlled_predicate, predicate_name=predicate_name)],
             parent_subtask_idx=subtask_index,
         )
         for subtask_index, predicate_name in enumerate(predicate_names)
@@ -284,6 +284,54 @@ def _test_success_results_remain_stable_after_updates_and_reset(simulation_app):
     return True
 
 
+def _test_nested_predicates_resolve_scene_references(simulation_app):
+    import torch
+
+    from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.composite import CompositePredicate
+
+    class _BodyPredicate(ManagerTermBase):
+        def __init__(self, cfg, env):
+            super().__init__(cfg, env)
+            assert cfg.params["asset_cfg"].body_ids == [1]
+
+        def __call__(self, env, asset_cfg):
+            assert asset_cfg.body_ids == [1]
+            return env.valid
+
+    gear = SimpleNamespace(
+        body_names=["base", "tip"],
+        num_bodies=2,
+        find_bodies=lambda names, preserve_order: ([1], ["tip"]),
+    )
+    env = SimpleNamespace(num_envs=2, device="cpu", scene={"gear": gear}, valid=torch.tensor([True, False]))
+    gear_cfg = SceneEntityCfg("gear", body_names=["tip"])
+    body_predicate_cfg = TerminationTermCfg(func=_BodyPredicate, params={"asset_cfg": gear_cfg})
+    composite_cfg = TerminationTermCfg(
+        func=CompositePredicate,
+        params={"predicates": [body_predicate_cfg], "consecutive_steps": 2},
+    )
+    objective = ProgressObjective(name="gear_insertion", predicate_sequence=[composite_cfg])
+    tracker = ProgressTracker([objective], num_envs=env.num_envs, device=env.device, env=env)
+    tracker.step(env, step_index=None)
+    assert tracker.is_complete().tolist() == [False, False]
+    tracker.step(env, step_index=None)
+    assert tracker.is_complete().tolist() == [True, False]
+
+    # Reusing the task definition constructs independent counters and leaves scene references unresolved.
+    rebuilt_tracker = ProgressTracker([objective], num_envs=env.num_envs, device=env.device, env=env)
+    rebuilt_tracker.step(env, step_index=None)
+    assert rebuilt_tracker.is_complete().tolist() == [False, False]
+    assert tracker.is_complete().tolist() == [True, False]
+    assert composite_cfg.func is CompositePredicate
+    assert body_predicate_cfg.func is _BodyPredicate
+    assert gear_cfg.body_ids == slice(None)
+    return True
+
+
 def _test_success_requires_objectives_and_one_owner(simulation_app):
     import pytest
     from isaaclab.managers import TerminationTermCfg
@@ -328,7 +376,7 @@ def _test_builder_installs_success_only_for_success_objectives(simulation_app):
 
     progress_task_termination_cfg = TaskTerminationCfg(
         success=[
-            ProgressObjective(name="done", predicate_sequences=[partial(_controlled_predicate, predicate_name="done")])
+            ProgressObjective(name="done", predicate_sequence=[partial(_controlled_predicate, predicate_name="done")])
         ],
         failures={
             "object_dropped": TerminationTermCfg(
@@ -452,7 +500,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert termination_cfg.timeout_s == 12.0
     assert len(termination_cfg.success) == 1
     expected_predicates = [objects_settled, object_is_above_height, object_on_destination]
-    assert [predicate.func for predicate in termination_cfg.success[0].predicate_sequences] == expected_predicates
+    assert [predicate.func for predicate in termination_cfg.success[0].predicate_sequence] == expected_predicates
     assert set(termination_cfg.failures) == {"object_dropped"}
     assert termination_cfg.failures["object_dropped"].func is root_height_below_minimum
     assert termination_cfg.failures["object_dropped"].params["minimum_height"] == -0.1
@@ -467,7 +515,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert env_cfg.terminations["success"].func is TaskSuccessTerm
     objectives = env_cfg.terminations["success"].params["success_objectives"]
     assert len(objectives) == 1
-    assert [predicate.func for predicate in objectives[0].predicate_sequences] == expected_predicates
+    assert [predicate.func for predicate in objectives[0].predicate_sequence] == expected_predicates
     assert env_cfg.terminations["object_dropped"].func is root_height_below_minimum
     assert env_cfg.terminations["object_dropped"].params["minimum_height"] == -0.1
     assert env_cfg.terminations["time_out"].func is time_out
@@ -503,7 +551,7 @@ def _test_open_door_uses_existing_sequence_and_thresholds(simulation_app):
         assert len(termination_cfg.success) == 1
         objective = termination_cfg.success[0]
         assert objective.name == "open_door"
-        moved_from_rest, opened = objective.predicate_sequences
+        moved_from_rest, opened = objective.predicate_sequence
         assert moved_from_rest.func is is_away_from_rest_openness
         assert moved_from_rest.keywords["asset_cfg"].name == "door"
         assert moved_from_rest.keywords["asset_cfg"].joint_names == ["hinge"]
@@ -511,6 +559,42 @@ def _test_open_door_uses_existing_sequence_and_thresholds(simulation_app):
         assert moved_from_rest.keywords["min_openness_change"] == task.min_openness_change
         assert opened.func is door.is_open
         assert opened.keywords == ({} if openness_threshold is None else {"threshold": openness_threshold})
+    return True
+
+
+def _test_cable_routing_preserves_success_parameters_and_timeout(simulation_app):
+    from unittest.mock import Mock
+
+    from isaaclab_arena.assets.cable import Cable
+    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
+    from isaaclab_arena_environments.isaac_cap.cable_routing.task import CableRoutingTask, cable_route_success
+
+    cable = Mock(spec=Cable)
+    cable.name = "routing_cable"
+    task = CableRoutingTask(
+        cable=cable,
+        pegs=[SimpleNamespace(name=f"peg_{index}") for index in range(3)],
+        route_peg_indices=(2, 0),
+        route_directions=(-1.0, 1.0),
+        task_description="Route the cable around the last and first pegs.",
+        episode_length_s=45.0,
+    )
+    termination_cfg = task.get_termination_cfg()
+    assert isinstance(termination_cfg, TaskTerminationCfg)
+    assert termination_cfg.timeout_s == 45.0
+    assert termination_cfg.failures == {}
+    assert len(termination_cfg.success) == 1
+    objective = termination_cfg.success[0]
+    assert objective.name == "cable_routing"
+    assert len(objective.predicate_sequence) == 1
+    route_predicate = objective.predicate_sequence[0]
+    assert route_predicate.func is cable_route_success
+    assert route_predicate.keywords == {
+        "cable_asset_name": "routing_cable",
+        "peg_asset_names": ("peg_0", "peg_1", "peg_2"),
+        "route_peg_indices": (2, 0),
+        "route_directions": (-1.0, 1.0),
+    }
     return True
 
 
@@ -542,6 +626,10 @@ def test_success_results_remain_stable_after_updates_and_reset():
     assert run_function_with_persistent_simulation_app(_test_success_results_remain_stable_after_updates_and_reset)
 
 
+def test_nested_predicates_resolve_scene_references():
+    assert run_function_with_persistent_simulation_app(_test_nested_predicates_resolve_scene_references)
+
+
 def test_success_requires_objectives_and_one_owner():
     assert run_function_with_persistent_simulation_app(_test_success_requires_objectives_and_one_owner)
 
@@ -568,3 +656,7 @@ def test_pick_and_place_uses_typed_success_failure_and_timeout():
 
 def test_open_door_uses_existing_sequence_and_thresholds():
     assert run_function_with_persistent_simulation_app(_test_open_door_uses_existing_sequence_and_thresholds)
+
+
+def test_cable_routing_preserves_success_parameters_and_timeout():
+    assert run_function_with_persistent_simulation_app(_test_cable_routing_preserves_success_parameters_and_timeout)

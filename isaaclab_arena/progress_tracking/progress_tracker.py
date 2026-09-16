@@ -5,14 +5,65 @@
 
 from __future__ import annotations
 
+import copy
+import functools
 import torch
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
-from isaaclab_arena.progress_tracking.progress_tracking_utils import _predicate_repr
+from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
+from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
+from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+
+
+def _initialize_predicate_parameters(value, env) -> None:
+    """Resolve scene references and construct nested predicates before their parents."""
+    if isinstance(value, TerminationTermCfg):
+        _initialize_predicate_parameters(value.params, env)
+        if isinstance(value.func, type):
+            assert issubclass(value.func, ManagerTermBase), "Managed predicates must inherit ManagerTermBase."
+            value.func = value.func(value, env)
+        assert callable(value.func), "Predicate configs must specify a callable or ManagerTermBase class."
+    elif isinstance(value, SceneEntityCfg):
+        value.resolve(env.scene)
+    elif isinstance(value, dict):
+        for parameter in value.values():
+            _initialize_predicate_parameters(parameter, env)
+    elif isinstance(value, (list, tuple)):
+        for parameter in value:
+            _initialize_predicate_parameters(parameter, env)
+
+
+def _resolve_progress_predicate(predicate, env):
+    """Instantiate a managed predicate config when the tracker gains access to the environment."""
+
+    # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
+    # TODO(cvolk): Revisit this TerminationTermCfg adapter during the stateful predicate redesign.
+    # Preserve environment-aware construction and nested SceneEntityCfg resolution.
+
+    if not isinstance(predicate, TerminationTermCfg):
+        return predicate
+
+    assert env is not None, "An environment is required to resolve a managed progress predicate."
+    predicate_cfg = copy.deepcopy(predicate)
+    _initialize_predicate_parameters(predicate_cfg, env)
+    return functools.partial(predicate_cfg.func, **predicate_cfg.params)
+
+
+def _evaluate_progress_predicate_with_state_update_mask(predicate, env, state_update_mask: torch.Tensor):
+    """Evaluate a predicate without mutating inactive consecutive-predicate environments."""
+
+    # TODO(cvolk): Revisit ConsecutivePredicate-specific dispatch during the stateful predicate redesign.
+    # Preserve state updates only for environments where the predicate is active.
+    predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
+    if isinstance(predicate_func, ConsecutivePredicate):
+        return predicate(env, active_mask=state_update_mask)
+    return predicate(env)
 
 
 @dataclass
@@ -78,7 +129,7 @@ class ProgressState:
 class ProgressObjectiveRunner:
     """Track a ProgressObjective's predicate sequences across parallel environments."""
 
-    def __init__(self, progress_objective: ProgressObjective, num_envs: int, device):
+    def __init__(self, progress_objective: ProgressObjective, num_envs: int, device, env=None):
         self.progress_objective = progress_objective
         self.num_envs = num_envs
         self.device = device
@@ -89,6 +140,10 @@ class ProgressObjectiveRunner:
         self.current_predicate_index: dict[str, torch.Tensor] = {}
         self.group_score: dict[str, torch.Tensor] = {}
         self.group_complete: dict[str, torch.Tensor] = {}
+        self.predicate_chains = {
+            group_name: [(_resolve_progress_predicate(predicate, env), score) for predicate, score in chain]
+            for group_name, chain in progress_objective.canonical_predicate_sequences.items()
+        }
 
         for group_name in progress_objective.group_names:
             self.current_predicate_index[group_name] = torch.zeros(num_envs, dtype=torch.long, device=device)
@@ -100,7 +155,8 @@ class ProgressObjectiveRunner:
         env,
         step_index: torch.Tensor | None,
         active_envs: torch.Tensor,
-        predicate_results: dict[int, torch.Tensor],
+        predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        check_final_conditions: bool = False,
     ) -> list[PredicateEvent]:
         """Step the runner for a single env.step.
 
@@ -108,32 +164,72 @@ class ProgressObjectiveRunner:
         PredicateEvent for every env/group that advanced this step.
         """
 
-        active_envs = active_envs & ~self.is_complete()
-        if not bool(active_envs.any().item()):
+        objective_complete = self.is_complete()
+        final_check_envs = objective_complete if check_final_conditions else torch.zeros_like(objective_complete)
+        active_envs = active_envs & ~objective_complete
+        if not bool((active_envs | final_check_envs).any().item()):
             return []
 
         events: list[PredicateEvent] = []
-        for group_name, predicate_chain in self.progress_objective.canonical_predicate_sequences.items():
-            events += self._step_group(env, group_name, predicate_chain, active_envs, step_index, predicate_results)
+        for group_name, predicate_chain in self.predicate_chains.items():
+            group_final_check_envs = final_check_envs
+            if check_final_conditions:
+                group_final_check_envs = group_final_check_envs | self.group_complete[group_name]
+            events += self._step_group(
+                env, group_name, predicate_chain, active_envs, step_index, predicate_results, group_final_check_envs
+            )
         return events
 
-    def _evaluate_predicate(self, predicate, env, predicate_results: dict[int, torch.Tensor]) -> torch.Tensor:
-        """Evaluate each configured predicate at most once in the current control step."""
+    def _evaluate_predicate(
+        self,
+        predicate,
+        env,
+        predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        state_update_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Reuse results without updating a predicate twice for the same environment and step."""
         predicate_key = id(predicate)
         if predicate_key not in predicate_results:
-            result = torch.as_tensor(predicate(env), dtype=torch.bool, device=self.device)
+            predicate_results[predicate_key] = (
+                torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+                torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
+            )
+        cached_result, evaluated_envs = predicate_results[predicate_key]
+        predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
+        if not isinstance(predicate_func, ConsecutivePredicate):
+            state_update_mask = torch.ones_like(state_update_mask)
+        pending_envs = state_update_mask & ~evaluated_envs
+        if bool(pending_envs.any().item()):
+            result = torch.as_tensor(
+                _evaluate_progress_predicate_with_state_update_mask(predicate, env, pending_envs),
+                dtype=torch.bool,
+                device=self.device,
+            )
             assert result.shape == (self.num_envs,), (
                 f"Predicate {_predicate_repr(predicate)} returned shape {tuple(result.shape)};"
                 f" expected ({self.num_envs},)"
             )
-            predicate_results[predicate_key] = result
-        return predicate_results[predicate_key]
+            cached_result = torch.where(pending_envs, result, cached_result)
+            predicate_results[predicate_key] = (cached_result, evaluated_envs | pending_envs)
+        return cached_result
 
-    def final_conditions_met(self, env, predicate_results: dict[int, torch.Tensor]) -> torch.Tensor:
+    def final_conditions_met(
+        self, env, predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]]
+    ) -> torch.Tensor:
         """Evaluate the final predicates using this objective's ALL, ANY, or CHOOSE requirement."""
+        completed_envs = self.is_complete()
+        if not bool(completed_envs.any().item()):
+            return completed_envs
+        # Stateful final predicates were updated during step(); do not start newly reached predicates here.
+        no_state_updates = torch.zeros_like(completed_envs)
         final_results = [
-            self._evaluate_predicate(chain[-1][0], env, predicate_results)
-            for chain in self.progress_objective.canonical_predicate_sequences.values()
+            self._evaluate_predicate(
+                chain[-1][0],
+                env,
+                predicate_results,
+                no_state_updates,
+            )
+            for chain in self.predicate_chains.values()
         ]
         return torch.stack(final_results, dim=0).sum(dim=0) >= self._num_required_groups()
 
@@ -144,7 +240,8 @@ class ProgressObjectiveRunner:
         predicate_chain: list[tuple],
         gating_mask: torch.Tensor,
         step_index: torch.Tensor | None,
-        predicate_results: dict[int, torch.Tensor],
+        predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        final_check_envs: torch.Tensor,
     ) -> list[PredicateEvent]:
         """Advance a single group's predicate chain by at most one position per env.
 
@@ -166,11 +263,17 @@ class ProgressObjectiveRunner:
             #   2) They have not yet advanced this step
             #   3) The ProgressObjective is active for the composite task
             at_position = (self.current_predicate_index[group_name] == chain_idx) & ~advanced & gating_mask
-            if not bool(at_position.any().item()):
+            state_update_mask = at_position
+            if chain_idx == chain_length - 1:
+                # Include completed rows now so final checks reuse this evaluation and its diagnostics.
+                state_update_mask = state_update_mask | (
+                    final_check_envs & (self.current_predicate_index[group_name] >= chain_idx)
+                )
+            if not bool(state_update_mask.any().item()):
                 continue
 
             # Predicates return one boolean per environment; only active rows advance.
-            result = self._evaluate_predicate(predicate, env, predicate_results)
+            result = self._evaluate_predicate(predicate, env, predicate_results, state_update_mask)
 
             # Compute mask for which envs need to be advanced to the next predicate.
             advance_mask = at_position & result
@@ -216,6 +319,11 @@ class ProgressObjectiveRunner:
             self.group_score[group_name][env_ids] = 0.0
             self.group_complete[group_name][env_ids] = False
 
+        reset_managed_predicates(
+            (predicate for predicate_chain in self.predicate_chains.values() for predicate, _score in predicate_chain),
+            env_ids,
+        )
+
     def _num_required_groups(self) -> int:
         """Number of groups that must complete for the objective to be complete."""
 
@@ -254,7 +362,7 @@ class ProgressObjectiveRunner:
         # The active predicate for a group is the one at its current chain position. Any group
         # whose pointer has run off the end of the chain is complete (no active predicate).
         for group_name in objective.group_names:
-            predicate_chain = objective.canonical_predicate_sequences[group_name]
+            predicate_chain = self.predicate_chains[group_name]
             cur_predicate_index = int(self.current_predicate_index[group_name][env_idx].item())
             if cur_predicate_index >= len(predicate_chain):
                 active_predicates[group_name] = None
@@ -279,6 +387,7 @@ class ProgressTracker:
         progress_objectives: list[ProgressObjective],
         num_envs: int,
         device,
+        env=None,
         *,
         subtasks_are_sequential: bool = False,
         desired_subtask_success_state: list[bool | None] | None = None,
@@ -289,7 +398,9 @@ class ProgressTracker:
         self.progress_objectives = progress_objectives
         self.num_envs = num_envs
         self.device = device
-        self.runners = [ProgressObjectiveRunner(objective, num_envs, device) for objective in progress_objectives]
+        self.runners = [
+            ProgressObjectiveRunner(objective, num_envs, device, env=env) for objective in progress_objectives
+        ]
         self._subtask_runners = self._group_runners_by_subtask()
         assert not subtasks_are_sequential or self._subtask_runners, "Sequential tracking requires subtask indices."
         if desired_subtask_success_state is not None:
@@ -326,18 +437,24 @@ class ProgressTracker:
         """Advance eligible predicate sequences once and update task success for the current step."""
 
         active_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-        predicate_results: dict[int, torch.Tensor] = {}
-        for subtask_runners in self._subtask_runners or [self.runners]:
+        predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+        for subtask_index, subtask_runners in enumerate(self._subtask_runners or [self.runners]):
             # Use completion before advancing so the next subtask starts on the following step.
             subtask_was_complete = self._all_objectives_complete(subtask_runners)
+            check_final_conditions = (
+                self.desired_subtask_success_state is not None
+                and self.desired_subtask_success_state[subtask_index] is not None
+            )
             for runner in subtask_runners:
-                for event in runner.step(env, step_index, active_envs, predicate_results):
+                for event in runner.step(env, step_index, active_envs, predicate_results, check_final_conditions):
                     self._events[event.env_idx].append(event)
             if self.subtasks_are_sequential:
                 active_envs = active_envs & subtask_was_complete
         self._task_success = self._compute_task_success(env, predicate_results)
 
-    def _compute_task_success(self, env, predicate_results: dict[int, torch.Tensor]) -> torch.Tensor:
+    def _compute_task_success(
+        self, env, predicate_results: dict[int, tuple[torch.Tensor, torch.Tensor]]
+    ) -> torch.Tensor:
         """Combine recorded completion with any required current subtask conditions."""
         if self.desired_subtask_success_state is None:
             return self._all_objectives_complete(self.runners)
@@ -351,12 +468,11 @@ class ProgressTracker:
         success = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
         for runners, _ in required_subtasks:
             success &= self._all_objectives_complete(runners)
-        if bool(success.any().item()):
-            for runners, desired_state in required_subtasks:
-                final_conditions_met = torch.stack(
-                    [runner.final_conditions_met(env, predicate_results) for runner in runners], dim=1
-                ).all(dim=1)
-                success &= final_conditions_met == desired_state
+        for runners, desired_state in required_subtasks:
+            final_conditions_met = torch.stack(
+                [runner.final_conditions_met(env, predicate_results) for runner in runners], dim=1
+            ).all(dim=1)
+            success &= final_conditions_met == desired_state
         return success
 
     def is_complete(self) -> torch.Tensor:
@@ -367,6 +483,30 @@ class ProgressTracker:
         """Return recorded completion for each environment and subtask, in subtask order."""
         assert self._subtask_runners, "Subtask completion requires objectives with subtask indices."
         return torch.stack([self._all_objectives_complete(runners) for runners in self._subtask_runners], dim=1)
+
+    # TODO(cvolk): Revisit predicate-instance access during the stateful predicate redesign.
+    # Retained for GearInsertionFractionRecorder and GearEnvBehaviourDemo, which read
+    # cached CompositePredicate results.
+    def get_predicate(
+        self,
+        objective_name: str,
+        sequence_name: str = DEFAULT_GROUP_NAME,
+        predicate_index: int = 0,
+    ) -> Callable:
+        """Return a predicate instance for reading cached diagnostics without evaluating it.
+
+        Args:
+            objective_name: Name of the ProgressObjective containing the predicate.
+            sequence_name: Named sequence, or the default sequence for a list definition.
+            predicate_index: Position of the predicate within that sequence.
+        """
+        for runner in self.runners:
+            if runner.progress_objective.name == objective_name:
+                predicate = runner.predicate_chains[sequence_name][predicate_index][0]
+                while isinstance(predicate, functools.partial):
+                    predicate = predicate.func
+                return predicate
+        raise KeyError(f"Unknown progress objective: {objective_name!r}")
 
     def reset(self, env_ids=None) -> None:
         """Reset the runners for the provided envs."""

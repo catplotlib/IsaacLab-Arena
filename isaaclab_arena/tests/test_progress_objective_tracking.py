@@ -96,17 +96,28 @@ def _test_rest_pose_recorder_is_owned_by_env(simulation_app) -> bool:
 
 def _test_sequence_single_predicate(simulation_app) -> bool:
     """An explicit single-predicate sequence has weight 1.0."""
+    from isaaclab.managers import TerminationTermCfg
+
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-    from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME
+    from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
 
     try:
         pred = _MockPredicate(num_envs=1)
-        objective = ProgressObjective(name="t", predicate_sequences=[pred])
+        objective = ProgressObjective(name="t", predicate_sequence=[pred], predicate_sequences=None)
         assert objective.group_names == [DEFAULT_GROUP_NAME]
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         assert len(chain) == 1
         assert chain[0][0] is pred
         assert abs(chain[0][1] - 1.0) < SCORE_TOL
+
+        predicate_cfg = TerminationTermCfg(func=pred)
+        objective = ProgressObjective(name="managed", predicate_sequence=[predicate_cfg])
+        assert objective.get_chain(DEFAULT_GROUP_NAME) == [(predicate_cfg, 1.0)]
+        assert _predicate_repr(predicate_cfg) == "mock_predicate"
+        named_objective = ProgressObjective(
+            name="named_managed", predicate_sequence=None, predicate_sequences={"settled": [predicate_cfg]}
+        )
+        assert named_objective.get_chain("settled") == [(predicate_cfg, 1.0)]
     except Exception as e:
         print(f"Error: {e}")
         traceback.print_exc()
@@ -121,7 +132,7 @@ def _test_sequence_unweighted_predicates(simulation_app) -> bool:
 
     try:
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="t", predicate_sequences=preds)
+        objective = ProgressObjective(name="t", predicate_sequence=preds)
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         assert [c[0] for c in chain] == preds
         # Equal scores normalize to 0.33 each, summing to 1.0.
@@ -143,11 +154,13 @@ def _test_sequence_weighted_predicates(simulation_app) -> bool:
     try:
         p1 = _MockPredicate(num_envs=1, name="p1")
         p2 = _MockPredicate(num_envs=1, name="p2")
-        objective = ProgressObjective(name="t", predicate_sequences=[(p1, 1.0), (p2, 3.0)])
+        objective = ProgressObjective(name="t", predicate_sequence=[(p1, 1.0), (p2, 3.0)])
         chain = objective.get_chain(DEFAULT_GROUP_NAME)
         # 1.0/4.0 = 0.25, 3.0/4.0 = 0.75
         assert abs(chain[0][1] - 0.25) < SCORE_TOL
         assert abs(chain[1][1] - 0.75) < SCORE_TOL
+        named_objective = ProgressObjective(name="named", predicate_sequences={"weighted": [(p1, 1.0), (p2, 3.0)]})
+        assert named_objective.get_chain("weighted") == chain
     except Exception as e:
         print(f"Error: {e}")
         traceback.print_exc()
@@ -187,52 +200,70 @@ def _test_named_predicate_sequences(simulation_app) -> bool:
 
 
 def _test_objective_rejects_invalid_inputs(simulation_app) -> bool:
-    """Predicate sequences must be nonempty lists of predicates, optionally named in a dictionary."""
+    """Require exactly one sequence argument with the matching list or dictionary shape."""
     import pytest
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 
     predicate = _MockPredicate(num_envs=1)
-    invalid_sequences = [
+    for missing_arguments in (
+        {},
+        {"predicate_sequence": None},
+        {"predicate_sequences": None},
+        {"predicate_sequence": None, "predicate_sequences": None},
+    ):
+        with pytest.raises(AssertionError):
+            ProgressObjective(name="missing", **missing_arguments)
+
+    for single_sequence in ([predicate], []):
+        for named_sequences in ({"a": [predicate]}, {}):
+            with pytest.raises(AssertionError):
+                ProgressObjective(name="both", predicate_sequence=single_sequence, predicate_sequences=named_sequences)
+
+    for invalid_sequence in ([], {}, {"a": [predicate]}, predicate, 42, "string", (predicate,)):
+        with pytest.raises((TypeError, AssertionError)):
+            ProgressObjective(name="invalid_single", predicate_sequence=invalid_sequence)
+    for invalid_sequences in (
         [],
+        [predicate],
+        {},
+        predicate,
         42,
         "string",
-        predicate,
-        (predicate,),
-        {},
-        {"object": predicate},
-        {"object": []},
-        {"object": (predicate,)},
-        {"object": [42]},
-        {0: [predicate]},
+        {"a": predicate},
+        {"a": []},
+        {"a": (predicate,)},
+        {1: [predicate]},
+    ):
+        with pytest.raises((TypeError, AssertionError)):
+            ProgressObjective(name="invalid_named", predicate_sequences=invalid_sequences)
+
+    for invalid_sequence in (
         [42],
+        [(42, 1.0)],
+        [(predicate, "invalid_score")],
+        [(predicate, 1.0, 2.0)],
         [predicate, (predicate, 1.0)],
         [(predicate, 1.0), predicate],
-        [(predicate, "invalid_weight")],
-    ]
-    for predicate_sequences in invalid_sequences:
+    ):
+        for sequence_arguments in (
+            {"predicate_sequence": invalid_sequence},
+            {"predicate_sequences": {"a": invalid_sequence}},
+        ):
+            with pytest.raises((TypeError, AssertionError)):
+                ProgressObjective(name="invalid_predicate", **sequence_arguments)
+
+    for sequence_arguments in ({"predicate_sequence": [predicate]}, {"predicate_sequences": {"a": [predicate]}}):
         with pytest.raises(AssertionError):
-            ProgressObjective(name="invalid_sequences", predicate_sequences=predicate_sequences)
-    for predicate_sequences in ([predicate], {"object": [predicate]}):
-        with pytest.raises(AssertionError, match="K is required"):
-            ProgressObjective(
-                name="missing_k",
-                predicate_sequences=predicate_sequences,
-                logical="choose",
-            )
+            ProgressObjective(name="missing_k", **sequence_arguments, logical="choose")
         for invalid_count in (0, 2):
             with pytest.raises(AssertionError):
-                ProgressObjective(
-                    name="invalid_k",
-                    predicate_sequences=predicate_sequences,
-                    logical="choose",
-                    K=invalid_count,
-                )
+                ProgressObjective(name="invalid_k", **sequence_arguments, logical="choose", K=invalid_count)
     return True
 
 
 def _test_list_and_named_sequence_track_identically(simulation_app) -> bool:
-    """List and dictionary inputs produce the same weighted progress for every completion mode."""
+    """The single-sequence and named-sequences arguments produce the same weighted progress."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME
@@ -247,7 +278,7 @@ def _test_list_and_named_sequence_track_identically(simulation_app) -> bool:
                 progress_objectives=[
                     ProgressObjective(
                         name="task",
-                        predicate_sequences=predicate_sequences,
+                        **sequence_arguments,
                         logical=logical,
                         K=1 if logical == "choose" else None,
                     )
@@ -255,9 +286,9 @@ def _test_list_and_named_sequence_track_identically(simulation_app) -> bool:
                 num_envs=1,
                 device="cpu",
             )
-            for predicate_sequences in (
-                weighted_sequence,
-                {DEFAULT_GROUP_NAME: weighted_sequence},
+            for sequence_arguments in (
+                {"predicate_sequence": weighted_sequence},
+                {"predicate_sequences": {DEFAULT_GROUP_NAME: weighted_sequence}},
             )
         ]
         for predicate_values, expected_score, expected_complete in (
@@ -332,7 +363,7 @@ def _test_state_machine_advances_sequentially(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=1)
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="lift", predicate_sequences=preds)
+        objective = ProgressObjective(name="lift", predicate_sequence=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
         sm.reset([0])
 
@@ -379,7 +410,7 @@ def _test_state_machine_ignores_out_of_order_success(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=1)
         preds = [_MockPredicate(num_envs=1, name=f"p{i}") for i in range(3)]
-        objective = ProgressObjective(name="lift", predicate_sequences=preds)
+        objective = ProgressObjective(name="lift", predicate_sequence=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=1, device="cpu")
         sm.reset([0])
 
@@ -539,7 +570,7 @@ def _test_state_machine_reset_clears_state(simulation_app) -> bool:
     try:
         env = _MockEnv(num_envs=2)
         preds = [_MockPredicate(num_envs=2, name=f"p{i}") for i in range(2)]
-        objective = ProgressObjective(name="t", predicate_sequences=preds)
+        objective = ProgressObjective(name="t", predicate_sequence=preds)
         sm = ProgressTracker(progress_objectives=[objective], num_envs=2, device="cpu")
         sm.reset([0, 1])
 
@@ -592,7 +623,7 @@ def _test_recorder_publishes_to_extras_and_records_nothing(simulation_app) -> bo
     final_predicate = _MockPredicate(num_envs=2, name="final")
     first_predicate.set([True, False])
     final_predicate.set([True, False])
-    objectives = [ProgressObjective(name="task", predicate_sequences=[first_predicate, final_predicate])]
+    objectives = [ProgressObjective(name="task", predicate_sequence=[first_predicate, final_predicate])]
     recorder_cfg = ProgressTrackingRecorderCfg()
     recorder = recorder_cfg.class_type(recorder_cfg, env)
     assert env._progress_tracker is None
@@ -668,7 +699,7 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
             def get_termination_cfg(self):
                 pred = _MockPredicate(num_envs=1, name="p")
                 return TaskTerminationCfg(
-                    success=[ProgressObjective(name="lift", predicate_sequences=[pred])],
+                    success=[ProgressObjective(name="lift", predicate_sequence=[pred])],
                     timeout_s=self.episode_length_s,
                 )
 
@@ -685,7 +716,7 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
                     success=[
                         ProgressObjective(
                             name="open",
-                            predicate_sequences=[_MockPredicate(1, name="pa")],
+                            predicate_sequence=[_MockPredicate(1, name="pa")],
                         )
                     ],
                     timeout_s=self.episode_length_s,
@@ -697,7 +728,7 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
                     success=[
                         ProgressObjective(
                             name="close",
-                            predicate_sequences=[_MockPredicate(1, name="pb")],
+                            predicate_sequence=[_MockPredicate(1, name="pb")],
                         )
                     ],
                     timeout_s=self.episode_length_s,
@@ -730,7 +761,7 @@ def _test_flat_subtask_objectives_report_weighted_progress(simulation_app):
     objectives = [
         ProgressObjective(
             name=f"condition_{index}",
-            predicate_sequences=[predicate],
+            predicate_sequence=[predicate],
             parent_subtask_idx=0 if index < 2 else 1,
             score=score,
         )
@@ -778,7 +809,7 @@ def _test_shared_predicate_results_are_reused_across_objectives(simulation_app):
     objectives = [
         ProgressObjective(
             name=f"objective_{index}",
-            predicate_sequences=[predicate],
+            predicate_sequence=[predicate],
             parent_subtask_idx=index,
         )
         for index in range(2)
