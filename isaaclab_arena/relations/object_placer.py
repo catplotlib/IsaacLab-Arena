@@ -465,7 +465,7 @@ class ObjectPlacer:
             extra_yaws = [
                 orientations_per_candidate[c].get(obj, marker_yaw) - marker_yaw for c in range(num_candidates)
             ]
-            if not has_roll_pitch and all(yaw == 0.0 for yaw in extra_yaws):
+            if not has_roll_pitch and marker_yaw == 0.0 and all(yaw == 0.0 for yaw in extra_yaws):
                 rotated[obj] = bbox
             else:
                 quats = [rotate_quat_by_yaw(marker_rotation, yaw) for yaw in extra_yaws]
