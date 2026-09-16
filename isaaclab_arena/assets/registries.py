@@ -381,6 +381,9 @@ def ensure_assets_registered():
         import isaaclab_arena.relations.relations  # noqa: F401
         import isaaclab_arena.tasks.task_library  # noqa: F401
 
+        # First-party extension packages that contribute assets/tasks/policies.
+        import isaaclab_arena_cap.registration  # noqa: F401
+
         _assets_registered = True
     finally:
         _registration_in_progress = False

@@ -29,6 +29,7 @@ def ensure_environments_registered():
     environment module, which handles registration.  The import is cached by
     Python, so subsequent calls are free.
     """
+    import isaaclab_arena_cap.environments  # noqa: F401  # first-party CAP environments
     import isaaclab_arena_environments  # noqa: F401
 
 

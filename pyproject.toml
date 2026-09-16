@@ -218,6 +218,7 @@ requires-dist = [
 where = ["."]
 include = [
     "isaaclab_arena*",
+    "isaaclab_arena_cap*",
     "isaaclab_arena_cosmos*",
     "isaaclab_arena_curobo*",
     "isaaclab_arena_dreamzero*",
@@ -239,6 +240,7 @@ namespaces = false
     "assets/industrial_tool_sort/**/*.usda",
     "assets/industrial_tool_sort/**/*.usdc",
     "assets/industrial_tool_sort/**/*.png",
+    "assets/industrial_tool_sort/**/*.mdl",
 ]
 
 [tool.setuptools.exclude-package-data]

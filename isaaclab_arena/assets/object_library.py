@@ -1971,8 +1971,11 @@ class IndustrialToolSortBin(Object):
         **kwargs,
     ):
         assert side in {"source", "destination"}, f"Invalid tool-sort bin side: {side!r}"
-        assert appearance == "default", "Only the vendored default bin appearance is available."
-        leaf = "bin1.usda" if side == "source" else "bin2_default.usda"
+        vendored_appearances = {"default", "syringe"}
+        assert (
+            appearance in vendored_appearances
+        ), f"Only vendored bin appearances {sorted(vendored_appearances)} are available."
+        leaf = "bin1.usda" if side == "source" else f"bin2_{appearance}.usda"
         super().__init__(
             name=instance_name,
             tags=self.tags,

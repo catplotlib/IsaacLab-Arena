@@ -5,7 +5,6 @@
 
 """Coverage for the industrial tool-sort environment."""
 
-import re
 from pathlib import Path
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
@@ -34,35 +33,52 @@ ASSET_ENTRYPOINTS = [
     "vabar_tool_sort__drill/vabar_tool_sort__drill.usda",
     "vabar_tool_sort__round_nut/vabar_tool_sort__round_nut.usda",
     "vabar_tool_sort__clamp/vabar_tool_sort__clamp.usda",
+    # Syringe tool-sort task assets share this vendored tree (see industrial_syringe_sort_environment).
+    "industrial__tool_sort_bin/bin2_syringe.usda",
+    "vabar_tool_sort__syringe/vabar_tool_sort__syringe.usda",
+    "vabar_tool_sort__instrument_tray/vabar_tool_sort__instrument_tray.usda",
     "industrial__fr3_robotiq_2f85/franka_fr3_robotiq_2f85.usda",
 ]
 
 
-def test_vendored_usd_dependency_closure_is_complete():
-    """Every retained file is reachable from a registered USD entry point."""
-    reachable: set[Path] = set()
-    pending = [ASSET_ROOT / relative_path for relative_path in ASSET_ENTRYPOINTS]
-    while pending:
-        usd_file = pending.pop().resolve()
-        assert usd_file.is_relative_to(ASSET_ROOT.resolve())
-        assert usd_file.exists(), f"Missing USD dependency: {usd_file.relative_to(ASSET_ROOT)}"
-        if usd_file in reachable:
-            continue
-        reachable.add(usd_file)
-        if usd_file.suffix not in {".usd", ".usda"}:
-            continue
-        try:
-            contents = usd_file.read_text()
-        except UnicodeDecodeError:
-            continue
-        for reference in re.findall(r"@([^@]+)@", contents):
-            if "://" in reference:
-                continue
-            pending.append(usd_file.parent / reference)
+def _test_vendored_usd_dependency_closure_is_complete(_simulation_app) -> bool:
+    """Every entry point resolves all of its local dependencies (incl. binary-crate textures).
 
-    retained_files = {path.resolve() for path in ASSET_ROOT.rglob("*") if path.is_file()}
-    assert retained_files == reachable
-    assert {path.suffix for path in retained_files} <= {".usd", ".usda", ".usdc", ".png"}
+    Uses USD's own dependency analysis so that materials and textures referenced from
+    inside binary ``.usd``/``.usdc`` crates are checked, not just ASCII ``@ref@`` links.
+    Remote (``http(s)://``) references resolve at runtime and are ignored.
+    """
+    from pxr import UsdUtils
+
+    root = ASSET_ROOT.resolve()
+    for relative_path in ASSET_ENTRYPOINTS:
+        entry = root / relative_path
+        assert entry.exists(), f"Missing USD entry point: {relative_path}"
+        _layers, _assets, unresolved = UsdUtils.ComputeAllDependencies(str(entry))
+        local_unresolved = [
+            reference
+            for reference in unresolved
+            if "://" not in reference and Path(reference).resolve().is_relative_to(root)
+        ]
+        assert not local_unresolved, f"{relative_path}: unresolved local dependencies {local_unresolved}"
+
+    # pxr does not parse MDL-internal ``import``s, so relative sibling modules (e.g. OmniPBR.mdl
+    # -> OmniPBR_ClearCoat -> OmniPBRBase) must be checked separately or materials fail to compile.
+    import re
+
+    relative_module = re.compile(r"^\s*(?:import|using)\s+([A-Za-z_]\w*)::", re.MULTILINE)
+    for mdl_file in ASSET_ROOT.rglob("*.mdl"):
+        for module in set(relative_module.findall(mdl_file.read_text(errors="ignore"))):
+            sibling = mdl_file.parent / f"{module}.mdl"
+            assert sibling.exists(), f"{mdl_file.relative_to(ASSET_ROOT)}: missing MDL module {module}.mdl"
+
+    retained_suffixes = {path.suffix for path in ASSET_ROOT.rglob("*") if path.is_file()}
+    assert retained_suffixes <= {".usd", ".usda", ".usdc", ".png", ".mdl"}
+    return True
+
+
+def test_vendored_usd_dependency_closure_is_complete():
+    assert run_function_with_persistent_simulation_app(_test_vendored_usd_dependency_closure_is_complete)
 
 
 def _test_tool_sort_registration_and_factory(_simulation_app) -> bool:

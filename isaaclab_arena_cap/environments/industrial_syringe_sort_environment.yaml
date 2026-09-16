@@ -1,0 +1,94 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+env_name: vabar_tool_sort__syringe_easy_newton
+embodiment:
+  id: industrial_fr3_robotiq_2f85
+  registry_name: industrial_fr3_robotiq_2f85
+  params:
+    initial_pose:
+      position_xyz: [-0.5, -0.1, 0.912]
+background:
+  id: industrial__fr3_workcell_table
+  registry_name: industrial__fr3_workcell_table
+  params:
+    initial_pose:
+      position_xyz: [-0.5, -0.1, 0.912]
+objects:
+  - id: hdr_shadow_receiver
+    registry_name: industrial__hdr_shadow_receiver
+  - id: sharps_container
+    registry_name: industrial__tool_sort_bin
+    params:
+      side: destination
+      appearance: syringe
+      initial_pose:
+        position_xyz: [0.1, 0.28, 0.8]
+  - id: instrument_tray
+    registry_name: vabar_tool_sort__instrument_tray
+    params:
+      initial_pose:
+        position_xyz: [0.1, -0.25, 0.8]
+  - id: syringe_0
+    registry_name: vabar_tool_sort__syringe
+    params:
+      initial_pose:
+        position_xyz: [0.1, -0.25, 0.84]
+  - id: light
+    registry_name: light
+    params:
+      hdr: empty_warehouse_robolab
+object_references:
+  - id: table
+    parent_id: industrial__fr3_workcell_table
+    prim_path: "{ENV_REGEX_NS}/industrial__fr3_workcell_table/placement_surface"
+    object_type: base
+relations: []
+task:
+  composition: atomic
+  description: pick up the syringe from the instrument tray and drop it through the hole in the top of the yellow sharps disposal box
+  subtasks:
+    - kind: ObjectsCenteredInRegionsTask
+      params:
+        object_list: [syringe_0]
+        region_list: [sharps_container]
+        bounds_xyzxyz:
+          - [0.053, -0.2055, -0.016, 0.142, -0.0395, 0.134]
+        # gripper_joint_name is omitted: the graph spec only allows node-id strings as task
+        # params, and the task default ("left_driver_joint") already matches this embodiment.
+        consecutive_success_steps: 50
+        episode_length_s: 228.0
+env_cfg_override:
+  sim:
+    dt: 0.02
+    render_interval: 1
+    gravity: [0.0, 0.0, -9.81]
+    use_newton_actuators: true
+    physics:
+      _target_: isaaclab_newton.physics.NewtonCfg
+      solver_cfg:
+        _target_: isaaclab_newton.physics.MJWarpSolverCfg
+        enable_multiccd: true
+        solver: newton
+        integrator: euler
+        nconmax: 5000
+        njmax: 5000
+        iterations: 100
+        ls_iterations: 50
+        impratio: 20.0
+        cone: elliptic
+        use_mujoco_contacts: true
+      default_shape_cfg:
+        _target_: isaaclab_newton.physics.NewtonShapeCfg
+        ke: 60000.0
+        kd: 500.0
+        gap: 0.002
+      num_substeps: 10
+      use_cuda_graph: true
+      debug_mode: false
+  decimation: 1
+  scene:
+    num_envs: 1
+    replicate_physics: false
