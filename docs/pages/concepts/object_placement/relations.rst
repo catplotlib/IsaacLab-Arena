@@ -62,29 +62,15 @@ Most environments can be described with a small set of relations:
    support bounds. Use ``clearance_m`` to leave a vertical gap and
    ``edge_margin_m`` to keep the object away from the support edges.
 
-   To allow an object to extend beyond its support, require footprint overlap
-   on both horizontal axes:
+   Set ``overlap=True`` to allow the object to extend beyond the support:
 
    .. code-block:: python
 
       box.add_relation(On(table, overlap=True))
 
-   The default ``overlap=False`` requires full containment
-   with ``edge_margin_m`` clearance. Setting ``overlap=True`` ignores
-   ``edge_margin_m`` and checks intersection with the original support footprint.
-   Overlap includes exact edge contact and does not require a minimum support area.
-   Both settings retain the same vertical support-height constraint.
-   Footprint overlap does not guarantee stable support; the object may tip or fall.
-
-   To visualize the solver moving the same box with and without overlap, run:
-
-   .. code-block:: bash
-
-      python -m isaaclab_arena_examples.relations.on_overlap_comparison --output /tmp/on_overlap_comparison.png
-
-   The example saves PNG and SVG top/side views with before/after outlines and
-   geometric validation results. It uses zero edge margin in both cases and
-   does not run physics settling.
+   This requires overlap in both X and Y (edge contact counts), ignores
+   ``edge_margin_m``, and keeps the same height constraint. It does not guarantee
+   stable support: the object may tip or fall. The default is ``overlap=False``.
 
    ``On`` uses the top and horizontal footprint of the parent's axis-aligned
    bounding box. For L-shaped, hollow, or concave supports, anchor an
