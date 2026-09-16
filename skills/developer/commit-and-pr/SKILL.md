@@ -64,19 +64,11 @@ Do not use top-level type prefixes that omit the username (e.g. `feature/foo`, `
 
 3. PR title follows the same rules as a commit subject: imperative, ~70 chars max, no trailing period.
 
-4. PR body follows `.github/pull_request_template.md`:
-
-   ```markdown
-   ## Summary
-   <one-line description of the change, ≤50 chars>
-
-   ## Detailed description
-   - <why the change was needed>
-   - <what was changed>
-   - <impact / what to watch for>
-   ```
-
-   Keep it terse — 2–5 detail bullets total. Agent-generated PR bodies tend toward 5+ sections and 500+ words; resist that. The template's bullet form is the standard.
+4. Read `.github/pull_request_template.md` and follow its guidance. Explain the motivation
+   and solution in plain English for a teammate who has not followed the discussion.
+   Include a before/after example when usage changes, and state how the change was
+   validated. Prefer concise paragraphs; use lists where they improve readability.
+   Scale the detail to the change and remove sections that do not apply.
 
 ## Iterating on review feedback
 
