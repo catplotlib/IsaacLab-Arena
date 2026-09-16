@@ -168,7 +168,7 @@ def test_marker_yaw_expands_bounds_without_extra_rotation(marker_yaw, include_or
     """Marker-only rotation must enclose the syringe even when its extra yaw is exactly zero."""
     from isaaclab_arena.utils.yaw import yaw_from_quat_xyzw
 
-    # Dimensions from the syringe asset in Isaac-cap PR 138; that scene uses -120 degrees.
+    # An elongated box makes errors in the rotated XY extents visible.
     half_x, half_y, half_z = 0.011783, 0.075, 0.006801
     syringe = DummyObject(
         "syringe",
