@@ -95,6 +95,12 @@ def build_and_run(
     metrics_per_rebuild: list[MetricsDataCollection] = []
     output_dir = str(output_dir)
     video_cfg = video_cfg or VideoRecordingCfg(video_base_dir=output_dir)
+    replay_enabled = cfg.environment_builder.episode_conditions_path is not None
+    if replay_enabled:
+        assert cfg.num_rebuilds == 1, f"Run '{cfg.name}': direct episode-condition replay requires num_rebuilds=1."
+        assert (
+            cfg.rollout_limit.num_steps is None and cfg.rollout_limit.num_episodes is None
+        ), f"Run '{cfg.name}': replay derives its rollout budget from the episode-results JSONL."
     episodes_per_rebuild = _split_episodes_across_rebuilds(
         cfg.rollout_limit.num_episodes,
         cfg.num_rebuilds,
@@ -122,12 +128,17 @@ def build_and_run(
             env.unwrapped.episode_recorder.set_output_path(results_path)
 
             policy = _build_policy_from_cfg(rebuild_cfg)
-            num_steps, num_episodes = _resolve_rollout_limit(
-                cfg,
-                policy,
-                num_episodes,
-            )
-            env = wrap_env_for_video(env, rebuild_video_cfg, num_steps, num_episodes)
+            replay_total = getattr(env.unwrapped, "replay_total_conditions", None)
+            if replay_total is not None:
+                num_steps, num_episodes = None, None
+            else:
+                num_steps, num_episodes = _resolve_rollout_limit(
+                    cfg,
+                    policy,
+                    num_episodes,
+                )
+            video_num_episodes = replay_total if replay_total is not None else num_episodes
+            env = wrap_env_for_video(env, rebuild_video_cfg, num_steps, video_num_episodes)
             metrics = rollout_policy(env, policy, num_steps=num_steps, num_episodes=num_episodes)
             if metrics is not None:
                 metrics_per_rebuild.append(metrics)

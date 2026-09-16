@@ -68,6 +68,14 @@ class ArenaRunCfg:
     def __post_init__(self) -> None:
         assert self.name, "run name must not be empty"
         assert self.num_rebuilds > 0, "num_rebuilds must be greater than zero"
+        if self.environment_builder.episode_conditions_path is not None:
+            assert (
+                self.num_rebuilds == 1
+            ), f"Run '{self.name}': direct episode-condition replay requires num_rebuilds=1."
+            assert self.rollout_limit.num_steps is None and self.rollout_limit.num_episodes is None, (
+                f"Run '{self.name}': replay derives its rollout budget from the episode-results JSONL; "
+                "num_steps and num_episodes must be omitted."
+            )
         if self.rollout_limit.num_episodes is not None:
             assert self.rollout_limit.num_episodes >= self.num_rebuilds, (
                 f"Run '{self.name}': num_episodes ({self.rollout_limit.num_episodes}) must be >= num_rebuilds "

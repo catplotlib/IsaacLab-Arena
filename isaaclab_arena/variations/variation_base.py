@@ -18,18 +18,16 @@ variations subclass one of two flavors:
 
 from __future__ import annotations
 
+import torch
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from isaaclab.managers import EventTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.variations.sampler_base import SamplerBase, SamplerBaseCfg
-
-if TYPE_CHECKING:
-    import torch
 
 
 @configclass
@@ -59,6 +57,7 @@ class VariationBase(ABC):
 
     def __init__(self, cfg: VariationBaseCfg, name: str):
         self.name = name
+        self._qualified_name: str | None = None
         self._sampler: SamplerBase | None = None
         self._sample_listeners: list[Callable[[Any, Any], None]] = []
         self.apply_cfg(cfg)
@@ -81,6 +80,21 @@ class VariationBase(ABC):
         """The sampler driving this variation, or ``None`` if not yet set."""
         return self._sampler
 
+    @property
+    def qualified_name(self) -> str:
+        """Return the stable ``<host>.<variation>`` recording key."""
+        assert self._qualified_name is not None, f"Variation '{self.name}' is not bound to a host."
+        return self._qualified_name
+
+    def bind_host(self, host_name: str) -> None:
+        """Bind this variation to its stable recording host."""
+        qualified_name = f"{host_name}.{self.name}"
+        assert self._qualified_name in (
+            None,
+            qualified_name,
+        ), f"Variation '{self.name}' is already bound as '{self._qualified_name}', not '{qualified_name}'."
+        self._qualified_name = qualified_name
+
     def add_sample_listener(self, listener: Callable[[Any, torch.Tensor | None], None]) -> None:
         """Subscribe ``listener`` (called as ``listener(sample, env_ids)``) to this variation's samples.
 
@@ -90,6 +104,27 @@ class VariationBase(ABC):
         self._sample_listeners.append(listener)
         if self._sampler is not None:
             self._sampler.add_listener(listener)
+
+    def _notify_recorded_sample(self, sample: Any, env_ids: torch.Tensor | None) -> None:
+        """Notify listeners about a replayed sample without drawing from the sampler."""
+        for listener in self._sample_listeners:
+            listener(sample, env_ids)
+
+    def deserialize_samples(self, values: list[Any]) -> torch.Tensor:
+        """Convert recorded numeric values into the sampler's batched tensor shape."""
+        assert self.sampler is not None, f"Variation '{self.name}' has no sampler."
+        assert hasattr(
+            self.sampler, "shape_per_sample"
+        ), f"Variation '{self.name}' must override deserialize_samples for sampler type {type(self.sampler).__name__}."
+        expected_shape = (len(values), *tuple(self.sampler.shape_per_sample))
+        if not values:
+            return torch.empty(expected_shape, dtype=torch.float32)
+        sample = torch.as_tensor(values, dtype=torch.float32)
+        assert tuple(sample.shape) == expected_shape, (
+            f"Recorded sample for variation '{self.qualified_name}' has shape {tuple(sample.shape)}; "
+            f"expected {expected_shape}."
+        )
+        return sample
 
     def _prepare_at_build_time(self) -> None:
         """Configure prerequisites required before environment construction. Default: no-op.
@@ -141,6 +176,26 @@ class RunTimeVariationBase(VariationBase):
         """Return the ``(name, cfg)`` event term that realises this variation."""
         ...
 
+    def resolve_samples(
+        self,
+        env: Any,
+        env_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return sampled or replayed values and the env IDs they apply to."""
+        replay = getattr(env, "get_recorded_variation_samples", None)
+        if replay is None:
+            assert self.sampler is not None, f"Variation '{self.qualified_name}' has no sampler."
+            return self.sampler.sample(num_samples=len(env_ids), env_ids=env_ids), env_ids
+
+        values, replay_env_ids = replay(self.qualified_name, env_ids)
+        if values is None:
+            assert self.sampler is not None, f"Variation '{self.qualified_name}' has no sampler."
+            return self.sampler.sample(num_samples=len(env_ids), env_ids=env_ids), env_ids
+
+        sample = self.deserialize_samples(values)
+        self._notify_recorded_sample(sample, replay_env_ids)
+        return sample, replay_env_ids
+
 
 class BuildTimeVariationBase(VariationBase):
     """Variation sampled once and applied before the env is built.
@@ -150,10 +205,20 @@ class BuildTimeVariationBase(VariationBase):
     asset(s) they mutate and realise the effect in ``_realize_at_build_time``.
     """
 
-    @abstractmethod
-    def _realize_at_build_time(self) -> None:
-        """Sample and apply this variation to its target configuration.
+    def sample(self) -> Any:
+        """Draw one build-time sample."""
+        raise NotImplementedError(f"{type(self).__name__}.sample() is not implemented.")
 
-        Called once per env build, while the variation is enabled.
-        """
-        ...
+    def apply_sample(self, sample: Any) -> None:
+        """Apply one batched build-time sample to the target configuration."""
+        raise NotImplementedError(f"{type(self).__name__}.apply_sample() is not implemented.")
+
+    def _realize_at_build_time(self) -> None:
+        """Draw and apply one build-time sample."""
+        self.apply_sample(self.sample())
+
+    def apply_recorded_sample(self, value: Any) -> None:
+        """Deserialize and apply one recorded build-time sample."""
+        sample = self.deserialize_samples([value])
+        self._notify_recorded_sample(sample, None)
+        self.apply_sample(sample)

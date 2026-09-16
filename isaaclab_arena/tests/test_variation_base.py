@@ -9,7 +9,9 @@ These tests stay in plain Python (no ``SimulationApp``) because they only
 exercise the cfg plumbing and sampler wiring, not any Isaac Sim runtime.
 """
 
+import torch
 from dataclasses import field
+from types import SimpleNamespace
 
 import pytest
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
@@ -186,3 +188,29 @@ def test_two_variations_of_same_kind_coexist_when_given_distinct_names():
     assert asset.get_variation(variation_a.name) is variation_a
     assert asset.get_variation(variation_b.name) is variation_b
     assert set(asset.variations) == {variation_a.name, variation_b.name}
+
+
+def test_runtime_variation_resolves_recorded_samples_without_drawing():
+    variation = _CustomVariation(
+        _CustomVariationCfg(
+            enabled=True,
+            sampler_cfg=UniformSamplerCfg(low=[10.0, 10.0], high=[20.0, 20.0]),
+        )
+    )
+    variation.bind_host("asset")
+    observed = []
+    variation.add_sample_listener(lambda sample, env_ids: observed.append((sample.clone(), env_ids.clone())))
+    env = SimpleNamespace(
+        get_recorded_variation_samples=lambda key, env_ids: (
+            [[0.25, 0.5]],
+            env_ids.new_tensor([1]),
+        )
+    )
+
+    sample, env_ids = variation.resolve_samples(env, torch.tensor([0, 1]))
+
+    torch.testing.assert_close(sample, torch.tensor([[0.25, 0.5]]))
+    assert env_ids.tolist() == [1]
+    assert len(observed) == 1
+    torch.testing.assert_close(observed[0][0], sample)
+    assert observed[0][1].tolist() == [1]

@@ -43,8 +43,13 @@ class _EpisodeRecorder:
         self.path = path
 
 
-def _environment():
-    return SimpleNamespace(unwrapped=SimpleNamespace(episode_recorder=_EpisodeRecorder()))
+def _environment(replay_total_conditions=None):
+    return SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            episode_recorder=_EpisodeRecorder(),
+            replay_total_conditions=replay_total_conditions,
+        )
+    )
 
 
 @dataclass
@@ -193,6 +198,36 @@ def test_build_and_run_requires_a_limit_for_an_unbounded_policy(monkeypatch, tmp
         )
 
     assert closed_resources == [(policy, environment)]
+
+
+def test_build_and_run_uses_jsonl_condition_budget(monkeypatch, tmp_path):
+    environment = _environment(replay_total_conditions=3)
+    wrapped_limits = []
+    rollout_limits = []
+    run = _run(
+        environment_builder=ArenaEnvBuilderCfg(episode_conditions_path="episode_results.jsonl"),
+        rollout_limit=RolloutLimitCfg(),
+        num_rebuilds=1,
+    )
+
+    monkeypatch.setattr(run_execution, "_build_environment_from_cfg", lambda *args, **kwargs: environment)
+    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy())
+    monkeypatch.setattr(
+        run_execution,
+        "wrap_env_for_video",
+        lambda env, video_cfg, steps, episodes: wrapped_limits.append((steps, episodes)) or env,
+    )
+    monkeypatch.setattr(
+        run_execution,
+        "rollout_policy",
+        lambda env, policy, num_steps, num_episodes: rollout_limits.append((num_steps, num_episodes)),
+    )
+    monkeypatch.setattr(run_execution, "close_run_resources", lambda policy, env: None)
+
+    run_execution.build_and_run(run, output_dir=tmp_path)
+
+    assert wrapped_limits == [(None, 3)]
+    assert rollout_limits == [(None, None)]
 
 
 def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path):

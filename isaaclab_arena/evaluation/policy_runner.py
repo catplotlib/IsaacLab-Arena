@@ -71,8 +71,14 @@ def rollout_policy(
 ) -> MetricsDataCollection | None:
     import torch
 
-    assert num_steps is not None or num_episodes is not None, "Either num_steps or num_episodes must be provided"
-    assert num_steps is None or num_episodes is None, "Only one of num_steps or num_episodes must be provided"
+    replay_total = env.unwrapped.replay_total_conditions
+    if replay_total is None:
+        assert num_steps is not None or num_episodes is not None, "Either num_steps or num_episodes must be provided"
+        assert num_steps is None or num_episodes is None, "Only one of num_steps or num_episodes must be provided"
+    else:
+        assert (
+            num_steps is None and num_episodes is None
+        ), "Replay derives its rollout budget from the episode-results JSONL."
 
     pbar = None
     try:
@@ -81,13 +87,16 @@ def rollout_policy(
         policy.set_task_description(env.unwrapped.get_language_instruction())
 
         # Setup progress bar based on num_steps or num_episodes
-        if num_steps is not None:
+        if replay_total is not None:
+            pbar = tqdm.tqdm(total=replay_total, desc="Conditions", unit="condition")
+        elif num_steps is not None:
             pbar = tqdm.tqdm(total=num_steps, desc="Steps", unit="step")
         else:
             pbar = tqdm.tqdm(total=num_episodes, desc="Episodes", unit="episode")
 
         num_episodes_completed = 0
         num_steps_completed = 0
+        replay_completed = 0
 
         while True:
             with torch.inference_mode(), Timer("step"):
@@ -104,7 +113,6 @@ def rollout_policy(
                     )
                     env_ids = (terminated | truncated).nonzero().flatten()
                     policy.reset(env_ids=env_ids)
-                    # Break if number of episodes is reached
                     completed_episodes = env_ids.shape[0]
                     num_episodes_completed += completed_episodes
                     if hasattr(env.unwrapped.cfg, "metrics") and env.unwrapped.cfg.metrics is not None:
@@ -113,7 +121,13 @@ def rollout_policy(
                             f"[Rank {get_local_rank()}/{get_world_size()}] Metrics:"
                             f" {metrics_to_plain_python_types(metrics)}"
                         )
-                    if num_episodes is not None:
+                    if replay_total is not None:
+                        current_completed = env.unwrapped.episode_condition_scheduler.completed_conditions
+                        pbar.update(current_completed - replay_completed)
+                        replay_completed = current_completed
+                        if env.unwrapped.replay_complete:
+                            break
+                    elif num_episodes is not None:
                         pbar.update(completed_episodes)
                         if num_episodes_completed >= num_episodes:
                             break
@@ -206,6 +220,9 @@ def main():
 
         # Build scene. Use rgb_array render mode when recording so RecordVideo can grab frames.
         arena_builder = get_arena_builder_from_cli(args_cli, hydra_overrides=hydra_overrides)
+        assert arena_builder.cfg.episode_conditions_path is None or not (
+            args_cli.distributed and world_size > 1
+        ), "Direct episode-condition replay is not supported with distributed policy_runner."
 
         output_dir = timestamped_run_dir(args_cli.output_base_dir)
         video_cfg = VideoRecordingCfg(
@@ -224,7 +241,16 @@ def main():
         policy = build_policy_from_cli(policy_cls, args_cli)
 
         # Simulation length.
-        if policy.has_length():
+        replay_total = env.unwrapped.replay_total_conditions
+        if replay_total is not None:
+            assert args_cli.num_steps is None and args_cli.num_episodes is None, (
+                "Replay derives its rollout budget from the episode-results JSONL; "
+                "--num_steps and --num_episodes must be omitted."
+            )
+            num_steps = None
+            num_episodes = None
+            print(f"[Rank {local_rank}/{world_size}] Replay conditions: {replay_total}")
+        elif policy.has_length():
             num_steps = policy.length()
             num_episodes = None
         else:
@@ -240,9 +266,13 @@ def main():
                 raise ValueError(f"[Rank {local_rank}/{world_size}] Either num_steps or num_episodes must be provided")
 
         # Optionally wrap with the viewport/camera video recorders (both independent).
-        env = wrap_env_for_video(env, video_cfg, num_steps, num_episodes)
+        video_num_episodes = replay_total if replay_total is not None else num_episodes
+        env = wrap_env_for_video(env, video_cfg, num_steps, video_num_episodes)
 
-        steps_str = f"{num_steps} steps" if num_steps is not None else f"{num_episodes} episodes"
+        if replay_total is not None:
+            steps_str = f"{replay_total} replay conditions"
+        else:
+            steps_str = f"{num_steps} steps" if num_steps is not None else f"{num_episodes} episodes"
         print(f"[Rank {local_rank}/{world_size}] Starting rollout ({steps_str})")
         metrics = rollout_policy(env, policy, num_steps, num_episodes)
 

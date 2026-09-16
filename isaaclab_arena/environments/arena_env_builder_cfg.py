@@ -28,6 +28,8 @@ class ArenaEnvBuilderCfg:
     presets: PhysicsBackend | None = None
     device: str = "cuda:0"
     language_instruction: str | None = None
+    episode_conditions_path: str | None = None
+    """Episode-results JSONL whose recorded variation draws should be replayed."""
     record_trajectories: bool = False
     """Whether to extend the recorder manager with per-step trajectory terms."""
     recorder_dataset_export_dir_path: str | None = None

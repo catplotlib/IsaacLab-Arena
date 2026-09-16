@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import json
+
 import pytest
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
@@ -74,6 +76,30 @@ def _test_enabled_light_intensity_variation_applied(simulation_app):
     return True
 
 
+def _test_recorded_light_intensity_is_replayed(simulation_app, output_dir):
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+
+    recorded_intensity = 777.0
+    source_path = output_dir / "episode_results.jsonl"
+    source_path.write_text(
+        json.dumps({"variations": {f"{TEST_LIGHT_NAME}.{TEST_VARIATION_NAME}": [recorded_intensity]}}) + "\n",
+        encoding="utf-8",
+    )
+    arena_env = get_test_environment(enabled=True)
+    light = arena_env.scene.assets[TEST_LIGHT_NAME]
+    ArenaEnvBuilder(
+        arena_env,
+        ArenaEnvBuilderCfg(
+            num_envs=1,
+            solve_relations=False,
+            episode_conditions_path=str(source_path),
+        ),
+    ).compose_manager_cfg()
+    assert light.object_cfg.spawn.intensity == pytest.approx(recorded_intensity)
+    return True
+
+
 def test_disabled_light_intensity_variation_not_applied():
     assert run_function_with_persistent_simulation_app(
         _test_disabled_light_intensity_variation_not_applied,
@@ -85,4 +111,12 @@ def test_enabled_light_intensity_variation_applied():
     assert run_function_with_persistent_simulation_app(
         _test_enabled_light_intensity_variation_applied,
         headless=HEADLESS,
+    )
+
+
+def test_recorded_light_intensity_is_replayed(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_recorded_light_intensity_is_replayed,
+        headless=HEADLESS,
+        output_dir=tmp_path,
     )

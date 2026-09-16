@@ -45,7 +45,11 @@ class LightIntensityVariation(BuildTimeVariationBase):
         super().__init__(cfg=cfg if cfg is not None else LightIntensityVariationCfg(), name=name)
         self._light = light
 
-    def _realize_at_build_time(self) -> None:
+    def sample(self):
+        """Draw one light intensity."""
         assert self.sampler is not None, "LightIntensityVariation: sampler not set."
-        intensity = float(self.sampler.sample(num_samples=1)[0, 0])
-        self._light.set_intensity(intensity)
+        return self.sampler.sample(num_samples=1)
+
+    def apply_sample(self, sample) -> None:
+        """Apply one sampled light intensity."""
+        self._light.set_intensity(float(sample[0, 0]))

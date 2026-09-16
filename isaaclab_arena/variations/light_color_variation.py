@@ -49,7 +49,11 @@ class LightColorVariation(BuildTimeVariationBase):
         super().__init__(cfg=cfg if cfg is not None else LightColorVariationCfg(), name=name)
         self._light = light
 
-    def _realize_at_build_time(self) -> None:
+    def sample(self):
+        """Draw one RGB light color."""
         assert self.sampler is not None, "LightColorVariation: sampler not set."
-        color = tuple(self.sampler.sample(num_samples=1)[0].tolist())
-        self._light.set_color(color)
+        return self.sampler.sample(num_samples=1)
+
+    def apply_sample(self, sample) -> None:
+        """Apply one sampled RGB light color."""
+        self._light.set_color(tuple(sample[0].tolist()))

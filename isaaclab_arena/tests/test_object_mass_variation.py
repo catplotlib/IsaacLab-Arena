@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import torch
 
 import pytest
@@ -343,6 +344,64 @@ def _test_object_mass_sample_below_floor_fails(simulation_app):
     return True
 
 
+def _test_object_mass_variation_replays_jsonl_fifo(simulation_app, output_dir):
+    import warp as wp
+
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+
+    source_path = output_dir / "source_episode_results.jsonl"
+    source_masses = [0.2, 0.3, 0.4]
+    source_path.write_text(
+        "".join(json.dumps({"variations": {f"{TEST_ASSET_NAME}.mass": [mass]}}) + "\n" for mass in source_masses),
+        encoding="utf-8",
+    )
+    replay_output_path = output_dir / "replay_episode_results.jsonl"
+    env = ArenaEnvBuilder(
+        get_test_environment(enabled=True),
+        ArenaEnvBuilderCfg(
+            num_envs=2,
+            solve_relations=False,
+            episode_conditions_path=str(source_path),
+        ),
+    ).make_registered()
+    env.unwrapped.episode_recorder.set_job_name("variation_replay")
+    env.unwrapped.episode_recorder.set_output_path(replay_output_path)
+    try:
+        env.reset()
+        asset = env.unwrapped.scene[TEST_ASSET_NAME]
+        masses = wp.to_torch(asset.data.body_mass)[:, 0]
+        torch.testing.assert_close(masses, masses.new_tensor(source_masses[:2]))
+
+        # Complete slot 1 first. The global FIFO assigns condition 2 to that slot.
+        env.unwrapped.reset(env_ids=[1])
+        masses = wp.to_torch(asset.data.body_mass)[:, 0]
+        torch.testing.assert_close(masses, masses.new_tensor([0.2, 0.4]))
+
+        # Slot 0 is now parked; resetting it must not sample or produce another condition.
+        env.unwrapped.reset(env_ids=[0])
+        assert env.unwrapped.episode_condition_scheduler.completed_conditions == 2
+        env.unwrapped.episode_length_buf[0] = env.unwrapped.max_episode_length
+        assert not env.unwrapped.termination_manager.compute()[0]
+        env.unwrapped.reset(env_ids=[1])
+        assert env.unwrapped.replay_complete
+
+        records = [json.loads(line) for line in replay_output_path.read_text(encoding="utf-8").splitlines()]
+        assert len(records) == 3
+        samples_by_condition = {
+            record["condition_id"]: record["variations"][f"{TEST_ASSET_NAME}.mass"] for record in records
+        }
+        assert samples_by_condition == {
+            "condition_000000": [pytest.approx(0.2)],
+            "condition_000001": [pytest.approx(0.3)],
+            "condition_000002": [pytest.approx(0.4)],
+        }
+        assert all(record["replay_source"] == str(source_path.resolve()) for record in records)
+    finally:
+        env.close()
+    return True
+
+
 def test_object_mass_variation_registration():
     assert run_function_with_persistent_simulation_app(
         _test_object_mass_variation_registration,
@@ -396,4 +455,12 @@ def test_object_mass_sample_below_floor_fails():
     assert run_function_with_persistent_simulation_app(
         _test_object_mass_sample_below_floor_fails,
         headless=HEADLESS,
+    )
+
+
+def test_object_mass_variation_replays_jsonl_fifo(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_object_mass_variation_replays_jsonl_fifo,
+        headless=HEADLESS,
+        output_dir=tmp_path,
     )

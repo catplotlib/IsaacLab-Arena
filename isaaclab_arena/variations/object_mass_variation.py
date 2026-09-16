@@ -19,7 +19,6 @@ import warp as wp
 from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_arena.variations.continuous_sampler import ContinuousSampler
 from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBaseCfg
 
@@ -78,7 +77,7 @@ class ObjectMassVariation(RunTimeVariationBase):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg(self.asset_name),
-                "sampler": self._sampler,
+                "variation": self,
                 "recompute_inertia": self.cfg.recompute_inertia,
             },
         )
@@ -97,16 +96,16 @@ class ApplyObjectMassFromSampler(ManagerTermBase):
         super().__init__(cfg, env)
 
         self.asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
-        sampler: ContinuousSampler = cfg.params["sampler"]
+        variation: ObjectMassVariation = cfg.params["variation"]
 
         self.asset = env.scene[self.asset_cfg.name]
         assert hasattr(self.asset, "set_masses_index") and hasattr(self.asset, "set_inertias_index"), (
             "ApplyObjectMassFromSampler expects a rigid object-like asset with mass/inertia setters at "
             f"scene['{self.asset_cfg.name}']; got {type(self.asset).__name__}."
         )
-        assert tuple(sampler.shape_per_sample) == (1,), (
+        assert variation.sampler is not None and tuple(variation.sampler.shape_per_sample) == (1,), (
             "ApplyObjectMassFromSampler expects a sampler with shape_per_sample (1,) over absolute mass; "
-            f"got {tuple(sampler.shape_per_sample)}."
+            f"got {tuple(variation.sampler.shape_per_sample) if variation.sampler is not None else None}."
         )
         selected_bodies_count = self._selected_body_count()
         assert selected_bodies_count == 1, (
@@ -140,7 +139,7 @@ class ApplyObjectMassFromSampler(ManagerTermBase):
         env: ManagerBasedEnv,
         env_ids: torch.Tensor | None,
         asset_cfg: SceneEntityCfg,  # noqa: ARG002
-        sampler: ContinuousSampler,
+        variation: ObjectMassVariation,
         recompute_inertia: bool,
     ):
         if self._default_mass is None:
@@ -160,7 +159,9 @@ class ApplyObjectMassFromSampler(ManagerTermBase):
         # TODO(tstuyck, 2026-07-17): The sampler draws on CPU, so this moves the samples to the sim
         # device every reset. Make ContinuousSampler device-aware (draw directly on device) to drop
         # this transfer here and in the other variations that copy sampler output onto the device.
-        sample = sampler.sample(num_samples=len(env_ids), env_ids=env_ids)
+        sample, env_ids = variation.resolve_samples(env, env_ids)
+        if len(env_ids) == 0:
+            return
         masses_to_apply = sample.to(device=self._default_mass.device, dtype=self._default_mass.dtype)
         if masses_to_apply.numel() > 0:
             assert torch.all(masses_to_apply >= _MIN_PHYSICAL_MASS_KG), (

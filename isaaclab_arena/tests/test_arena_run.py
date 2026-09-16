@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg
 from isaaclab_arena.evaluation.arena_run import ArenaRunCfg, ArenaRunResult, RolloutLimitCfg, RunStatus
 from isaaclab_arena.policy.policy_base import PolicyCfg
@@ -56,6 +57,14 @@ def test_rollout_limits_are_mutually_exclusive_and_positive():
 def test_episode_budget_gives_every_rebuild_an_episode():
     with pytest.raises(AssertionError, match="each rebuild runs at least one episode"):
         _run(rollout_limit=RolloutLimitCfg(num_episodes=2), num_rebuilds=3)
+
+
+def test_replay_rejects_explicit_limits_and_multiple_rebuilds():
+    replay_builder = ArenaEnvBuilderCfg(episode_conditions_path="episode_results.jsonl")
+    with pytest.raises(AssertionError, match="num_rebuilds=1"):
+        _run(environment_builder=replay_builder, num_rebuilds=2)
+    with pytest.raises(AssertionError, match="must be omitted"):
+        _run(environment_builder=replay_builder, rollout_limit=RolloutLimitCfg(num_steps=10))
 
 
 def test_run_result_records_outcome_separately():

@@ -97,6 +97,7 @@ class VariationRecorder:
                 if not variation.enabled:
                     continue
                 variation_key = f"{asset_name}.{variation.name}"
+                variation.bind_host(asset_name)
                 assert (
                     variation_key not in self.records
                 ), f"VariationRecorder: asset_name '{variation_key}' is already attached."

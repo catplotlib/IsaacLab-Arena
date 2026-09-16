@@ -152,6 +152,38 @@ each run's environment:
      --list_variations \
      --experiment_config isaaclab_arena_environments/experiment_configs/droid_pnp_variations_experiment.yaml
 
+Replaying recorded variations
+-----------------------------
+
+Episode result JSONL files contain the build-time and run-time samples under ``variations``.
+Pass one of these files directly to a matching environment build to replay its episode conditions:
+
+.. code-block:: bash
+
+   python isaaclab_arena/evaluation/policy_runner.py \
+     --policy_type zero_action \
+     --episode_conditions_path outputs/source/episode_results_rebuild0.jsonl \
+     pick_and_place_maple_table \
+     light.hdr_image.enabled=true \
+     droid_abs_joint_pos.camera_extrinsics_wrist_camera.enabled=true
+
+Enable the same variations and use the same effective environment configuration as the source run.
+Build-time values must be identical on every JSONL line. Run-time values are assigned globally in
+file order as parallel environment slots finish. The JSONL row count is the rollout budget, so
+``--num_steps`` and ``--num_episodes`` must be omitted.
+
+For a typed Experiment run, set the path on the environment builder and omit ``rollout_limit``:
+
+.. code-block:: yaml
+
+   environment_builder:
+     num_envs: 8
+     episode_conditions_path: outputs/source/episode_results_rebuild0.jsonl
+   num_rebuilds: 1
+
+Replay covers Arena variations only. Relation-placement solver results and other reset event
+randomization are not replayed. Distributed policy-runner replay is not supported.
+
 .. _available-variations:
 
 Available variations
@@ -171,12 +203,9 @@ variations are sampled once and applied to asset configs before the environment 
    * - ``CameraExtrinsicsVariation``
      - run-time
      - Adds a small sampled offset to a camera's nominal local position on every reset.
-   * - ``CameraIntrinsicsBuildTimeVariation``
-     - build-time
-     - Perturbs a pinhole camera's focal lengths and principal point when the environment is built.
-   * - ``CameraIntrinsicsRunTimeVariation``
+   * - ``CameraIntrinsicsVariation``
      - run-time
-     - Perturbs a pinhole camera's focal lengths and principal point on every reset.
+     - Perturbs a pinhole camera's focal lengths on every reset.
    * - ``HDRImageVariation``
      - build-time
      - Samples a single HDR and attaches it to a dome light.
@@ -192,3 +221,6 @@ variations are sampled once and applied to asset configs before the environment 
    * - ``LightIntensityVariation``
      - build-time
      - Samples a single intensity and applies it to a light.
+   * - ``ObjectMassVariation``
+     - run-time
+     - Samples an absolute rigid-object mass and optionally scales inertia on every reset.

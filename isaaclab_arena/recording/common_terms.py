@@ -20,7 +20,7 @@ def record_core_episode_results(env, env_id: int) -> dict[str, Any]:
     success = None
     if "success" in env.termination_manager.active_terms:
         success = bool(env.termination_manager.get_term("success")[env_id].item())
-    return {
+    result = {
         "env_id": env_id,
         "episode_in_env": env.get_episode_index(env_id),
         "seed": env.cfg.seed,
@@ -29,6 +29,8 @@ def record_core_episode_results(env, env_id: int) -> dict[str, Any]:
         "language_instruction": env.get_language_instruction(),
         "timestamp": datetime.datetime.now().isoformat(),
     }
+    result.update(env.get_active_condition_provenance(env_id))
+    return result
 
 
 def record_variation_samples(env, env_id: int) -> dict[str, Any]:
