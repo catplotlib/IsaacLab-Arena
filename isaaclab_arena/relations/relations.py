@@ -50,6 +50,10 @@ class FootprintConstraint(str, Enum):
           ``c_min >= p_min`` and ``c_max <= p_max``.
         - ``OVERLAP`` returns ``(c_max, c_min)`` and checks
           ``c_max >= p_min`` and ``c_min <= p_max``.
+
+        The overlap pair is reversed because interval intersection compares
+        the child's maximum to the parent's minimum and the child's minimum
+        to the parent's maximum.
         """
         return (max_extent, min_extent) if self is FootprintConstraint.OVERLAP else (min_extent, max_extent)
 
