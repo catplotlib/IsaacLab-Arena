@@ -59,7 +59,6 @@ def build_arena_env_from_graph_spec(graph_spec: ArenaEnvGraphSpec, enable_camera
         embodiment=assets_by_node_id[graph_spec.embodiment.id],
         task=build_task_from_spec(graph_spec.task, assets_by_node_id),
         placer_params=build_checks_for_placer_params(graph_spec),
-        env_cfg_override=graph_spec.env_cfg_override,
     )
 
 
@@ -172,7 +171,7 @@ def instantiate_assets_from_spec(
     """Return ``{asset.id: live_asset}`` after materializing the typed graph spec."""
     assets_by_node_id: dict[str, type[Asset]] = {}
 
-    embodiment_params = _asset_params(graph_spec.embodiment)
+    embodiment_params = dict(graph_spec.embodiment.params)
     if enable_cameras:
         embodiment_params.setdefault("enable_cameras", True)
     assets_by_node_id[graph_spec.embodiment.id] = asset_registry.get_asset_by_name(graph_spec.embodiment.registry_name)(
@@ -180,11 +179,11 @@ def instantiate_assets_from_spec(
     )
 
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
-        **_asset_params(graph_spec.background)
+        **graph_spec.background.params
     )
 
     for obj in graph_spec.objects:
-        params = _asset_params(obj)
+        params = dict(obj.params)
         params.setdefault("instance_name", obj.id)
         assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
 
@@ -204,18 +203,6 @@ def instantiate_assets_from_spec(
         )
 
     return assets_by_node_id
-
-
-def _asset_params(asset_spec: Any) -> dict[str, Any]:
-    """Return constructor parameters with a serialized pose converted to ``Pose``."""
-    params = dict(asset_spec.params)
-    initial_pose = params.get("initial_pose")
-    if isinstance(initial_pose, dict):
-        params["initial_pose"] = Pose(
-            position_xyz=tuple(initial_pose.get("position_xyz", (0.0, 0.0, 0.0))),
-            rotation_xyzw=tuple(initial_pose.get("rotation_xyzw", (0.0, 0.0, 0.0, 1.0))),
-        )
-    return params
 
 
 def _attach_spatial_relations_to_assets(

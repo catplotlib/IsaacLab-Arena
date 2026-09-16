@@ -12,7 +12,8 @@ from isaaclab.sensors.contact_sensor.contact_sensor_cfg import ContactSensorCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 
-from isaaclab_arena.assets.object_base import ObjectBase, ObjectType
+from isaaclab_arena.assets.object_base import ObjectBase, RootedObjectBase
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.object_utils import detect_object_type
 from isaaclab_arena.relations.relations import RelationBase
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
@@ -21,7 +22,7 @@ from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body
 from isaaclab_arena.utils.usd_helpers import compute_local_bounding_box_from_usd, has_light, open_stage
 
 
-class Object(ObjectBase):
+class Object(RootedObjectBase):
     """Pick-up object config for a pick-and-place environment."""
 
     def __init__(
@@ -91,6 +92,10 @@ class Object(ObjectBase):
         self, contact_against_object: ObjectBase | None = None, usd_path: str | None = None
     ) -> ContactSensorCfg:
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
+        if contact_against_object is not None:
+            assert isinstance(
+                contact_against_object, RootedObjectBase
+            ), "Contact sensors against deformable objects and other non-rooted objects are not supported"
         # We override this function from the parent class because in some assets, the rigid body
         # is not at the root of the USD file. To be robust to this, we find the shallowest rigid body
         # and add the contact sensor to it.

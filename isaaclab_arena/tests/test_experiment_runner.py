@@ -26,12 +26,14 @@ def test_experiment_runner_parses_native_hydra_overrides():
         "experiment.yaml",
         "runs.baseline.rollout_limit.num_steps=2",
         "runs.baseline.environment.enable_cameras=true",
+        "runs.baseline.environment_builder.record_trajectories=true",
     ])
 
     assert args_cli.experiment_config == "experiment.yaml"
     assert experiment_overrides == [
         "runs.baseline.rollout_limit.num_steps=2",
         "runs.baseline.environment.enable_cameras=true",
+        "runs.baseline.environment_builder.record_trajectories=true",
     ]
 
 
@@ -135,9 +137,7 @@ def run_experiment_runner(
     args.append(config_option)
     args.append(experiment_config_path)
     args.extend(extra_args or [])
-    if headless:
-        args.append("--headless")
-    else:
+    if not headless:
         args.append("--viz")
         args.append(DEFAULT_VISUALIZER)
 

@@ -14,6 +14,7 @@ import pytest
 from isaaclab_arena.tests.utils.constants import TestConstants
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 from isaaclab_arena.tests.utils.subprocess import run_subprocess
+from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 if TYPE_CHECKING:
     import torch
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
 
 def _interactive_runner_args(**overrides) -> argparse.Namespace:
     argument_values = {
-        "headless": False,
         "visualizer": ["kit"],
         "num_envs": 1,
         "distributed": False,
@@ -74,12 +74,11 @@ def test_assert_interactive_runner_args_accepts_one_physx_kit_environment():
 @pytest.mark.parametrize(
     ("argument_overrides", "expected_message"),
     [
-        ({"headless": True}, "requires the Kit GUI"),
         ({"visualizer": None}, "requires the Kit GUI"),
         ({"visualizer": ["viser"]}, "requires the Kit GUI"),
         ({"num_envs": 2}, "exactly one environment"),
         ({"distributed": True}, "does not support distributed execution"),
-        ({"presets": "newton"}, "requires PhysX"),
+        ({"presets": PhysicsBackend.NEWTON}, "requires PhysX"),
         ({"list_variations": True}, "does not support --list_variations"),
         ({"device": "cuda:0"}, "requires CPU PhysX"),
     ],

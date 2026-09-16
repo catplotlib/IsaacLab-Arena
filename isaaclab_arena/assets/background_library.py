@@ -3,7 +3,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from pathlib import Path
 from typing import Any
 
 import isaaclab.sim as sim_utils
@@ -16,8 +15,6 @@ from isaaclab_arena.assets.lightwheel_utils import acquire_lightwheel_asset
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR, ISAAC_STAGING_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.utils.pose import Pose
-
-_INDUSTRIAL_TOOL_SORT_ASSET_ROOT = Path(__file__).resolve().parent / "industrial_tool_sort"
 
 
 class LibraryBackground(Background):
@@ -33,29 +30,18 @@ class LibraryBackground(Background):
     object_min_z: float
     spawn_cfg_addon: dict[str, Any] = {}
     asset_cfg_addon: dict[str, Any] = {}
-    reset_nested_physics: bool = False
 
-    def __init__(
-        self,
-        reset_nested_physics: bool | None = None,
-        initial_pose: Pose | None = None,
-        **kwargs,
-    ):
+    def __init__(self, **kwargs):
         # Check lazy USD paths are set by here
         assert self.usd_path is not None
-        if reset_nested_physics is None:
-            reset_nested_physics = self.reset_nested_physics
-        if initial_pose is None:
-            initial_pose = self.initial_pose
         super().__init__(
             name=self.name,
             tags=self.tags,
             usd_path=self.usd_path,
-            initial_pose=initial_pose,
+            initial_pose=self.initial_pose,
             object_min_z=self.object_min_z,
             spawn_cfg_addon=self.spawn_cfg_addon,
             asset_cfg_addon=self.asset_cfg_addon,
-            reset_nested_physics=reset_nested_physics,
             **kwargs,
         )
 
@@ -72,9 +58,6 @@ class KitchenBackground(LibraryBackground):
     initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_xyzw=(0, 0, -0.70711, 0.70711))
     object_min_z = -0.2
 
-    def __init__(self):
-        super().__init__()
-
 
 @register_asset
 class KitchenWithOpenDrawerBackground(LibraryBackground):
@@ -90,9 +73,6 @@ class KitchenWithOpenDrawerBackground(LibraryBackground):
     initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_xyzw=(0, 0, -0.70711, 0.70711))
     object_min_z = -0.2
 
-    def __init__(self):
-        super().__init__()
-
 
 @register_asset
 class PackingTableBackground(LibraryBackground):
@@ -105,9 +85,6 @@ class PackingTableBackground(LibraryBackground):
     usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/background_library/packing_table/packing_table.usd"
     initial_pose = Pose(position_xyz=(0.72193, -0.04727, -0.92512), rotation_xyzw=(0.0, 0.0, -0.70711, 0.70711))
     object_min_z = -0.2
-
-    def __init__(self):
-        super().__init__()
 
 
 @register_asset
@@ -122,9 +99,6 @@ class GalileoBackground(LibraryBackground):
     initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
     object_min_z = -0.2
 
-    def __init__(self):
-        super().__init__()
-
 
 @register_asset
 class GalileoLocomanipBackground(LibraryBackground):
@@ -138,8 +112,9 @@ class GalileoLocomanipBackground(LibraryBackground):
     initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
     object_min_z = -0.2
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        # NOTE: The dolly in the scene is authored as an articulation root but is not materialized as a PhysX articulation.
+        super().__init__(reset_nested_physics=False, **kwargs)
 
 
 @register_asset
@@ -152,9 +127,6 @@ class Table(LibraryBackground):
     tags = ["background"]
     usd_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
     object_min_z = -0.05
-
-    def __init__(self):
-        super().__init__()
 
 
 @register_asset
@@ -172,8 +144,8 @@ class OfficeTableBackground(LibraryBackground):
         "rigid_props": sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
     }
 
-    def __init__(self):
-        super().__init__(scale=self.scale)
+    def __init__(self, **kwargs):
+        super().__init__(scale=self.scale, **kwargs)
 
 
 @register_asset
@@ -189,7 +161,6 @@ class LightwheelKitchenBackground(LibraryBackground):
     object_min_z = -0.2
     layout_id = 1
     style_id = 1
-    reset_nested_physics = True
 
     def __init__(
         self,
@@ -239,9 +210,6 @@ class MapleTableRobolab(LibraryBackground):
     usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/scenes/maple_table.usda"
     object_min_z = -0.05
 
-    def __init__(self):
-        super().__init__()
-
 
 @register_asset
 class TableOakRobolab(LibraryBackground):
@@ -249,18 +217,6 @@ class TableOakRobolab(LibraryBackground):
     tags = ["background", "robolab"]
     usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/fixtures/table_oak.usd"
     object_min_z = -0.05
-
-
-@register_asset
-class IndustrialFr3WorkcellTable(LibraryBackground):
-    """Industrial FR3 workcell table used by the tool-sorting benchmark."""
-
-    name = "industrial__fr3_workcell_table"
-    tags = ["background", "industrial", "tool_sort"]
-    usd_path = str(
-        _INDUSTRIAL_TOOL_SORT_ASSET_ROOT / "industrial__fr3_workcell_table" / "industrial__fr3_workcell_table.usda"
-    )
-    object_min_z = 0.0
 
 
 # -----------------------------------------------------------------------------
@@ -274,7 +230,6 @@ class ReplicatorKitchenBackground(LibraryBackground):
     tags = ["background", "replicator"]
     initial_pose = Pose.identity()
     object_min_z = -0.2
-    reset_nested_physics = True
 
     def get_viewer_cfg(self) -> ViewerCfg:
         return ViewerCfg(eye=(0.0, -1.0, 1.65), lookat=(0.0, 0.0, 1.35))

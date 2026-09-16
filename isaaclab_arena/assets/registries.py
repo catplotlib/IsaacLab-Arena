@@ -371,6 +371,7 @@ def ensure_assets_registered():
     try:
         # Import modules to trigger asset registration via decorators
         import isaaclab_arena.assets.background_library  # noqa: F401
+        import isaaclab_arena.assets.deformable_object_library  # noqa: F401
         import isaaclab_arena.assets.device_library  # noqa: F401
         import isaaclab_arena.assets.hdr_image_library  # noqa: F401
         import isaaclab_arena.assets.object_library  # noqa: F401
@@ -380,9 +381,6 @@ def ensure_assets_registered():
         import isaaclab_arena.policy  # noqa: F401
         import isaaclab_arena.relations.relations  # noqa: F401
         import isaaclab_arena.tasks.task_library  # noqa: F401
-
-        # First-party extension packages that contribute assets/tasks/policies.
-        import isaaclab_arena_cap.registration  # noqa: F401
 
         _assets_registered = True
     finally:

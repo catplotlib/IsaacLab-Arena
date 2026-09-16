@@ -9,6 +9,7 @@ from isaaclab.app import AppLauncher
 
 from isaaclab_arena.cli.dataclass_cli import dataclass_from_cli
 from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 
 # TODO(cvolk, 2026-07-03): [typed-config-migration] Delete this Namespace-to-config adapter after policy_runner,
@@ -70,14 +71,8 @@ def add_isaaclab_arena_cli_args(parser: argparse.ArgumentParser) -> None:
         "Isaac Lab Arena Arguments", "Arguments specific to Isaac Lab Arena framework"
     )
 
-    # Isaac Lab no longer exposes this programmatic AppLauncher option through argparse,
-    # but Arena still accepts it for its existing scripts, docs, and external integrations.
-    arena_group.add_argument(
-        "--headless",
-        action="store_true",
-        default=False,
-        help="Run without a local GUI. This is also the default when no visualizer is selected.",
-    )
+    # Arena builds its environment after AppLauncher starts, so this flag both selects
+    # optional environment cameras and enables camera rendering during app startup.
     arena_group.add_argument(
         "--enable_cameras",
         action="store_true",
@@ -103,7 +98,8 @@ def add_isaaclab_arena_cli_args(parser: argparse.ArgumentParser) -> None:
     )
     arena_group.add_argument(
         "--presets",
-        type=str,
+        type=PhysicsBackend,
+        choices=list(PhysicsBackend),
         default=None,
         help="Arena physics backend preset: 'physx' or 'newton'. When not set, each environment uses its own default.",
     )
