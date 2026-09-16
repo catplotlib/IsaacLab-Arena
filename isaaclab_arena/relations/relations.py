@@ -41,11 +41,15 @@ class FootprintConstraint(str, Enum):
     OVERLAP = "overlap"
 
     def child_extents(self, min_extent: torch.Tensor, max_extent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return child extents ordered for the parent-bound inequalities.
+        """Return child extents for containment or overlap checks.
 
-        ``CONTAINED`` keeps ``(min, max)`` so both child edges stay inside the
-        parent. ``OVERLAP`` swaps them so the child's far edge must reach each
-        parent edge.
+        For child interval ``C = [c_min, c_max]`` and parent interval
+        ``P = [p_min, p_max]``:
+
+        - ``CONTAINED`` returns ``(c_min, c_max)`` and checks
+          ``c_min >= p_min`` and ``c_max <= p_max``.
+        - ``OVERLAP`` returns ``(c_max, c_min)`` and checks
+          ``c_max >= p_min`` and ``c_min <= p_max``.
         """
         return (max_extent, min_extent) if self is FootprintConstraint.OVERLAP else (min_extent, max_extent)
 
