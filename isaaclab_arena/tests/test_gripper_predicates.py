@@ -12,7 +12,7 @@ def _test_released(_simulation_app) -> bool:
     import torch
     from types import SimpleNamespace
 
-    from isaaclab_arena.tasks.predicates.manipulation import released
+    from isaaclab_arena.tasks.predicates.gripper import released
 
     hand = dict(
         robot_name="robot",
@@ -59,7 +59,7 @@ def _test_withdrawn(_simulation_app) -> bool:
 
     from isaaclab.utils.math import quat_from_euler_xyz
 
-    from isaaclab_arena.tasks.predicates.manipulation import withdrawn
+    from isaaclab_arena.tasks.predicates.gripper import withdrawn
 
     hand = dict(robot_name="robot", tcp_body_name="wrist", tcp_offset_xyz=(0.0, 0.0, 0.0))
     for device in ("cpu", "cuda:0"):
