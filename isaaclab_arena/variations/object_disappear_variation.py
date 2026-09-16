@@ -35,51 +35,40 @@ from isaaclab_arena.variations.variation_base import RunTimeVariationBase, Varia
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
-# Fraction of env_spacing to park at. Environment origins are laid out one env_spacing apart, so
-# staying under half keeps the object inside its own cell.
-_PARK_CELL_FRACTION = 0.45
-
 
 @configclass
 class ObjectDisappearVariationCfg(VariationBaseCfg):
     """Configuration for :class:`ObjectDisappearVariation`."""
 
-    away_position_xyz: tuple[float, float, float] | None = None
-    """Env-local position to park a disappeared object at, or ``None`` to derive one.
+    away_position_xyz: tuple[float, float, float] = (1000.0, 0.0, 0.0)
+    """Env-local position to park a disappeared object at, far enough out to clear every env's cameras.
 
-    The derived position sits near the edge of the environment's own cell, which is as far from the
-    workspace as an object can go without straying into a neighbour's cameras. Override it only if
-    the scene has somewhere better, and keep any override above the ground collider: parking below
-    the ground makes the solver depenetrate the object, launching it back up into the scene.
+    Both extremes of this axis misbehave, so an override wants to stay in the middle. Below the
+    ground collider the solver depenetrates the object and launches it back up into the scene; the
+    ground is an infinite half-space, so there is no free space under it. Past ~100 km, float32
+    coordinates are too coarse for contact resolution and the object jitters and sinks through
+    instead of resting.
     """
 
     sampler_cfg: BernoulliSamplerCfg = field(default_factory=BernoulliSamplerCfg)
     """Probability that the object disappears, drawn per environment on every reset."""
 
 
-def get_away_pose(env: ManagerBasedEnv, away_position_xyz: tuple[float, float, float] | None) -> Pose:
-    """Return the pose to park a disappeared object at, deriving one when not configured."""
-    if away_position_xyz is None:
-        return Pose(position_xyz=(0.0, _PARK_CELL_FRACTION * env.scene.cfg.env_spacing, 0.0))
-    # Re-tupled because Hydra overrides arrive as lists.
-    return Pose(position_xyz=tuple(away_position_xyz))
-
-
 def hold_object_away(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg,
-    away_position_xyz: tuple[float, float, float] | None,
+    pose: Pose,
     sampler: BernoulliSampler,
 ) -> None:
-    """Reset event that parks the resetting envs which drew "gone" out of the way."""
+    """Reset event that parks the resetting envs which drew "gone" at ``pose``."""
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = torch.as_tensor(env_ids, device=env.device).reshape(-1)
     disappeared = torch.as_tensor(sampler.sample(num_samples=len(env_ids), env_ids=env_ids), device=env.device)
     away_env_ids = env_ids[disappeared]
     if len(away_env_ids) > 0:
-        set_object_pose(env, away_env_ids, asset_cfg=asset_cfg, pose=get_away_pose(env, away_position_xyz))
+        set_object_pose(env, away_env_ids, asset_cfg=asset_cfg, pose=pose)
 
 
 class ObjectDisappearVariation(RunTimeVariationBase):
@@ -114,7 +103,8 @@ class ObjectDisappearVariation(RunTimeVariationBase):
                 mode="reset",
                 params={
                     "asset_cfg": SceneEntityCfg(self.asset_name),
-                    "away_position_xyz": self.cfg.away_position_xyz,
+                    # Re-tupled because Hydra overrides arrive as lists.
+                    "pose": Pose(position_xyz=tuple(self.cfg.away_position_xyz)),
                     "sampler": self._sampler,
                 },
             ),

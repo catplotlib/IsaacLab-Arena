@@ -14,14 +14,9 @@ TEST_EVENT_NAME = f"{TEST_ASSET_NAME}_disappear"
 TEST_TABLE_NAME = "table"
 TEST_BOX_NAME = "cracker_box"
 
-# The derived park position sits at 0.45 * env_spacing; anything past a third of the cell is
-# far outside where the scene places objects, so this distinguishes "parked" from "in the scene".
-PARKED_CELL_FRACTION_FLOOR = 1.0 / 3.0
-
-
-def get_parked_distance_floor_m(env):
-    """Return the distance past which an object can only be parked, not placed."""
-    return PARKED_CELL_FRACTION_FLOOR * env.unwrapped.scene.cfg.env_spacing
+# Far past anything a scene places, but far short of the 1000 m park position, so this cleanly
+# distinguishes "parked away" from "placed in the scene".
+PARKED_DISTANCE_FLOOR_M = 100.0
 
 
 def get_env_local_distances(env, asset_name):
@@ -93,7 +88,7 @@ def _test_envs_draw_independently(simulation_app):
     try:
         env.reset()
         distances = get_env_local_distances(env, TEST_ASSET_NAME)
-        gone = distances > get_parked_distance_floor_m(env)
+        gone = distances > PARKED_DISTANCE_FLOOR_M
         # P(all envs agree) = 2 * 0.5^16, so a split is essentially certain if draws are independent.
         assert bool(gone.any()) and not bool(
             gone.all()
@@ -140,8 +135,8 @@ def _test_disappeared_object_survives_relation_placement(simulation_app):
         ), "Test setup is wrong: relation solving did not register a placement reset event."
         env.reset()
         distance = get_env_local_distances(env, TEST_BOX_NAME)[0]
-        assert distance > get_parked_distance_floor_m(
-            env
+        assert (
+            distance > PARKED_DISTANCE_FLOOR_M
         ), f"Relation placement must not put a disappeared object back into the scene; got {float(distance)} m."
     finally:
         env.close()
@@ -164,9 +159,7 @@ def _test_hydra_override_enables_disappear(simulation_app):
     try:
         env.reset()
         distance = get_env_local_distances(env, TEST_ASSET_NAME)[0]
-        assert distance > get_parked_distance_floor_m(
-            env
-        ), f"Hydra override must enable the variation; got {float(distance)} m."
+        assert distance > PARKED_DISTANCE_FLOOR_M, f"Hydra override must enable the variation; got {float(distance)} m."
 
         record = env.unwrapped.variation_recorder[f"{TEST_ASSET_NAME}.disappear"]
         episode_idx = env.unwrapped.get_episode_index(0)
