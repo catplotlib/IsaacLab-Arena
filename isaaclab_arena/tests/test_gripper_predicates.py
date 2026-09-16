@@ -8,11 +8,11 @@
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
-def _test_released(_simulation_app) -> bool:
+def _test_parallel_jaw_gripper_released(_simulation_app) -> bool:
     import torch
     from types import SimpleNamespace
 
-    from isaaclab_arena.tasks.predicates.gripper import released
+    from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
 
     release_params = dict(
         robot_name="robot",
@@ -39,17 +39,28 @@ def _test_released(_simulation_app) -> bool:
                 scene={"robot": robot},
                 action_manager=SimpleNamespace(get_term=lambda _name: action),
             )
-            result = released(env, **release_params, stall_threshold=0.001953125, grasp_width_tolerance=0.00390625)
+            result = parallel_jaw_gripper_released(
+                env, **release_params, stall_threshold_m=0.001953125, grasp_width_tolerance_m=0.00390625
+            )
             assert result.tolist() == [True, False, True, True, True, True]
             assert result.device == measured.device and result.dtype == torch.bool
-            assert released(env, **release_params, stall_threshold=0.02, grasp_width_tolerance=0.00390625).all()
-            assert not released(env, **release_params, grasp_width_tolerance=0.01)[-1]
-            assert released(env, **release_params).tolist() == [True, False, True, True, False, True]
+            assert parallel_jaw_gripper_released(
+                env, **release_params, stall_threshold_m=0.02, grasp_width_tolerance_m=0.00390625
+            ).all()
+            assert not parallel_jaw_gripper_released(env, **release_params, grasp_width_tolerance_m=0.01)[-1]
+            assert parallel_jaw_gripper_released(env, **release_params).tolist() == [
+                True,
+                False,
+                True,
+                True,
+                False,
+                True,
+            ]
     return True
 
 
-def test_released() -> None:
-    assert run_function_with_persistent_simulation_app(_test_released)
+def test_parallel_jaw_gripper_released() -> None:
+    assert run_function_with_persistent_simulation_app(_test_parallel_jaw_gripper_released)
 
 
 def _test_withdrawn(_simulation_app) -> bool:
@@ -81,8 +92,8 @@ def _test_withdrawn(_simulation_app) -> bool:
                 subject_name="object",
                 robot_name="robot",
                 tcp_body_name="wrist",
-                tcp_offset_xyz=(0.0, 0.0, 0.0),
-                tcp_distance_min=0.25,
+                tcp_offset_xyz_m=(0.0, 0.0, 0.0),
+                tcp_distance_min_m=0.25,
             )
             assert result.tolist() == [False, False, True]
             assert result.device == body_positions.device and result.dtype == torch.bool
@@ -96,8 +107,8 @@ def _test_withdrawn(_simulation_app) -> bool:
                 subject_name="object",
                 robot_name="robot",
                 tcp_body_name="wrist",
-                tcp_offset_xyz=(0.125, 0.0, 0.0),
-                tcp_distance_min=0.0625,
+                tcp_offset_xyz_m=(0.125, 0.0, 0.0),
+                tcp_distance_min_m=0.0625,
             )
             assert result.tolist() == [False, True, True]
     return True
