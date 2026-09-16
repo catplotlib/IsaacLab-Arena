@@ -186,7 +186,9 @@ class OnRelationValidator(PlacementValidator):
                                 )
                             return False
                 # 2) Checking that the child lies within or overlaps the parent's xy footprint.
-                # OVERLAP swaps min/max, turning containment inequalities into intersection inequalities.
+                # For parent inset P = [p_min + m, p_max - m] and child C = [c_min, c_max]:
+                # CONTAINED: c_min >= P_min and c_max <= P_max.
+                # OVERLAP: c_max >= P_min and c_min <= P_max.
                 child_x_min, child_x_max = rel.footprint_constraint_x.child_extents(
                     child_world.min_point[0, 0], child_world.max_point[0, 0]
                 )
