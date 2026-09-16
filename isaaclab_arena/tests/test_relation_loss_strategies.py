@@ -12,7 +12,7 @@ import pytest
 from isaaclab_arena.relations.relation_loss_strategies import NextToLossStrategy, NotNextToLossStrategy, OnLossStrategy
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
-from isaaclab_arena.relations.relations import IsAnchor, NextTo, NotNextTo, On, Side
+from isaaclab_arena.relations.relations import FootprintConstraint, IsAnchor, NextTo, NotNextTo, On, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
@@ -141,6 +141,53 @@ def test_on_loss_strategy_constrains_entire_footprint():
 
     loss = strategy.compute_loss(relation, child_pos, box.bounding_box, table.bounding_box)
     assert loss > 0.0, "Loss should penalize child footprint extending beyond parent"
+
+
+def test_on_loss_strategy_overlap_requires_footprint_intersection():
+    """The overlap policy permits partial support but still penalizes separation and wrong height."""
+    table = _create_table()
+    box = _create_box()
+    strategy = OnLossStrategy(slope=10.0)
+    strict = On(table, clearance_m=0.0, edge_margin_m=0.0)
+    overlap = On(
+        table,
+        clearance_m=0.0,
+        edge_margin_m=0.0,
+        footprint_constraint_x=FootprintConstraint.OVERLAP,
+        footprint_constraint_y=FootprintConstraint.OVERLAP,
+    )
+    partial_support = torch.tensor([-0.1, 0.4, 0.1])
+
+    assert strategy.compute_loss(strict, partial_support, box.bounding_box, table.bounding_box) > 0.0
+    assert torch.isclose(
+        strategy.compute_loss(overlap, partial_support, box.bounding_box, table.bounding_box),
+        torch.tensor(0.0),
+        atol=1e-4,
+    )
+    for invalid_pose in ([-0.21, 0.4, 0.1], [-0.1, 0.4, 0.2]):
+        assert strategy.compute_loss(overlap, torch.tensor(invalid_pose), box.bounding_box, table.bounding_box) > 0.0
+
+
+def test_on_loss_strategy_supports_per_axis_footprint_constraints():
+    """One axis can allow overlap while the other continues to require containment."""
+    table = _create_table()
+    box = _create_box()
+    strategy = OnLossStrategy(slope=10.0)
+    relation = On(
+        table,
+        clearance_m=0.0,
+        edge_margin_m=0.0,
+        footprint_constraint_y=FootprintConstraint.OVERLAP,
+    )
+
+    y_partial_support = torch.tensor([0.4, 0.9, 0.1])
+    x_partial_support = torch.tensor([0.9, 0.4, 0.1])
+    assert torch.isclose(
+        strategy.compute_loss(relation, y_partial_support, box.bounding_box, table.bounding_box),
+        torch.tensor(0.0),
+        atol=1e-4,
+    )
+    assert strategy.compute_loss(relation, x_partial_support, box.bounding_box, table.bounding_box) > 0.0
 
 
 def test_on_loss_strategy_edge_margin_insets_band_by_margin():

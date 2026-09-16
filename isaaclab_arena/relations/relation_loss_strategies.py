@@ -17,7 +17,7 @@ from isaaclab_arena.relations.loss_primitives import (
     single_boundary_linear_loss,
     single_point_linear_loss,
 )
-from isaaclab_arena.relations.relations import Side
+from isaaclab_arena.relations.relations import FootprintConstraint, Side
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 if TYPE_CHECKING:
@@ -341,18 +341,24 @@ class OnLossStrategy(RelationLossStrategy):
         parent_y_max = parent_world_bbox.max_point[:, 1]
         parent_z_max = parent_world_bbox.max_point[:, 2]  # Top surface
 
-        # Compute valid position ranges such that child's entire footprint is within parent,
-        # with the parent's extent inset by edge_margin_m so the footprint stays off the rim.
+        # Compute valid position ranges for containment or overlap on each horizontal axis.
+        # Swapping the child extents changes the containment inequalities into overlap inequalities.
         m = relation.edge_margin_m
-        valid_x_min = parent_x_min + m - child_bbox.min_point[:, 0]  # child's left at parent's left + margin
-        valid_x_max = parent_x_max - m - child_bbox.max_point[:, 0]  # child's right at parent's right - margin
-        valid_y_min = parent_y_min + m - child_bbox.min_point[:, 1]
-        valid_y_max = parent_y_max - m - child_bbox.max_point[:, 1]
+        overlap_x = relation.footprint_constraint_x is FootprintConstraint.OVERLAP
+        overlap_y = relation.footprint_constraint_y is FootprintConstraint.OVERLAP
+        child_x_min = child_bbox.max_point[:, 0] if overlap_x else child_bbox.min_point[:, 0]
+        child_x_max = child_bbox.min_point[:, 0] if overlap_x else child_bbox.max_point[:, 0]
+        child_y_min = child_bbox.max_point[:, 1] if overlap_y else child_bbox.min_point[:, 1]
+        child_y_max = child_bbox.min_point[:, 1] if overlap_y else child_bbox.max_point[:, 1]
+        valid_x_min = parent_x_min + m - child_x_min
+        valid_x_max = parent_x_max - m - child_x_max
+        valid_y_min = parent_y_min + m - child_y_min
+        valid_y_max = parent_y_max - m - child_y_max
 
         # The bounds invert (lower > upper) when the margin is too large for the surface or the
         # child is oversized. The loss becomes a non-zero constant with gradient zero.
 
-        # 1. X band loss: child's footprint entirely within parent's X extent
+        # 1. X band loss: child is contained by or overlaps the parent's X extent.
         x_band_loss = linear_band_loss(
             child_pos[:, 0],
             lower_bound=valid_x_min,
@@ -360,7 +366,7 @@ class OnLossStrategy(RelationLossStrategy):
             slope=self.slope,
         )
 
-        # 2. Y band loss: child's footprint entirely within parent's Y extent
+        # 2. Y band loss: child is contained by or overlaps the parent's Y extent.
         y_band_loss = linear_band_loss(
             child_pos[:, 1],
             lower_bound=valid_y_min,

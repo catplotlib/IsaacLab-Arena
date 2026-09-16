@@ -18,6 +18,7 @@ from isaaclab_arena.relations.placement_visualizer import get_or_create_placemen
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relations import (
     FaceTo,
+    FootprintConstraint,
     On,
     RandomAroundSolution,
     RotateAroundSolution,
@@ -514,8 +515,8 @@ class ObjectPlacer:
     ) -> tuple[float, float, float]:
         """Compute an initial position for an object with an On relation.
 
-        Places the object within the parent's X/Y footprint at the correct Z height,
-        so the solver starts from a valid region.
+        Places the object within or overlapping the parent's X/Y footprint, according
+        to the relation's per-axis footprint constraints, at the correct Z height.
 
         Args:
             env_bboxes: Per-object bboxes for the current env, each with shape (1, 3).
@@ -526,18 +527,24 @@ class ObjectPlacer:
         parent_bbox = self._get_on_parent_world_bbox(on_relation.parent, anchor_objects, anchor_bbox, env_bboxes)
         child_bbox = env_bboxes[obj]
 
+        overlap_x = on_relation.footprint_constraint_x is FootprintConstraint.OVERLAP
+        overlap_y = on_relation.footprint_constraint_y is FootprintConstraint.OVERLAP
+        child_x_min = child_bbox.max_point[0, 0] if overlap_x else child_bbox.min_point[0, 0]
+        child_x_max = child_bbox.min_point[0, 0] if overlap_x else child_bbox.max_point[0, 0]
+        child_y_min = child_bbox.max_point[0, 1] if overlap_y else child_bbox.min_point[0, 1]
+        child_y_max = child_bbox.min_point[0, 1] if overlap_y else child_bbox.max_point[0, 1]
         x = self._sample_axis_position(
             parent_bbox.min_point[0, 0],
             parent_bbox.max_point[0, 0],
-            child_bbox.min_point[0, 0],
-            child_bbox.max_point[0, 0],
+            child_x_min,
+            child_x_max,
             generator,
         )
         y = self._sample_axis_position(
             parent_bbox.min_point[0, 1],
             parent_bbox.max_point[0, 1],
-            child_bbox.min_point[0, 1],
-            child_bbox.max_point[0, 1],
+            child_y_min,
+            child_y_max,
             generator,
         )
 

@@ -5,10 +5,12 @@
 
 """Tests for On-relation-guided initialization in ObjectPlacer."""
 
+from unittest.mock import patch
+
 from isaaclab_arena.relations.object_placer import ObjectPlacer
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
-from isaaclab_arena.relations.relations import IsAnchor, NextTo, On, Side
+from isaaclab_arena.relations.relations import FootprintConstraint, IsAnchor, NextTo, On, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
@@ -49,6 +51,26 @@ def test_on_init_x_y_within_parent_footprint():
     assert x + child_bbox.max_point[0, 0] <= desk_world.max_point[0, 0] + 1e-6
     assert y + child_bbox.min_point[0, 1] >= desk_world.min_point[0, 1] - 1e-6
     assert y + child_bbox.max_point[0, 1] <= desk_world.max_point[0, 1] + 1e-6
+
+
+def test_on_init_applies_footprint_constraint_per_axis():
+    """Guided initialization reverses child bounds only on an overlap-constrained axis."""
+    desk = _make_desk()
+    box = DummyObject(
+        name="box",
+        bounding_box=AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.2, 0.2, 0.2)),
+    )
+    box.add_relation(On(desk, footprint_constraint_y=FootprintConstraint.OVERLAP))
+    placer = ObjectPlacer(params=ObjectPlacerParams())
+
+    with patch.object(placer, "_sample_axis_position", return_value=0.0) as sample_axis:
+        placer._generate_initial_positions([desk, box], {desk}, _env_bboxes([desk, box]))
+
+    x_call, y_call = sample_axis.call_args_list
+    for actual, expected in zip(x_call.args[2:4], (0.0, 0.2)):
+        assert abs(float(actual) - expected) < 1e-6
+    for actual, expected in zip(y_call.args[2:4], (0.2, 0.0)):
+        assert abs(float(actual) - expected) < 1e-6
 
 
 def test_on_init_z_places_bottom_at_parent_top():

@@ -20,7 +20,7 @@ from isaaclab_arena.relations.relation_loss_strategies import (
     next_to_violations,
     not_next_to_violations,
 )
-from isaaclab_arena.relations.relations import FaceTo, NextTo, NotNextTo, On, get_relation
+from isaaclab_arena.relations.relations import FaceTo, FootprintConstraint, NextTo, NotNextTo, On, get_relation
 from isaaclab_arena.relations.warp_sdf_kernels import has_sdf_sentinel, mesh_sdf
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.yaw import centers_in_target_frame, yaw_from_quat_xyzw, yaw_toward_positions
@@ -136,8 +136,8 @@ class OnRelationValidator(PlacementValidator):
     ) -> bool:
         """Validate each On relation; keep in sync with OnLossStrategy in relation_loss_strategies.py.
 
-        1. X: child's footprint within parent's X extent, inset by the relation's edge_margin_m.
-        2. Y: child's footprint within parent's Y extent, inset by the relation's edge_margin_m.
+        1. X: child's footprint is contained by or overlaps the parent's inset X extent.
+        2. Y: child's footprint is contained by or overlaps the parent's inset Y extent.
         3. Z: child_bottom in (parent_top, parent_top+clearance_m], within on_relation_z_tolerance_m.
 
         Args:
@@ -159,28 +159,38 @@ class OnRelationValidator(PlacementValidator):
                 child_size = child_world.max_point - child_world.min_point
 
                 m = rel.edge_margin_m
-                # 1) Checking that with the specified margin, the parent is wide enough to place the child on top
-                if m > 0.0:
-                    freespace = parent_size - child_size
+                freespace = parent_size - child_size
+                footprint_constraints = (rel.footprint_constraint_x, rel.footprint_constraint_y)
+                contained_axes = [
+                    axis
+                    for axis, constraint in enumerate(footprint_constraints)
+                    if constraint is FootprintConstraint.CONTAINED
+                ]
+                # 1) Check that the inset parent is large enough on axes that require containment.
+                if m > 0.0 and contained_axes:
+                    contained_freespace = freespace[0, contained_axes]
                     # A margin too large for the surface inverts the inset band so containment can never pass.
-                    if torch.any(freespace[0, :2] < 2 * m):
-                        # The maximum feasible margin is the minimum of the freespace on the xy axes.
-                        max_feasible_margin = max(0.0, min(freespace[0, :2]) / 2.0)
-                        # When parent < child, freespace[0, :2] is negative and max_feasible_margin is 0.0.
-                        if max_feasible_margin > 0.0:
-                            if self._params.verbose:
-                                print(
-                                    f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
-                                    f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
-                                    " edge_margin_m."
-                                )
-                            return False
-                # 2) Checking that the child lies within the parent's xy
+                    if torch.any(contained_freespace < 2 * m):
+                        max_feasible_margin = max(0.0, float(torch.min(contained_freespace).item()) / 2.0)
+                        if self._params.verbose and max_feasible_margin > 0.0:
+                            print(
+                                f"On relation: edge_margin_m={m} m is too large for parent '{parent.name}'. Max"
+                                f" feasible margin here is {max_feasible_margin:.3f} m. Use a smaller"
+                                " edge_margin_m."
+                            )
+                        return False
+                # 2) Check containment or overlap on each horizontal axis.
+                overlap_x = rel.footprint_constraint_x is FootprintConstraint.OVERLAP
+                overlap_y = rel.footprint_constraint_y is FootprintConstraint.OVERLAP
+                child_x_min = child_world.max_point[0, 0] if overlap_x else child_world.min_point[0, 0]
+                child_x_max = child_world.min_point[0, 0] if overlap_x else child_world.max_point[0, 0]
+                child_y_min = child_world.max_point[0, 1] if overlap_y else child_world.min_point[0, 1]
+                child_y_max = child_world.min_point[0, 1] if overlap_y else child_world.max_point[0, 1]
                 if (
-                    child_world.min_point[0, 0] < parent_world.min_point[0, 0] + m
-                    or child_world.max_point[0, 0] > parent_world.max_point[0, 0] - m
-                    or child_world.min_point[0, 1] < parent_world.min_point[0, 1] + m
-                    or child_world.max_point[0, 1] > parent_world.max_point[0, 1] - m
+                    child_x_min < parent_world.min_point[0, 0] + m
+                    or child_x_max > parent_world.max_point[0, 0] - m
+                    or child_y_min < parent_world.min_point[0, 1] + m
+                    or child_y_max > parent_world.max_point[0, 1] - m
                 ):
                     if self._params.verbose:
                         print(f"On relation: '{obj.name}' XY outside parent (retrying)")

@@ -12,7 +12,7 @@ from isaaclab_arena.relations.object_placer import ObjectPlacer
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_validation import PlacementCheck
 from isaaclab_arena.relations.placement_validators import NextToValidator, NotNextToValidator, OnRelationValidator
-from isaaclab_arena.relations.relations import NextTo, NotNextTo, On, RotateAroundSolution, Side
+from isaaclab_arena.relations.relations import FootprintConstraint, NextTo, NotNextTo, On, RotateAroundSolution, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
@@ -290,6 +290,67 @@ def test_on_relation_edge_margin_inside_rim_but_in_margin_gap_fails():
 def test_on_relation_edge_margin_too_large_for_surface_rejected():
     # Desk free span 0.8 caps the margin at 0.4; 0.5 inverts the inset band so containment fails.
     assert _validate_box_on_desk(edge_margin_m=0.5, box_x=0.0) is False
+
+
+def test_on_relation_overlap_accepts_oversized_child_but_rejects_separation():
+    """Overlap constraints accept an oversized child only while footprints intersect."""
+    placer = ObjectPlacer(params=ObjectPlacerParams())
+    desk = _make_desk()
+    box = _make_box("large", size=1.2)
+    box.add_relation(
+        On(
+            desk,
+            clearance_m=0.0,
+            edge_margin_m=0.0,
+            footprint_constraint_x=FootprintConstraint.OVERLAP,
+            footprint_constraint_y=FootprintConstraint.OVERLAP,
+        )
+    )
+    positions = {desk: (0.0, 0.0, 0.0), box: (0.0, 0.0, 0.65)}
+
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is True
+    positions[box] = (1.2, 0.0, 0.65)
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is False
+
+
+def test_on_relation_supports_per_axis_footprint_constraints():
+    """Y overlap does not relax X containment."""
+    placer = ObjectPlacer(params=ObjectPlacerParams())
+    desk = _make_desk()
+    box = _make_box("box", size=0.2)
+    box.add_relation(
+        On(
+            desk,
+            clearance_m=0.0,
+            edge_margin_m=0.0,
+            footprint_constraint_y=FootprintConstraint.OVERLAP,
+        )
+    )
+    positions = {desk: (0.0, 0.0, 0.0), box: (0.0, 0.55, 0.15)}
+
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is True
+    positions[box] = (0.55, 0.0, 0.15)
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is False
+    positions[box] = (0.0, 0.7, 0.15)
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is False
+
+
+def test_on_relation_margin_feasibility_applies_only_to_contained_axes():
+    """An oversized overlap axis does not make a feasible contained axis invalid."""
+    placer = ObjectPlacer(params=ObjectPlacerParams())
+    desk = _make_desk()
+    child = _make_long_box("child", half_x=0.1, half_y=0.6)
+    child.add_relation(
+        On(
+            desk,
+            clearance_m=0.0,
+            edge_margin_m=0.1,
+            footprint_constraint_y=FootprintConstraint.OVERLAP,
+        )
+    )
+    positions = {desk: (0.0, 0.0, 0.0), child: (0.0, 0.0, 0.1)}
+
+    assert OnRelationValidator(placer.params)._validate(positions, _env_bboxes(positions)) is True
 
 
 # --- NextTo validation (parent box XY in [-0.2, 0.2], child box half-extent 0.1) ---
