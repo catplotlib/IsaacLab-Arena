@@ -94,7 +94,7 @@ def create_recorder_env(
     episode_recorder_terms: dict[str, object] | None = None,
     enable_variation: bool = False,
     task_type=None,
-    reset_on_create=True,
+    reset_on_create: bool = True,
 ):
     """Build a registered two-env pick-and-place env wired for per-episode recording.
 
@@ -285,11 +285,13 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
         def reset(self, env_ids=None):
             ids = list(range(self.num_envs)) if env_ids is None else [int(i) for i in env_ids]
             notifications.append(ids)
-            reset_lengths.extend((i, self._env.get_episode_index(i), int(self._env.episode_length_buf[i])) for i in ids)
             asset = self._env.scene[self.cfg.params["asset_name"]]
             for env_id in ids:
+                episode_index = self._env.get_episode_index(env_id)
+                episode_length = int(self._env.episode_length_buf[env_id])
+                reset_lengths.append((env_id, episode_index, episode_length))
                 self.starting_poses[env_id] = asset.data.root_pose_w.torch[env_id].tolist()
-                self.starting_indices[env_id] = self._env.get_episode_index(env_id)
+                self.starting_indices[env_id] = episode_index
 
         def __call__(self, env, env_id, asset_name):  # noqa: ARG002
             return {
@@ -324,17 +326,25 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
         asset_name = term.cfg.params["asset_name"]
         asset = base_env.scene[asset_name]
 
+        def read_records():
+            return [json.loads(line) for line in output_path.read_text().splitlines()]
+
         def replay_state(env_ids=None, is_relative=False):
+            """Copy selected scene-state rows into the format expected by reset_to."""
             ids = list(range(NUM_ENVS)) if env_ids is None else env_ids.tolist()
             state = base_env.scene.get_state(is_relative=is_relative)
+            # reset_to expects only the selected rows, even when env_ids is non-contiguous.
             # This fixture has no surface grippers, whose scene state uses a raw tensor.
-            return {
-                kind: {
-                    name: {key: value[ids].clone() for key, value in values.items()} for name, values in assets.items()
-                }
-                for kind, assets in state.items()
-            }
+            selected_state = {}
+            for asset_type, assets in state.items():
+                selected_state[asset_type] = {}
+                for name, asset_state in assets.items():
+                    selected_state[asset_type][name] = {
+                        field: values[ids].clone() for field, values in asset_state.items()
+                    }
+            return selected_state
 
+        # The first reset captures each environment without recording a finished episode.
         if initial_reset_mode == "reset_to":
             # Pin the existing metric restriction independently of the per-env JSONL lifecycle.
             env_ids = torch.tensor([0], device=base_env.device)
@@ -344,26 +354,26 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
             state = replay_state()
             state["rigid_object"][asset_name]["root_pose"][:, 2] += 0.3
             base_env.reset_to(state, env_ids=None)
-            assert notifications == [[0, 1]]
+            assert notifications == [[0, 1]], initial_reset_mode
         elif initial_reset_mode == "partial_reset_to":
             env_ids = torch.tensor([0], device=base_env.device)
             base_env.reset_to(replay_state(env_ids), env_ids=env_ids)
-            assert notifications == [[0]]
+            assert notifications == [[0]], initial_reset_mode
             assert output_path.read_text() == ""
             base_env.reset(env_ids=torch.tensor([1], device=base_env.device))
-            assert notifications == [[0], [1]]
+            assert notifications == [[0], [1]], initial_reset_mode
         else:
             env.reset()
-            assert notifications == [[0, 1]]
+            assert notifications == [[0, 1]], initial_reset_mode
         initial_notifications = list(notifications)
         initial_poses = dict(term.starting_poses)
-        assert output_path.read_text() == ""  # Initial reset starts, but does not finish, an episode.
+        assert output_path.read_text() == "", "The first reset must not record an episode"
         assert initial_poses == {i: asset.data.root_pose_w.torch[i].tolist() for i in range(NUM_ENVS)}
 
         if initial_reset_mode != "reset":
             # These cases cover startup only; exercise the shared lifecycle once in the reset case.
             env.reset()
-            records = [json.loads(line) for line in output_path.read_text().splitlines()]
+            records = read_records()
             assert [(r["env_id"], r["episode_in_env"]) for r in records] == [(0, 0), (1, 0)], initial_reset_mode
             assert {r["env_id"]: r["starting_pose"] for r in records} == initial_poses, initial_reset_mode
             return True
@@ -379,23 +389,23 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
         ]
         base_env.episode_length_buf[:] = 17
         base_env.reset(env_ids=torch.tensor([1], device=base_env.device))
-        assert notifications == initial_notifications + [[1]]
-        assert term.starting_poses[0] == initial_poses[0]
+        assert notifications == initial_notifications + [[1]], "Partial reset must capture only env 1"
+        assert term.starting_poses[0] == initial_poses[0], "Partial reset must preserve env 0's capture"
         assert term.starting_poses[1] == asset.data.root_pose_w.torch[1].tolist()
-        assert term.starting_poses[1] != initial_poses[1]
+        assert term.starting_poses[1] != initial_poses[1], "Capture must run after the new reset pose is applied"
         assert base_env.get_episode_index(0) == 0
         assert base_env.get_episode_index(1) == 1
-        records = [json.loads(line) for line in output_path.read_text().splitlines()]
+        records = read_records()
         assert len(records) == 1
         assert records[0]["env_id"] == 1
         assert records[0]["episode_in_env"] == records[0]["starting_episode_index"] == 0
-        assert records[0]["starting_pose"] == initial_poses[1]
+        assert records[0]["starting_pose"] == initial_poses[1], "Record the old capture before replacing it"
         assert records[0][CUSTOM_KEY] == 1
         assert records[0]["episode_length"] == 17, "Record the finishing length before reset clears the buffer"
 
         env.reset()
         assert notifications == initial_notifications + [[1], [0, 1]]
-        records = [json.loads(line) for line in output_path.read_text().splitlines()]
+        records = read_records()
         assert [(r["env_id"], r["episode_in_env"]) for r in records] == [(1, 0), (0, 0), (1, 1)]
         assert records[1]["starting_pose"] == initial_poses[0]
 
@@ -416,7 +426,7 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
                 assert term.starting_poses[0] == previous_poses[0], phase
             replayed_poses = dict(term.starting_poses)
             env.reset()
-            records = [json.loads(line) for line in output_path.read_text().splitlines()]
+            records = read_records()
             assert {r["env_id"]: r["starting_pose"] for r in records[-NUM_ENVS:]} == replayed_poses, phase
 
         def exported_demos():
@@ -453,7 +463,7 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
                 assert "starting_pose" in str(error.value)
                 assert isinstance(error.value.__cause__, ValueError)
             assert notifications[notification_count:] == [], failure_stage
-            records = [json.loads(line) for line in output_path.read_text().splitlines()]
+            records = read_records()
             assert len(records) == records_before + 1, failure_stage
             assert exported_demos() == exports_before + 1, failure_stage
             assert records[-1]["episode_in_env"] == previous_index, failure_stage
@@ -461,14 +471,14 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
             # Retrying both envs finishes only the unaffected episode, then captures both starts.
             env.reset()
             assert notifications[notification_count:] == [[0, 1]], failure_stage
-            records = [json.loads(line) for line in output_path.read_text().splitlines()]
+            records = read_records()
             assert len(records) == records_before + 2, failure_stage
             # Isaac Lab exports both reset attempts; only the valid one has an Arena JSONL row.
             assert exported_demos() == exports_before + 3, failure_stage
             assert records[-1]["env_id"] == 0, failure_stage
             assert base_env.get_episode_index(1) == previous_index + 2, failure_stage
             env.reset()
-            records = [json.loads(line) for line in output_path.read_text().splitlines()]
+            records = read_records()
             assert records[-1]["episode_in_env"] == previous_index + 2, failure_stage
 
         # Force a timeout through step() to exercise automatic resets as well as explicit ones.
@@ -477,10 +487,11 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
         base_env.episode_length_buf[:] = base_env.max_episode_length - 1
         with torch.inference_mode():
             env.step(torch.zeros(env.action_space.shape, device=base_env.device))
-        assert notifications[notification_count:] == [[0, 1]]
-        records = [json.loads(line) for line in output_path.read_text().splitlines()]
+        assert notifications[notification_count:] == [[0, 1]], "Timeout reset must capture both environments once"
+        records = read_records()
         assert {r["env_id"]: r["starting_pose"] for r in records[-NUM_ENVS:]} == previous_poses
 
+        # Check episode identity and variation attribution across every reset path above.
         variation_key = f"{asset_name}.{VARIATION_NAME}"
         last_episode_by_env = {}
         for record in records:
@@ -496,7 +507,7 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
 
 
 def _nested_recorder_cfg(leaf_cfg):
-    """Build a repeated namespace without importing task or environment modules."""
+    """Nest leaf_cfg at subtask_0/subtask_1/capture without importing task modules."""
     from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg, NamespacedEpisodeRecorder
 
     inner = EpisodeRecorderTermCfg(
@@ -584,9 +595,9 @@ def _test_episode_recorder_reset_contract(simulation_app):  # noqa: ARG001
         env,
     )
     for index, env_ids in enumerate((torch.tensor([1]), (1, 0), None, [])):
-        assert manager.reset(env_ids) == {}
-        assert len(received_ids) == index + 1
-        assert received_ids[-1] is env_ids
+        assert manager.reset(env_ids) == {}, "Return an empty logging dictionary"
+        assert len(received_ids) == index + 1, "Notify each stateful term exactly once per reset"
+        assert received_ids[-1] is env_ids, "Pass environment IDs through without changing their representation"
     failing_manager = EpisodeRecorderManager(SimpleNamespace(broken=EpisodeRecorderTermCfg(func=FailingTerm)), env)
     with pytest.raises(RuntimeError, match="Episode recorder term 'broken' failed during reset") as error:
         failing_manager.reset()

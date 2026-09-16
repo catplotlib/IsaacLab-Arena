@@ -401,7 +401,7 @@ class CompositeTaskBase(TaskBase):
         return subtask_metrics
 
     def get_episode_recorder_terms(self, arena_env: IsaacLabArenaEnvironment) -> dict[str, EpisodeRecorderTermCfg]:
-        """Namespace fields under subtask_<index>, preserving indices of children without terms."""
+        """Group child fields under subtask_<index>, using each child's original index."""
         terms: dict[str, EpisodeRecorderTermCfg] = {}
         for i, subtask in enumerate(self.subtasks):
             subtask_terms = subtask.get_episode_recorder_terms(arena_env)

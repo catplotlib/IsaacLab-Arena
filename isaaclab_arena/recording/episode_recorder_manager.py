@@ -25,18 +25,19 @@ class EpisodeRecorderTermCfg(ManagerTermBaseCfg):
     """Called as ``func(env, env_id, **params)`` to return JSON-serializable episode fields.
 
     Top-level keys must not collide; values may nest. Use a function or ManagerTermBase subclass.
-    Stateful terms override ``reset(env_ids)`` to capture starting state after reset events,
-    before forward/render on normal resets.
-    Read directly written reset state; derived poses and sensors may still be stale.
-    For ``env.reset_to()``, capture runs after state restoration and forward/render.
-    ``env_ids`` is a tensor or sequence, or None for all environments.
+
+    Stateful terms override ``reset(env_ids)`` to capture starting state after reset events.
+    On normal resets, capture precedes simulation forward and rendering: read directly written
+    state, since derived poses and sensors may still be stale. For ``env.reset_to()``, capture
+    follows state restoration, forward and rendering. ``env_ids`` is a tensor or sequence of
+    environment IDs, or ``None`` for all environments.
     """
 
 
 def _record_episode_fields(
     terms: Iterable[tuple[str, EpisodeRecorderTermCfg]], env, env_id: int, record: dict[str, Any]
 ) -> dict[str, Any]:
-    """Merge term fields into a record, reporting collisions and serialization errors by term path."""
+    """Merge term fields into record and return it; identify invalid fields by term path."""
     for term_name, term_cfg in terms:
         fields = term_cfg.func(env, env_id, **term_cfg.params)
         collisions = record.keys() & fields.keys()
@@ -60,6 +61,7 @@ def _reset_episode_terms(
     """Reset stateful terms, preserving the failing leaf's path through namespace wrappers."""
     for term_name, term_cfg in terms:
         if isinstance(term_cfg.func, NamespacedEpisodeRecorder):
+            # Child failures already include their full path; preserve the original cause.
             term_cfg.func.reset(env_ids=env_ids)
         elif isinstance(term_cfg.func, ManagerTermBase):
             try:
@@ -74,19 +76,17 @@ class NamespacedEpisodeRecorder(ManagerTermBase):
     def __init__(self, cfg: EpisodeRecorderTermCfg, env):
         super().__init__(cfg, env)
         self._term_path: str = cfg.params["namespace"]
-        """Full configuration path, assigned by the manager when resolving nested terms."""
+        """Namespace path used in diagnostics, such as subtask_0/subtask_1."""
 
     def reset(self, env_ids: Sequence[int] | torch.Tensor | None = None) -> None:
         """Reset the selected environments in all stateful child terms."""
-        _reset_episode_terms(
-            ((f"{self._term_path}/{name}", cfg) for name, cfg in self.cfg.params["terms"].items()), env_ids
-        )
+        child_terms = ((f"{self._term_path}/{name}", cfg) for name, cfg in self.cfg.params["terms"].items())
+        _reset_episode_terms(child_terms, env_ids)
 
     def __call__(self, env, env_id: int, namespace: str, terms: dict[str, EpisodeRecorderTermCfg]) -> dict[str, Any]:
         """Return one episode's child fields nested under namespace."""
-        fields = _record_episode_fields(
-            ((f"{self._term_path}/{name}", cfg) for name, cfg in terms.items()), env, env_id, {}
-        )
+        child_terms = ((f"{self._term_path}/{name}", cfg) for name, cfg in terms.items())
+        fields = _record_episode_fields(child_terms, env, env_id, {})
         return {namespace: fields}
 
 
@@ -191,7 +191,8 @@ class EpisodeRecorderManager(ManagerBase):
             self._term_cfgs.append(term_cfg)
 
     def _resolve_term_cfg_tree(self, term_name: str, term_cfg: EpisodeRecorderTermCfg) -> None:
-        """Validate nested episode terms before parent resolution can instantiate their callables."""
+        """Validate and resolve a term and any episode terms in its parameters."""
+        # Parent resolution instantiates child callables; validate their class signatures first.
         if isinstance(term_cfg, EpisodeRecorderTermCfg):
             for key, value in term_cfg.params.items():
                 self._resolve_nested_episode_terms(f"{term_name}/{key}", value)
@@ -212,6 +213,8 @@ class EpisodeRecorderManager(ManagerBase):
         """Resolve runtime terms and retain full paths for namespaced diagnostics."""
         super()._process_term_cfg_at_play(term_name, term_cfg)
         if isinstance(term_cfg.func, NamespacedEpisodeRecorder):
+            # Isaac Lab uses dotted parameter paths; our recursive validation uses slashes.
+            # Hide the terms container in both forms: subtask_0.terms.capture -> subtask_0/capture.
             term_cfg.func._term_path = term_name.replace(".terms.", "/").replace("/terms/", "/")
             for name, child_cfg in term_cfg.params["terms"].items():
                 if not isinstance(child_cfg, EpisodeRecorderTermCfg):

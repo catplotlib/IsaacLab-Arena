@@ -253,8 +253,9 @@ so variation draws remain distinct.
 This filtering applies only to the episode JSONL. Isaac Lab's dataset recorder runs before
 Arena's reset bookkeeping and can still export retry attempts; demo-based metrics may count
 those attempts as well. Use JSONL as the authoritative list of recorded episodes and match
-demos by ``(env_id, episode_in_env)``, excluding demos with no matching row. Partial first
-resets also remain unsupported by ``SuccessRateMetric``; ``EpisodeIdentityRecorder`` still
+demos by ``(env_id, episode_in_env)``, excluding demos with no matching row.
+
+Partial first resets remain unsupported by ``SuccessRateMetric``; ``EpisodeIdentityRecorder`` still
 uses a global first-reset flag. Those dataset-recorder limitations are separate from the
 per-environment JSONL lifecycle.
 

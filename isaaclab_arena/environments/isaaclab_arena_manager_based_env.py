@@ -99,10 +99,10 @@ class IsaacLabArenaManagerBasedRLEnv(ManagerBasedRLEnv):
     def _reset_idx(self, env_ids: Sequence[int] | torch.Tensor) -> None:
         ids = [int(env_id) for env_id in env_ids]
         finished_env_ids = [env_id for env_id in ids if env_id in self._started_env_ids]
-        # Clear before recording or reset events can raise, so retries cannot export stale or duplicate rows.
+        # Clear before recording or reset events can raise, so retries cannot write stale or duplicate JSONL rows.
         self._started_env_ids.difference_update(ids)
         if finished_env_ids:
-            # Record before super() so the just-finished episode is still intact.
+            # Record the finishing episode before reset changes its state and index.
             self.episode_recorder_manager.record_pre_reset(finished_env_ids)
         # Reserve an index before reset events, including retries, so variation draws never reuse one.
         for env_id in ids:
