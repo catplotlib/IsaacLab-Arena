@@ -9,7 +9,7 @@ Typical use is thinning out distractor clutter, so a policy sees a different sub
 non-task objects from run to run.
 
 The draw happens once at build time, so an object is either present or gone for the whole run.
-Realizing it needs a reset event rather than just a spawn pose: relation placement rewrites every
+Realizing it needs a reset event rather than a spawn pose: relation placement rewrites every
 non-anchor object's pose on reset, and per-object pose events restore their own. Variation events
 are composed after both, so the teleport is what survives.
 """
@@ -31,8 +31,6 @@ if TYPE_CHECKING:
     import torch
 
     from isaaclab.envs import ManagerBasedEnv
-
-    from isaaclab_arena.assets.object_base import ObjectBase
 
 
 @configclass
@@ -66,7 +64,9 @@ class ObjectDisappearVariation(RunTimeVariationBase):
     """Remove an object from the scene with a build-time sampled probability.
 
     Args:
-        obj: The object to remove. A reference is captured; the variation mutates this instance.
+        asset_name: Scene-entity name of the target object. Holding the name rather than the object
+            keeps the asset's variation list free of a back-reference, which ``cfg.validate()``
+            would otherwise follow in circles.
         cfg: Tunable parameters. Defaults to a 50% chance of disappearing.
         name: Identifier under which this variation is registered on the asset.
             Defaults to ``"disappear"``.
@@ -76,35 +76,28 @@ class ObjectDisappearVariation(RunTimeVariationBase):
 
     def __init__(
         self,
-        obj: ObjectBase,
+        asset_name: str,
         cfg: ObjectDisappearVariationCfg | None = None,
         name: str = "disappear",
     ):
         super().__init__(cfg=cfg if cfg is not None else ObjectDisappearVariationCfg(), name=name)
-        self._object = obj
+        self.asset_name = asset_name
         self._disappeared = False
-
-    def _get_away_pose(self) -> Pose:
-        """Return the away pose, re-tupling the position because Hydra overrides arrive as lists."""
-        return Pose(position_xyz=tuple(self.cfg.away_position_xyz))
 
     def _realize_at_build_time(self) -> None:
         assert self.sampler is not None, "ObjectDisappearVariation: sampler not set."
         self._disappeared = self.sampler.sample(num_samples=1)[0]
-        if self._disappeared:
-            # Spawn the object away too, so it is never briefly visible before the first reset.
-            # The reset event below owns restoring the pose, hence no per-object event here.
-            self._object.set_initial_pose(self._get_away_pose(), create_reset_event=False)
 
     def build_event_cfg(self) -> tuple[str, EventTermCfg]:
         return (
-            f"{self._object.name}_{self.name}",
+            f"{self.asset_name}_{self.name}",
             EventTermCfg(
                 func=hold_object_away,
                 mode="reset",
                 params={
-                    "asset_cfg": SceneEntityCfg(self._object.name),
-                    "pose": self._get_away_pose(),
+                    "asset_cfg": SceneEntityCfg(self.asset_name),
+                    # Re-tupled because Hydra overrides arrive as lists.
+                    "pose": Pose(position_xyz=tuple(self.cfg.away_position_xyz)),
                     "disappeared": self._disappeared,
                 },
             ),

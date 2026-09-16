@@ -75,7 +75,7 @@ class RootedObjectBase(ObjectBase):
         }, f"RootedObjectBase does not support object type '{self.object_type}'."
         if self.object_type == ObjectType.RIGID:
             self.add_variation(ObjectMassVariation(self.name))
-            self.add_variation(ObjectDisappearVariation(self))
+            self.add_variation(ObjectDisappearVariation(self.name))
         self.initial_velocity: Velocity | None = None
 
     def _set_initial_pose(self, pose: Pose | PoseRange | PosePerEnv) -> None:
