@@ -465,6 +465,10 @@ class ObjectPlacer:
             extra_yaws = [
                 orientations_per_candidate[c].get(obj, marker_yaw) - marker_yaw for c in range(num_candidates)
             ]
+            # extra_yaws exclude the marker rotation, so reuse the original bbox only when:
+            # 1. the marker has no roll or pitch;
+            # 2. the marker yaw is zero; and
+            # 3. every candidate adds zero extra yaw.
             if not has_roll_pitch and marker_yaw == 0.0 and all(yaw == 0.0 for yaw in extra_yaws):
                 rotated[obj] = bbox
             else:
