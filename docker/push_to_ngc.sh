@@ -8,6 +8,7 @@ PUSH_TO_NGC=false
 BUILD_OPTIONS=()
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/setup/target_tag.sh"
 
 usage() {
     cat <<USAGE
@@ -47,10 +48,8 @@ if [ "$#" -ne 0 ]; then
 fi
 
 # An explicit tag takes precedence over the target's default, in either option order.
-case "$DOCKER_TARGET" in
-    dev) TAG_NAME=${TAG_NAME:-latest} ;;
-    dev-curobo) TAG_NAME=${TAG_NAME:-curobo} ;;
-esac
+DEFAULT_TAG=$(default_tag_for_target "$DOCKER_TARGET")
+TAG_NAME=${TAG_NAME:-$DEFAULT_TAG}
 DOCKER_IMAGE_NAME="${ISAACLAB_ARENA_IMAGE_NAME}:${TAG_NAME}"
 NGC_PATH="nvcr.io/nvstaging/isaac-amr/${DOCKER_IMAGE_NAME}"
 echo "Building target ${DOCKER_TARGET} as ${DOCKER_IMAGE_NAME}."

@@ -28,6 +28,7 @@ with zipfile.ZipFile(wheel) as archive:
     metadata = email.message_from_bytes(archive.read(metadata_path))
     requirements = metadata.get_all('Requires-Dist', [])
 Path('/wheels/runtime-requirements.txt').write_text('\n'.join(requirements) + '\n')
+# Human-readable provenance for diagnosing installed-wheel revision/ABI mismatches.
 Path('/wheels/build.json').write_text(json.dumps({
     'commit': os.environ['CUROBO_COMMIT'],
     'torch': torch.__version__,

@@ -53,7 +53,6 @@ fi
 
 # Run the passed command or just start the shell as the created user
 if [ $# -ge 1 ]; then
-    echo "alias pytest='/isaac-sim/python.sh -m pytest'" >> /etc/aliasess.bashrc
     # -i makes bash to expand aliases
     # -c makes bash to run a command
     exec sudo --preserve-env -u $DOCKER_RUN_USER_NAME \

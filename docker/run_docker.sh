@@ -4,6 +4,7 @@ DOCKER_IMAGE_NAME='isaaclab_arena'
 DOCKER_VERSION_TAG='latest'
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source "$SCRIPT_DIR/setup/target_tag.sh"
 
 WORKDIR="/workspaces/isaaclab_arena"
 
@@ -106,12 +107,7 @@ if [ "$CONTAINER_SUFFIX_EXPLICIT" = false ]; then
     [ -n "$derived" ] && CONTAINER_SUFFIX="-${derived}"
 fi
 
-case "$DOCKER_TARGET" in
-    dev) DOCKER_VERSION_TAG=latest ;;
-    dev-curobo) DOCKER_VERSION_TAG=curobo ;;
-    runtime|runtime-curobo) DOCKER_VERSION_TAG=$DOCKER_TARGET ;;
-    *) echo "Unsupported Arena target: $DOCKER_TARGET" >&2; exit 2 ;;
-esac
+DOCKER_VERSION_TAG=$(default_tag_for_target "$DOCKER_TARGET")
 
 # Display the values being used
 echo "Using Docker image: $DOCKER_IMAGE_NAME:$DOCKER_VERSION_TAG"
