@@ -40,10 +40,8 @@ def _test_parallel_jaw_gripper_released(_simulation_app) -> bool:
             action = SimpleNamespace(processed_actions=commanded)
             action_manager = SimpleNamespace(get_term={"gripper": action}.__getitem__)
             env = SimpleNamespace(
-                arena_world=ArenaWorld(
-                    SimpleNamespace(num_envs=6, articulations={"robot": robot}),
-                    action_manager_getter=lambda: action_manager,
-                ),
+                arena_world=ArenaWorld(SimpleNamespace(num_envs=6, articulations={"robot": robot})),
+                action_manager=action_manager,
             )
             result = parallel_jaw_gripper_released(
                 env, **release_params, stall_threshold_m=0.001953125, grasp_width_tolerance_m=0.00390625

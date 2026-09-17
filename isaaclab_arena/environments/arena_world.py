@@ -15,8 +15,6 @@ indicate whether a pose is expressed in W or E.
 from __future__ import annotations
 
 import torch
-from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 from isaaclab.scene import InteractiveScene
 from isaaclab.utils.math import quat_apply
@@ -24,23 +22,12 @@ from isaaclab.utils.math import quat_apply
 import isaaclab_arena.environments.arena_world_scene_access as scene_access
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
-if TYPE_CHECKING:
-    from isaaclab.managers import ActionManager
-
 
 class ArenaWorld:
-    """Provide name-based pose, velocity, articulation, action, and geometry queries."""
+    """Provide name-based pose, velocity, articulation, and geometry queries."""
 
-    def __init__(self, scene: InteractiveScene, action_manager_getter: Callable[[], ActionManager] | None = None):
-        """Bind scene queries and an optional deferred action-manager lookup.
-
-        Args:
-            scene: Live scene supplying asset state.
-            action_manager_getter: Resolve the live action manager when queried,
-                allowing ArenaWorld to be created before managers are loaded.
-        """
+    def __init__(self, scene: InteractiveScene):
         self._scene = scene
-        self._action_manager_getter = action_manager_getter
         self._aabbs_in_local_frame_cache: dict[str, AxisAlignedBoundingBox] = {}
         self._scene_extra_pose_reader_cache: dict[str, scene_access.SceneExtraPoseReader] = {}
 
@@ -129,7 +116,7 @@ class ArenaWorld:
         return root_angular_velocity_w
 
     # -------------------------------------------------------------------------
-    # Articulation and action APIs
+    # Articulation APIs
     # -------------------------------------------------------------------------
 
     def get_joint_position(self, scene_key: str, joint_name: str) -> torch.Tensor:
@@ -171,23 +158,6 @@ class ArenaWorld:
             7,
         ), f"Body '{body_name}' returned pose shape {tuple(T_W_B.shape)}; expected ({self._scene.num_envs}, 7)."
         return T_W_B
-
-    def get_processed_actions(self, action_name: str) -> torch.Tensor:
-        """Return the live processed commands of a named action term.
-
-        Args:
-            action_name: Action-manager term name.
-
-        Returns:
-            Tensor of shape (num_envs, action_dim), in the action term's units.
-        """
-        assert self._action_manager_getter is not None, "Processed action queries require an action-manager getter."
-        actions = self._action_manager_getter().get_term(action_name).processed_actions
-        assert actions.ndim == 2 and actions.shape[0] == self._scene.num_envs, (
-            f"Action '{action_name}' returned shape {tuple(actions.shape)}; "
-            f"expected ({self._scene.num_envs}, action_dim)."
-        )
-        return actions
 
     # -------------------------------------------------------------------------
     # Deformable object APIs

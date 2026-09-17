@@ -71,7 +71,7 @@ class IsaacLabArenaManagerBasedRLEnv(ManagerBasedRLEnv):
 
     def load_managers(self) -> None:
         assert self._arena_world is None, "ArenaWorld is already initialized."
-        self._arena_world = ArenaWorld(self.scene, action_manager_getter=lambda: self.action_manager)
+        self._arena_world = ArenaWorld(self.scene)
         super().load_managers()
         self.metrics_manager = MetricsManager(self.cfg.metrics, self)
         self.episode_recorder_manager = EpisodeRecorderManager(self.cfg.episode_recorders, self)

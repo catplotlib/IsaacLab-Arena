@@ -49,7 +49,7 @@ def parallel_jaw_gripper_released(
         Boolean tensor with one result per environment.
     """
     measured = env.arena_world.get_joint_position(robot_name, gripper_joint_name)
-    commanded = env.arena_world.get_processed_actions(gripper_action_name)[:, 0]
+    commanded = env.action_manager.get_term(gripper_action_name).processed_actions[:, 0]
     # Each finger moves inward by (open_joint_m - measured), reducing the fully open gap by twice that amount.
     gap = span_m - 2.0 * (open_joint_m - measured)
     # Check that the finger is more open than commanded.
