@@ -3,32 +3,20 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Syringe factories with camera, placement, and solver-schema adaptations."""
+"""Syringe factories with camera, placement, and physics adaptations."""
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-
-from isaaclab.utils.configclass import configclass
-from isaaclab_newton.physics import MJWarpSolverCfg
 
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
 
 
-# TODO(alexmillane) [isaaclab-multiccd-config-missing-feature]: Remove this shim once
-# Isaac Lab exposes enable_multiccd in MJWarpSolverCfg so YAML can set it directly.
-@configclass
-class SyringeSolverCfg(MJWarpSolverCfg):
-    enable_multiccd: bool = False
-    """Expose Newton's multi-contact option for graph YAML overrides."""
-
-
 def _apply_syringe_graph_config(env_cfg, graph_callback):
-    """Expose the missing solver field before applying the graph's configuration."""
-    solver_cfg = env_cfg.sim.physics.solver_cfg
-    env_cfg.sim.physics.solver_cfg = SyringeSolverCfg(
-        **{field.name: getattr(solver_cfg, field.name) for field in fields(solver_cfg)}
-    )
+    """Apply the remaining Python physics settings and the graph's configuration."""
+    # TODO(alexmillane) [isaaclab-multiccd-config-missing-feature]: Move this to YAML
+    # once Isaac Lab exposes enable_multiccd in MJWarpSolverCfg.
+    env_cfg.sim.physics.solver_cfg.enable_multiccd = True
     # TODO(alexmillane) [yaml-scene-annotation-resolution]: Move this to YAML once
     # env_cfg_override resolves inherited and composed scene field annotations.
     env_cfg.scene.replicate_physics = False
