@@ -130,7 +130,7 @@ jobs:
           chmod a+r /etc/apt/keyrings/docker.gpg && \
           echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
           "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null &&
-          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
+          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin python3
           docker --version
 
       - &docker_login_ngc_step
@@ -142,6 +142,16 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
+
+      - name: Describe cache inputs
+        run: |
+          echo "Cache: ${ARENA_IMAGE}:buildcache-main-${ARENA_TARGET}"
+          docker buildx version
+          git rev-parse HEAD
+          git submodule status
+          # File modes affect COPY and bind-mount cache keys, even with identical content.
+          stat -c '%a %n' docker/setup/* pyproject.toml submodules/IsaacLab submodules/IsaacLab/.git
+          sha256sum docker/Dockerfile.isaaclab_arena docker/setup/* pyproject.toml
 
       - name: Build and push candidate image
         id: build
@@ -163,6 +173,28 @@ jobs:
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
                 && format('type=registry,ref={0}:buildcache-main-{1},mode=max,oci-mediatypes=true,image-manifest=true',
                           env.ARENA_IMAGE, env.ARENA_TARGET) || '' }}
+
+      - name: Report Docker cache usage
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        # Diagnostics must not hide the original build result.
+        continue-on-error: true
+        env:
+          BUILD_REF: ${{ fromJSON(steps.build.outputs.metadata || '{}')['buildx.build.ref'] }}
+        run: |
+          # On failure, metadata may be absent; this dedicated builder has only one build.
+          docker buildx history logs --progress=rawjson ${BUILD_REF:+"$BUILD_REF"} > build-cache.jsonl 2>&1
+          python3 docker/report_build_cache.py < build-cache.jsonl | tee build-cache-summary.md
+          cat build-cache-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cache diagnostics
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-cache-${{ env.ARENA_TARGET }}-${{ github.run_attempt }}
+          path: |
+            build-cache.jsonl
+            build-cache-summary.md
+          if-no-files-found: warn
 
       - name: Record candidate image digest
         id: image
