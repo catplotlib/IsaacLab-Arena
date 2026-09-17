@@ -40,15 +40,15 @@ Mention breaking changes, required migration steps, and important limitations
 when relevant. Distinguish what this PR implements from future work.
 -->
 
-## Usage example
-
 <!--
-Keep this section when an API or its usage changes.
+When an API or its usage changes, add a Usage example section using the skeleton below.
+Replace the placeholders and move the completed section outside this comment.
 Show a small before/after example of the same operation.
 Use the same variable names and omit unrelated setup.
 Explain any behavior difference that the code alone does not show.
 Use the appropriate code-block language for the example.
--->
+
+## Usage example
 
 Before:
 
@@ -61,6 +61,7 @@ After:
 ```python
 # Updated usage
 ```
+-->
 
 ## Validation
 

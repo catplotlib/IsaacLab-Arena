@@ -2,7 +2,7 @@
 name: commit-and-pr
 description: Creates Arena-conformant commits and pull requests. Enforces DCO sign-off (git commit -s), no AI attribution lines (no Co-Authored-By, no Generated-with-Claude footers), <username>/<type>/<short-description> branch naming, separate new commits rather than --amend when iterating on PR feedback, and main as the default base branch. Use when the user asks to commit, stage changes, push the current branch, open a pull request, make a PR, submit changes, or mark work as ready to merge.
 disable-model-invocation: true
-allowed-tools: Bash(git *) Bash(pre-commit *) Bash(gh pr create *) Bash(gh pr view *)
+allowed-tools: Read Bash(git *) Bash(pre-commit *) Bash(gh pr create *) Bash(gh pr view *)
 ---
 
 # Commit and Pull Request
@@ -64,13 +64,7 @@ Do not use top-level type prefixes that omit the username (e.g. `feature/foo`, `
 
 3. PR title follows the same rules as a commit subject: imperative, ~70 chars max, no trailing period.
 
-4. Read `.github/pull_request_template.md` and follow its guidance. Use imperative verbs
-   in the opening summary (for example, "Add", "Fix", or "Update"); omit introductory
-   phrases such as "This PR adds". Explain the motivation and solution in plain English
-   for a teammate who has not followed the discussion.
-   Include a before/after example when usage changes, and state how the change was
-   validated. Prefer concise paragraphs; use lists where they improve readability.
-   Scale the detail to the change and remove sections that do not apply.
+4. Read `.github/pull_request_template.md` before writing a PR description and follow its guidance.
 
 ## Iterating on review feedback
 
