@@ -17,9 +17,6 @@ def _apply_syringe_graph_config(env_cfg, graph_callback):
     # TODO(alexmillane) [isaaclab-multiccd-config-missing-feature]: Move this to YAML
     # once Isaac Lab exposes enable_multiccd in MJWarpSolverCfg.
     env_cfg.sim.physics.solver_cfg.enable_multiccd = True
-    # TODO(alexmillane) [yaml-scene-annotation-resolution]: Move this to YAML once
-    # env_cfg_override resolves inherited and composed scene field annotations.
-    env_cfg.scene.replicate_physics = False
     return graph_callback(env_cfg)
 
 
