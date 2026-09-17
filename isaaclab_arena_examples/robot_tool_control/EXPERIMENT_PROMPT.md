@@ -25,9 +25,35 @@ docker ps --filter "volume=$repository_root" --format '{{.Names}}'
 
 Select the container mounting this repository at `/workspaces/isaaclab_arena` and
 retain its name as `arena_container`. Inspect mounts if there are multiple matches.
-Use the already-running runtime and its supported pinned dependencies. If it is
-missing or incompatible, report the prerequisite or startup error; do not rebuild
-Docker, change submodules, or copy workarounds from someone else's validation output.
+Use the already-running runtime and its supported pinned dependencies. A running
+container does not guarantee compatible sources: this checkout is mounted into it.
+Before creating an invocation, compare the pinned and checked-out Isaac Lab revisions:
+
+```bash
+git ls-tree HEAD submodules/IsaacLab
+git -C submodules/IsaacLab rev-parse HEAD
+```
+
+Unless the user explicitly selects another supported Isaac Lab source directory,
+these commits must match. If they differ, report both revisions and stop before
+launching. Do not change the submodule or hide duplicate CLI arguments with an
+argparse workaround. A conflict for `--enable_cameras` can indicate this mismatch.
+
+When the user provides an explicit runtime selection, verify imports resolve to
+those supported sources and apply the same environment to every Arena Python
+process. Record the selected source directory and revision. Do not automatically
+discover or reuse historical validation snapshots as a fallback.
+
+Check the runner's CLI in a separate container process, as the host user, using the
+selected environment:
+
+```bash
+docker exec "$arena_container" su "$host_username" -s /bin/bash -c \
+  'cd /workspaces/isaaclab_arena && /isaac-sim/python.sh isaaclab_arena/evaluation/experiment_runner.py --help'
+```
+
+This check does not launch the simulator or an episode. If it fails, report the
+error and stop; do not rebuild Docker or change dependencies automatically.
 
 Resolve the YAML path supplied by the user. Read its Run settings to establish the
 requested scope: Run names, episode limits, rebuilds, environment counts, cameras,
@@ -96,7 +122,11 @@ restricted to **this invocation's** experiment output directory:
 
 Never attach to a session found in an earlier output directory. Startup can take
 time; an absence of requests alone is not failure. Check the runner process and
-log. Do not restart a failed launch or replace an interrupted attempt.
+log. Do not restart a failed launch or replace an interrupted attempt automatically.
+If the user subsequently requests a setup fix and a new launch, preserve the failed
+invocation, repeat readiness checks with the selected runtime, and create a new
+invocation directory. A startup failure before any episode is distinct from a
+controller's task outcome; do not use this recovery to replace a failed episode.
 
 ## Assign one fresh controller per episode
 

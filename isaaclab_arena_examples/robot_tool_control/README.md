@@ -41,6 +41,12 @@ create model sessions, and this workflow requires fresh-controller support in th
 hosting session. It uses the checkout's supported dependencies and does not depend
 on the original author's container name, output directories, or validation helper.
 
+The installed checkout must use the Isaac Lab revision pinned by this branch.
+The agent checks this and the runner's CLI before launching. A running Docker
+container alone is not sufficient because it imports the mounted source checkout.
+For a revision mismatch, fix the installation or explicitly supply a supported
+runtime; the agent does not change your submodule automatically.
+
 ## Run the experiment manually
 
 Use an installed Arena checkout and its running Docker container. Run these commands
