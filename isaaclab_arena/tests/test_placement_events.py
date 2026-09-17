@@ -987,3 +987,15 @@ def test_solve_and_apply_relation_placement_drops_embodiment_from_event_params()
     pool = pool_handle.pool
     assert pool._placer.params.reachability_config.embodiment is None
     assert all(v._params.reachability_config.embodiment is None for v in pool._placer._validators)
+
+
+def test_invalid_scene_pose_is_rejected_before_any_write():
+    from isaaclab_arena.relations.placement_events import write_scene_poses_to_sim
+
+    env = _make_mock_env(num_envs=1)
+    pose = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]])
+    bad_pose = pose.clone()
+    bad_pose[0, 6] = 0
+    with pytest.raises(AssertionError):
+        write_scene_poses_to_sim(env, torch.tensor([0]), {"first": pose, "second": bad_pose})
+    assert not env._assets

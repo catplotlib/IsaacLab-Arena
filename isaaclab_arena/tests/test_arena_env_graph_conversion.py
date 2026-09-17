@@ -280,3 +280,94 @@ def test_graph_parses_asset_poses():
     from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
     assert run_function_with_persistent_simulation_app(_test_graph_parses_asset_poses)
+
+
+def _test_companion_layout_paths_and_graph_ids(simulation_app):
+    import tempfile
+    import yaml
+
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.utils.pose import Pose
+
+    source = Path(__file__).parents[2] / "isaaclab_arena_examples/relations/clutter/clutter_scene.yaml"
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        data = yaml.safe_load(source.read_text())
+        data["embodiment"]["id"] = "arm"
+        data["placement_layouts"] = "poses.yaml"
+        path = directory / "env.yaml"
+        path.write_text(yaml.safe_dump(data))
+        poses = {f"cube_{i}": [Pose((i, 0, 1))] for i in range(4)}
+        poses["arm"] = [Pose((0, 0, 0))]
+        PlacementLayouts(poses).write_yaml(directory / "poses.yaml")
+        spec = ArenaEnvGraphSpec.from_yaml(path)
+        restored = ArenaEnvGraphSpec.from_dict(spec.to_dict())
+        with pytest.raises(AssertionError, match="Relative placement_layouts requires a source YAML"):
+            restored.to_arena_env()
+        assert restored.to_arena_env(placement_layouts=directory / "poses.yaml").placement_layouts is not None
+        loaded = spec.to_arena_env().placement_layouts
+        assert loaded.poses["robot"] == poses["arm"]
+        assert "arm" not in loaded.poses
+        override = directory / "override.yaml"
+        poses["cube_0"] = [Pose((2, 3, 4))]
+        PlacementLayouts(poses).write_yaml(override)
+        assert spec.to_arena_env(placement_layouts=override).placement_layouts.poses["cube_0"] == poses["cube_0"]
+        for invalid, message in (({"unknown": [Pose()]}, "Unknown cached"), ({"cube_0": [Pose()]}, "missing placed")):
+            invalid_path = directory / f"{message.split()[0]}.yaml"
+            PlacementLayouts(invalid).write_yaml(invalid_path)
+            with pytest.raises(AssertionError, match=message):
+                spec.to_arena_env(placement_layouts=invalid_path)
+    return True
+
+
+def test_companion_layout_paths_and_graph_ids():
+    from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+    assert run_function_with_persistent_simulation_app(_test_companion_layout_paths_and_graph_ids)
+
+
+def _test_python_environment_loads_companion_layouts(simulation_app):
+    import sys
+    import tempfile
+    from unittest.mock import patch
+
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "poses.yaml"
+        with patch.object(sys, "argv", ["environment_runner.py", "droid_table_multi_object_placement"]):
+            args = get_isaaclab_arena_environments_cli_parser().parse_args()
+        original = get_arena_builder_from_cli(args).arena_env
+        poses = {
+            asset.get_scene_key(): [Pose((0.1 * i, 0, 1)), Pose((0.1 * i, 0.2, 1))]
+            for i, asset in enumerate(original.scene.assets.values())
+            if asset.get_spatial_relations() and not asset.is_anchor
+        }
+        assert poses
+        PlacementLayouts(poses).write_yaml(path)
+        with patch.object(
+            sys,
+            "argv",
+            ["environment_runner.py", "--placement_layouts", str(path), "droid_table_multi_object_placement"],
+        ):
+            args = get_isaaclab_arena_environments_cli_parser().parse_args()
+        loaded = get_arena_builder_from_cli(args).arena_env
+        assert loaded.placement_layouts.poses == poses
+        for invalid, message in (
+            ({"unknown": [Pose()]}, "Unknown cached"),
+            ({next(iter(poses)): [Pose()]}, "missing placed"),
+        ):
+            invalid_path = Path(directory) / f"{message.split()[0]}.yaml"
+            PlacementLayouts(invalid).write_yaml(invalid_path)
+            args.placement_layouts = str(invalid_path)
+            with pytest.raises(AssertionError, match=message):
+                get_arena_builder_from_cli(args)
+    return True
+
+
+def test_python_environment_loads_companion_layouts():
+    from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+    assert run_function_with_persistent_simulation_app(_test_python_environment_loads_companion_layouts)

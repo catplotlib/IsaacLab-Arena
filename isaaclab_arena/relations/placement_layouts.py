@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import json
 import math
+import yaml
 from dataclasses import dataclass
 from numbers import Real
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from isaaclab_arena.utils.pose import Pose
+
+if TYPE_CHECKING:
+    from isaaclab_arena.relations.placement_asset import PlaceableAsset
 
 
 @dataclass
@@ -46,10 +51,67 @@ class PlacementLayouts:
                     sum(value * value for value in pose.rotation_xyzw), 1.0, abs_tol=1e-4
                 ), "Placement poses must have unit quaternions"
 
+    def validate_assets(self, assets: list[PlaceableAsset]) -> None:
+        """Require concrete scene keys and complete coverage of relation-placed assets."""
+        from isaaclab_arena.assets.object_set import RigidObjectSet
+        from isaaclab_arena.relations.relations import RandomAroundSolution, get_relation
+
+        self.validate()
+        assert not any(
+            isinstance(asset, RigidObjectSet) for asset in assets
+        ), "Cached layouts require concrete assets, not object sets"
+        by_key = {asset.get_scene_key(): asset for asset in assets}
+        assert len(by_key) == len(assets), "Cached placement assets must have distinct scene keys"
+        unknown = set(self.poses) - set(by_key)
+        assert not unknown, f"Unknown cached scene objects: {unknown}"
+        required = {key for key, asset in by_key.items() if asset.get_spatial_relations() and not asset.is_anchor}
+        missing = required - set(self.poses)
+        assert not missing, f"Cache is missing placed objects: {missing}"
+        for name in self.poses:
+            assert (
+                get_relation(by_key[name], RandomAroundSolution) is None
+            ), f"Cached object '{name}' cannot randomize on reset"
+
     @property
     def num_layouts(self) -> int:
         """Number of complete layouts."""
         return len(next(iter(self.poses.values())))
+
+    def get_layout(self, index: int) -> dict[str, Pose]:
+        """Return the named object poses at a layout index."""
+        assert 0 <= index < self.num_layouts, "Layout index is out of range"
+        return {name: poses[index] for name, poses in self.poses.items()}
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> PlacementLayouts:
+        """Read an object-name-to-pose-list YAML mapping."""
+        with Path(path).open(encoding="utf-8") as stream:
+            data = yaml.load(stream, Loader=_PlacementLayoutsLoader)
+        assert isinstance(data, dict), "Placement cache must be a mapping"
+        assert all(isinstance(values, list) for values in data.values()), "Each object must have a list of poses"
+        poses = {}
+        for name, values in data.items():
+            poses[name] = []
+            for index, value in enumerate(values):
+                try:
+                    assert isinstance(value, dict), "Cached pose must be a mapping"
+                    assert set(value) == {
+                        "position_xyz",
+                        "rotation_xyzw",
+                    }, "Cached pose requires position_xyz and rotation_xyzw only"
+                    poses[name].append(Pose.from_dict(value))
+                except AssertionError as error:
+                    raise AssertionError(f"{path}: object '{name}', layout {index}: {error}") from error
+        return cls(poses)
+
+    def write_yaml(self, path: str | Path) -> None:
+        """Write the layouts as ordinary YAML, refusing to overwrite an existing file."""
+        self.validate()
+        data = {name: [pose.to_dict() for pose in poses] for name, poses in self.poses.items()}
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as stream:
+            yaml.safe_dump(data, stream, sort_keys=False)
 
     def write_episode_jsonl(self, path: str | Path) -> None:
         """Write settled layouts in the episode variations envelope without overwriting."""
@@ -65,3 +127,13 @@ class PlacementLayouts:
                 }
                 record = {"variations": {"scene.relation_placement": placement}}
                 stream.write(json.dumps(record, allow_nan=False) + "\n")
+
+
+class _PlacementLayoutsLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate object names and pose fields."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        mapping = super().construct_mapping(node, deep=deep)
+        if len(mapping) != len(node.value):
+            raise yaml.constructor.ConstructorError(None, None, "Duplicate key in placement layouts", node.start_mark)
+        return mapping

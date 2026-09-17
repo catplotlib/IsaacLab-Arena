@@ -219,6 +219,56 @@ a Boolean value.
 Collision handling is integrated into placement and is not expressed as a
 relation.
 
+Cached Layouts
+--------------
+
+An environment can load a companion pose YAML through ``placement_layouts``
+in its graph specification or the ``--placement_layouts`` runtime flag. The
+YAML field is relative to the environment file; the CLI override is relative
+to the working directory and takes precedence.
+
+The companion file maps graph object IDs to equal-length lists of poses:
+
+.. code-block:: yaml
+
+   mug:
+   - position_xyz: [0.1, 0.2, 0.8]
+     rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+   - position_xyz: [-0.1, 0.2, 0.8]
+     rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+Positions are in the local environment frame, in metres. One index selects a
+complete layout across all objects. Environment ``i`` starts at index
+``i % num_layouts`` and advances independently on each reset, wrapping to zero
+after the last layout. With two layouts, environment 0 selects 0, 1, 0, ...;
+environment 1 selects 1, 0, 1, ... . Partial resets advance only the resetting
+environments. There is no shared queue or exhaustion, and environments may
+reuse the same layout concurrently. Reusing a cache bypasses
+relation solving; it does not run physics settling. All non-anchor objects
+with spatial relations must be included, and object sets are unsupported.
+Assets must expose writable physics roots. Disable pose-changing variations
+and callbacks when exact replay is required.
+
+Registered Python environments also accept ``--placement_layouts`` before the
+environment subcommand; their companion files use runtime scene names. Python
+callers can pass a ``PlacementLayouts`` instance to the environment constructor.
+
+``isaaclab_arena/scripts/generate_clutter_scene.py`` generates companion files
+from ``ClutterOn`` relations. See :doc:`./clutter_placement` for generation controls
+and validation limits.
+
+Cached placement validation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Companion pose files validate finite values, unit quaternions, object coverage
+and layout counts. Loading does not rerun geometric, relation or reachability
+checks. ``placement_validators`` configure generated placements and are not
+rerun on cached replay. Keep those settings in the source environment YAML;
+loading its companion file does not require removing them. Cached poses must
+match the scene used to generate them; successful loading does not certify
+physical validity or reachability.
+
+
 Offline settling
 ----------------
 
