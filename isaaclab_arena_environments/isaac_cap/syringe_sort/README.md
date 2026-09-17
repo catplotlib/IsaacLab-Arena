@@ -6,7 +6,7 @@ live in YAML; `environment.py` applies Newton physics and the task's camera and
 gripper settings to Arena's shared FR3/Robotiq embodiment. Policy code stays in Isaac-cap.
 
 Assets load directly from
-`omniverse://isaac-dev.ov.nvidia.com/Projects/nvblox/isaac_arena/newton_envs/cap_envs/syringe_disposal/assets`.
+`{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets`.
 No local asset preparation or separate robot asset is required.
 
 External-right camera views after one second of settling (placement seed 43 for both and cluttered):

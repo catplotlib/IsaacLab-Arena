@@ -5,11 +5,13 @@
 
 """Syringe manipulands and fixtures for the shared CAP FR3 workcell."""
 
+from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena_environments.isaac_cap.assets import CAP_ASSET_ROOT
 
-SYRINGE_ASSET_ROOT = f"{CAP_ASSET_ROOT}/syringe_disposal/assets"
+SYRINGE_ASSET_ROOT = (
+    f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets"
+)
 
 
 class SyringeRedCap(LibraryObject):
