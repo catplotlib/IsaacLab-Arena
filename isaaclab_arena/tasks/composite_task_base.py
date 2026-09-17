@@ -137,7 +137,14 @@ class CompositeTaskBase(TaskBase):
     @staticmethod
     def _sum_subtask_episode_lengths_s(subtasks: list[TaskBase]) -> float:
         """Return the sum of the subtasks' configured timeouts, in seconds."""
-        return sum(subtask.get_termination_cfg().timeout_s for subtask in subtasks)
+        total_timeout_s = 0.0
+        for subtask in subtasks:
+            subtask_timeout_s = subtask.get_termination_cfg().timeout_s
+            assert (
+                subtask_timeout_s is not None
+            ), "Set episode_length_s explicitly for a composite task when a subtask has no timeout."
+            total_timeout_s += subtask_timeout_s
+        return total_timeout_s
 
     def get_viewer_cfg(self) -> ViewerCfg:
         """Use the first subtask's viewport framing (e.g. pick-and-place look-at-object)."""

@@ -353,6 +353,34 @@ def _test_composed_task_has_one_overall_timeout(simulation_app):
     return True
 
 
+def _test_unbounded_subtask_requires_explicit_composite_timeout(simulation_app):
+    import pytest
+
+    from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
+
+    children = [
+        _ControlledTask(_ControlledPredicate(0), timeout_s=2.0),
+        _ControlledTask(_ControlledPredicate(1), timeout_s=None),
+    ]
+    for subtasks_are_sequential in (False, True):
+        with pytest.raises(AssertionError, match="Set episode_length_s explicitly"):
+            CompositeTaskBase(children, subtasks_are_sequential=subtasks_are_sequential)
+
+        task = CompositeTaskBase(children, episode_length_s=8.0, subtasks_are_sequential=subtasks_are_sequential)
+        termination_cfg = task.get_termination_cfg()
+        assert termination_cfg.timeout_s == 8.0
+        assert len(termination_cfg.success) == 2
+        assert termination_cfg.subtasks_are_sequential is subtasks_are_sequential
+        assert children[1].get_termination_cfg().timeout_s is None
+    return True
+
+
+def test_unbounded_subtask_requires_explicit_composite_timeout():
+    assert run_function_with_persistent_simulation_app(
+        _test_unbounded_subtask_requires_explicit_composite_timeout, headless=HEADLESS
+    )
+
+
 def test_composed_task_has_one_overall_timeout():
     assert run_function_with_persistent_simulation_app(_test_composed_task_has_one_overall_timeout, headless=HEADLESS)
 

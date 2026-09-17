@@ -665,7 +665,10 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
 ) -> bool:
     """Composite tasks identify each flat objective's subtask without adding parent objectives."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-    from isaaclab_arena.progress_tracking.progress_tracker import make_progress_tracking_recorder_cfg
+    from isaaclab_arena.progress_tracking.progress_tracker import (
+        ProgressTrackingRecorder,
+        ProgressTrackingRecorderManagerCfg,
+    )
     from isaaclab_arena.tasks.no_task import NoTask
     from isaaclab_arena.tasks.task_base import TaskBase
     from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
@@ -675,7 +678,7 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
         default_cfg = default_task.get_termination_cfg()
         assert isinstance(default_cfg, TaskTerminationCfg)
         assert default_cfg.success == []
-        assert default_cfg.timeout_s == default_task.episode_length_s
+        assert default_cfg.timeout_s is None
 
         class _Base(TaskBase):
             def get_scene_cfg(self):
@@ -706,7 +709,8 @@ def _test_task_termination_cfg_assigns_flat_objectives_to_subtasks(
         progress_task = _ProgressTask()
         objectives = progress_task.get_termination_cfg().success
         assert len(objectives) == 1
-        assert make_progress_tracking_recorder_cfg() is not None
+        recorder_cfg = ProgressTrackingRecorderManagerCfg()
+        assert recorder_cfg.progress_tracking.class_type is ProgressTrackingRecorder
 
         from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
 
