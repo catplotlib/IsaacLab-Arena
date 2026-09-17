@@ -525,6 +525,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     from isaaclab.envs.mdp import root_height_below_minimum, time_out
     from isaaclab.sensors import ContactSensorCfg
 
+    from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -538,11 +539,12 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
 
     pick_up_object = SimpleNamespace(
         name="object",
+        object_type=ObjectType.RIGID,
         get_contact_sensor_cfg=Mock(return_value=ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Object")),
     )
     task = PickAndPlaceTask(
         pick_up_object,
-        SimpleNamespace(name="destination"),
+        SimpleNamespace(name="destination", object_type=ObjectType.RIGID),
         SimpleNamespace(object_min_z=-0.1),
         episode_length_s=12.0,
     )
