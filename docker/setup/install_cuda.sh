@@ -2,8 +2,6 @@
 set -euo pipefail
 
 # Script to install CUDA 12.8 for cuRobo dependencies
-# This script is called from the Dockerfile when INSTALL_CUROBO is true
-
 echo "Installing CUDA 12.8 for cuRobo dependencies"
 
 # Source OS release information
