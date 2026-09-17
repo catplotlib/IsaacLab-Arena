@@ -17,7 +17,6 @@ from isaaclab_arena.assets.object_reference import (
 from isaaclab_arena.assets.object_set import RigidObjectSet
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry, ObjectRelationLibraryRegistry
-from isaaclab_arena.environment_spec.arena_env_graph_parsing import parse_asset_params
 from isaaclab_arena.environment_spec.arena_env_graph_task_conversion_utils import build_task_from_spec
 from isaaclab_arena.environment_spec.arena_env_graph_types import ObjectReferenceSpec, SpatialRelationSpec
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
@@ -37,6 +36,14 @@ _AFFORDANCE_REFERENCE_CLASSES: dict[str, type[ObjectReference]] = {
 
 if TYPE_CHECKING:
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
+
+
+def parse_asset_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Convert an asset's serialized initial pose without modifying its graph parameters."""
+    parsed = dict(params)
+    if isinstance(parsed.get("initial_pose"), dict):
+        parsed["initial_pose"] = Pose.from_dict(parsed["initial_pose"])
+    return parsed
 
 
 def build_arena_env_from_graph_spec(graph_spec: ArenaEnvGraphSpec, enable_cameras: bool = False) -> Any:
