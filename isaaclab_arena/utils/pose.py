@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import torch
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -34,7 +34,7 @@ class Pose:
         return Pose(position_xyz=(0.0, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Sequence[float]] | None) -> Pose | None:
+    def from_dict(cls, data: dict[str, Sequence[float]] | None) -> Pose | None:
         """Build a pose from a dict containing position and orientation fields. Other fields are ignored."""
         if data is None:
             return None

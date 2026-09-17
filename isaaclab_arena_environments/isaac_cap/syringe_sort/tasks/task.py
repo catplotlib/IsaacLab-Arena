@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# TODO(alexmillane): [object-in-missing-feature]: Move to a more general ObjectIn task once we have it.
+
 """Settled syringe containment using Arena's managed predicates."""
 
 from __future__ import annotations
@@ -34,8 +36,9 @@ def center_of_mass_in_region(env, object_name: str, region_name: str, bounds: tu
     return ((center_R >= limits[:3]) & (center_R <= limits[3:])).all(dim=-1)
 
 
-# TODO(alexmillane): Replace this CAP-only hook with a framework episode-stop request.
-# See ../docs/policy_termination.md for the proposed API and Isaac Lab lifecycle findings.
+# TODO(alexmillane, 2026.09.17) [policy-requested-termination-requested-feature]: Remove this task-specific
+# policy-requested termination once we add a framework-wide method for allow the policy to request an
+# episode termination.
 def cap_episode_finished(env) -> torch.Tensor:
     """End a disconnected CAP episode after settling; never count it as success."""
     return torch.full((env.num_envs,), getattr(env, "cap_episode_finished", False), device=env.device, dtype=torch.bool)
@@ -50,7 +53,6 @@ class TerminationsCfg:
     cap_finished: TerminationTermCfg = MISSING
 
 
-# TODO(alexmillane): [object-in-missing-feature]: Move to a more general ObjectIn task once we have it.
 class SyringeSortTask(TaskBase):
     """Require syringes to remain settled inside their disposal regions."""
 

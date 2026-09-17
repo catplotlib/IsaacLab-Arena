@@ -3,7 +3,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Syringe success geometry, release, settling, and partial-reset behavior."""
+"""Check syringe containment success in the single-syringe environment.
+
+Teleport the syringe above the sharps receiver and let it fall under gravity.
+Verify that it settles inside, triggers success, and resets the episode.
+"""
 
 import pytest
 
@@ -30,11 +34,15 @@ def _test_syringe_drop(_simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         syringe = base.scene["syringe_0"]
-        pose = base.arena_world.get_pose_w("sharps_container").clone()
-        # Center the syringe above the authored aperture, with its long axis vertical.
-        pose[:, :3] += quat_apply(pose[:, 3:], pose.new_tensor([[0.0975, -0.1225, 0.30]]))
-        pose[:, 3:] = pose.new_tensor([[2**-0.5, 0, 0, 2**-0.5]])
-        syringe.write_root_pose_to_sim(pose)
+        # W is world, R is the receiver, and S is the syringe root frame.
+        T_W_R = base.arena_world.get_pose_w("sharps_container")
+        # Place S above the aperture: t_W_S = t_W_R + R_W_R * t_R_S.
+        t_R_S = T_W_R.new_tensor([[0.0975, -0.1225, 0.30]])
+        T_W_S = T_W_R.clone()
+        T_W_S[:, :3] = T_W_R[:, :3] + quat_apply(T_W_R[:, 3:], t_R_S)
+        # q_W_S rotates +90 degrees about world X, making the syringe's Y axis vertical.
+        T_W_S[:, 3:] = T_W_S.new_tensor([[2**-0.5, 0, 0, 2**-0.5]])
+        syringe.write_root_pose_to_sim(T_W_S)
         syringe.write_root_velocity_to_sim(torch.zeros((1, 6), device=base.device))
         policy = ZeroActionPolicy(ZeroActionPolicyCfg())
         with torch.inference_mode():

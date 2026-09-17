@@ -4,7 +4,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Syringe containment success task."""
-
-from .task import SyringeSortTask
-
-__all__ = ["SyringeSortTask"]
