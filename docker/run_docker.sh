@@ -78,7 +78,7 @@ while getopts ":d:m:e:hn:rRvn:s:ct:" OPTION; do
             echo "  -r (Force rebuilding of the docker image.)"
             echo "  -R (Force rebuilding of the docker image, without cache.)"
             echo "  -c (Select the dev-curobo target.)"
-            echo "  -t <target> (Select runtime, dev, runtime-curobo, or dev-curobo; default: dev.)"
+            echo "  -t <target> (Select dev or dev-curobo; default: dev.)"
             echo "  -s <suffix> (Suffix appended to the container name, allowing multiple containers to run simultaneously."
             echo "      Defaults to the repo directory name after 'IsaacLab-Arena', so each clone gets its own container.)"
             exit 0

@@ -2,9 +2,6 @@
 # Install developer tools.
 set -euo pipefail
 
-/isaac-sim/python.sh /tmp/export_requirements.py /tmp/arena-pyproject.toml dev > /tmp/arena-dev-requirements.txt
-/isaac-sim/python.sh -m pip install -r /tmp/arena-dev-requirements.txt
-rm /tmp/arena-dev-requirements.txt
 PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pre-commit
 
 if ! command -v wget >/dev/null; then
