@@ -11,6 +11,7 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 def _make_sphere_environment(num_envs: int):
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
+    from isaaclab_arena.embodiments.franka.franka import FrankaJointPosEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
@@ -19,6 +20,7 @@ def _make_sphere_environment(num_envs: int):
     arena_environment = IsaacLabArenaEnvironment(
         name="arena_world_test",
         scene=Scene(assets=[sphere]),
+        embodiment=FrankaJointPosEmbodiment(),
     )
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", str(num_envs)])
     env = ArenaEnvBuilder(
@@ -31,11 +33,36 @@ def _make_sphere_environment(num_envs: int):
 def _test_arena_world(_simulation_app) -> bool:
     import torch
 
+    from isaaclab.managers import SceneEntityCfg
+    from isaaclab.utils.math import quat_apply
+
+    from isaaclab_arena.utils.joint_utils import get_unnormalized_joint_position
+
     num_envs = 2
     env, sphere_name = _make_sphere_environment(num_envs)
     arena_world = env.unwrapped.arena_world
     try:
         env.reset()
+        robot = env.unwrapped.scene["robot"]
+        joint_name = "panda_finger_joint1"
+        joint_index = robot.data.joint_names.index(joint_name)
+        measured = arena_world.get_joint_position("robot", joint_name)
+        torch.testing.assert_close(measured, robot.data.joint_pos.torch[:, joint_index])
+        torch.testing.assert_close(
+            measured, get_unnormalized_joint_position(env, SceneEntityCfg("robot", joint_names=[joint_name]))
+        )
+        body_index = robot.data.body_names.index("panda_hand")
+        T_W_B = arena_world.get_body_pose_w("robot", "panda_hand")
+        torch.testing.assert_close(T_W_B, robot.data.body_link_pose_w.torch[:, body_index])
+        # Isaac Lab 3.0 uses XYZW quaternions; verify the configured offset against a live frame transformer.
+        offset_B = T_W_B.new_tensor(env.unwrapped.cfg.scene.ee_frame.target_frames[0].offset.pos)
+        expected_ee_position_W = T_W_B[:, :3] + quat_apply(T_W_B[:, 3:], offset_B.expand(num_envs, -1))
+        torch.testing.assert_close(
+            arena_world.get_frame_position_w("ee_frame", "end_effector"), expected_ee_position_W, atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            arena_world.get_frame_position_w("ee_frame"), expected_ee_position_W, atol=1e-5, rtol=1e-5
+        )
         # S is the sphere frame.
         T_W_S_initial = arena_world.get_pose_w(sphere_name).clone()
         assert T_W_S_initial.shape == (num_envs, 7)
@@ -110,3 +137,4 @@ def test_arena_world_articulation_queries() -> None:
 
 if __name__ == "__main__":
     test_arena_world()
+    test_arena_world_articulation_queries()
