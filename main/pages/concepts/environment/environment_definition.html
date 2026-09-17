@@ -451,6 +451,7 @@
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Environment Definition</a></li>
 <li class="toctree-l2"><a class="reference internal" href="env_builder.html">Environment Builder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="physics_backend_selection.html">Physics backend selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="env_cfg_override.html">Graph YAML <code class="docutils literal notranslate"><span class="pre">env_cfg_override</span></code></a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../agentic_environment_generation/index.html">Agentic Environment Generation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -819,6 +820,8 @@ with no code change. Below, <code class="docutils literal notranslate"><span cla
 <a class="reference internal" href="../../example_workflows/agentic_env_gen/index.html"><span class="doc">Agentic Environment Generation</span></a>: natural language in,
 validated <code class="docutils literal notranslate"><span class="pre">ArenaEnvGraphSpec</span></code> out. Pydantic checks registry names, node ids,
 relation arity, and task params before the simulator sees anything.</p>
+<p>Graph specs may also declare <code class="docutils literal notranslate"><span class="pre">default_physics_backend</span></code> and <code class="docutils literal notranslate"><span class="pre">env_cfg_override</span></code>;
+see <a class="reference internal" href="env_cfg_override.html"><span class="doc">Graph YAML env_cfg_override</span></a> and <a class="reference internal" href="physics_backend_selection.html"><span class="doc">Physics backend selection</span></a>.</p>
 </section>
 <section id="same-key-different-behavior">
 <h3>Same key, different behavior<a class="headerlink" href="#same-key-different-behavior" title="Link to this heading">#</a></h3>

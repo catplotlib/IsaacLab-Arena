@@ -54,7 +54,7 @@
     <link rel="icon" href="../../../_static/favicon.png"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
-    <link rel="next" title="Agentic Environment Generation" href="../agentic_environment_generation/index.html" />
+    <link rel="next" title="Graph YAML env_cfg_override" href="env_cfg_override.html" />
     <link rel="prev" title="Environment Builder" href="env_builder.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -451,6 +451,7 @@
 <li class="toctree-l2"><a class="reference internal" href="environment_definition.html">Environment Definition</a></li>
 <li class="toctree-l2"><a class="reference internal" href="env_builder.html">Environment Builder</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Physics backend selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="env_cfg_override.html">Graph YAML <code class="docutils literal notranslate"><span class="pre">env_cfg_override</span></code></a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../agentic_environment_generation/index.html">Agentic Environment Generation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -601,6 +602,17 @@ Deformable objects and cables are only supported for a single backend.</p>
 <span class="p">)</span>
 </pre></div>
 </div>
+<p>Environment graph YAML (<code class="docutils literal notranslate"><span class="pre">ArenaEnvGraphSpec</span></code>) can set the same default:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">default_physics_backend</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">newton</span>
+<span class="nt">env_cfg_override</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">sim</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">physics</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">num_substeps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">build_arena_env_from_graph_spec</span></code> maps <code class="docutils literal notranslate"><span class="pre">default_physics_backend</span></code> onto
+<code class="docutils literal notranslate"><span class="pre">IsaacLabArenaEnvironment</span></code>. Use <code class="docutils literal notranslate"><span class="pre">env_cfg_override</span></code> only to tune fields under the
+selected backend; it must not swap PhysX for Newton (or the reverse).</p>
 </section>
 <section id="overriding-backend-default-solver-settings">
 <h2>Overriding backend default solver settings<a class="headerlink" href="#overriding-backend-default-solver-settings" title="Link to this heading">#</a></h2>
@@ -718,11 +730,11 @@ Library deformables must therefore use the property type that matches the enviro
       </div>
     </a>
     <a class="right-next"
-       href="../agentic_environment_generation/index.html"
+       href="env_cfg_override.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Agentic Environment Generation</p>
+        <p class="prev-next-title">Graph YAML <code class="docutils literal notranslate"><span class="pre">env_cfg_override</span></code></p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
