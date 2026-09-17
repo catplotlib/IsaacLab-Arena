@@ -76,7 +76,17 @@ class NamespacedEpisodeRecorder(ManagerTermBase):
     def __init__(self, cfg: EpisodeRecorderTermCfg, env):
         super().__init__(cfg, env)
         self._term_path: str = cfg.params["namespace"]
-        """Namespace path used in diagnostics, such as subtask_0/subtask_1."""
+        """Registered term path used in diagnostics, such as subtask_0/subtask_1."""
+        for name, child_cfg in cfg.params["terms"].items():
+            if not isinstance(child_cfg, EpisodeRecorderTermCfg):
+                raise TypeError(f"Child episode recorder term '{name}' requires EpisodeRecorderTermCfg")
+
+    def set_term_path(self, term_path: str) -> None:
+        """Set this recorder's diagnostic path and propagate it to namespaced children."""
+        self._term_path = term_path
+        for name, child_cfg in self.cfg.params["terms"].items():
+            if isinstance(child_cfg.func, NamespacedEpisodeRecorder):
+                child_cfg.func.set_term_path(f"{term_path}/{name}")
 
     def reset(self, env_ids: Sequence[int] | torch.Tensor | None = None) -> None:
         """Reset the selected environments in all stateful child terms."""
@@ -196,7 +206,10 @@ class EpisodeRecorderManager(ManagerBase):
         if isinstance(term_cfg, EpisodeRecorderTermCfg):
             for key, value in term_cfg.params.items():
                 self._resolve_nested_episode_terms(f"{term_name}/{key}", value)
-        self._resolve_common_term_cfg(term_name, term_cfg, min_argc=2)
+        try:
+            self._resolve_common_term_cfg(term_name, term_cfg, min_argc=2)
+        except TypeError as exc:
+            raise TypeError(f"Episode recorder term '{term_name}': {exc}") from exc
 
     def _resolve_nested_episode_terms(self, path: str, value: Any) -> None:
         """Find episode terms inside the parameter containers supported by Isaac Lab."""
@@ -210,14 +223,7 @@ class EpisodeRecorderManager(ManagerBase):
                 self._resolve_nested_episode_terms(f"{path}/{index}", item)
 
     def _process_term_cfg_at_play(self, term_name: str, term_cfg: EpisodeRecorderTermCfg) -> None:
-        """Resolve runtime terms and retain full paths for namespaced diagnostics."""
+        """Resolve runtime terms and bind namespaced diagnostics to the registered term name."""
         super()._process_term_cfg_at_play(term_name, term_cfg)
         if isinstance(term_cfg.func, NamespacedEpisodeRecorder):
-            # Isaac Lab uses dotted parameter paths; our recursive validation uses slashes.
-            # Hide the terms container in both forms: subtask_0.terms.capture -> subtask_0/capture.
-            term_cfg.func._term_path = term_name.replace(".terms.", "/").replace("/terms/", "/")
-            for name, child_cfg in term_cfg.params["terms"].items():
-                if not isinstance(child_cfg, EpisodeRecorderTermCfg):
-                    raise TypeError(
-                        f"Episode recorder term '{term_cfg.func._term_path}/{name}' requires EpisodeRecorderTermCfg"
-                    )
+            term_cfg.func.set_term_path(term_name)

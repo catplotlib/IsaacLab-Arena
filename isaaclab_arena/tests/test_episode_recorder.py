@@ -535,21 +535,22 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
     return True
 
 
-def _nested_recorder_cfg(leaf_cfg):
-    """Nest leaf_cfg at subtask_0/subtask_1/capture without importing task modules."""
+def _nested_recorder_cfg(leaf_cfg, outer_name="subtask_0", inner_name="subtask_1"):
+    """Nest a leaf with configurable term names and fixed JSON output namespaces."""
     from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg, NamespacedEpisodeRecorder
 
     inner = EpisodeRecorderTermCfg(
         func=NamespacedEpisodeRecorder, params={"namespace": "subtask_1", "terms": {"capture": leaf_cfg}}
     )
-    return SimpleNamespace(
-        subtask_0=EpisodeRecorderTermCfg(
-            func=NamespacedEpisodeRecorder, params={"namespace": "subtask_0", "terms": {"subtask_1": inner}}
+    return SimpleNamespace(**{
+        outer_name: EpisodeRecorderTermCfg(
+            func=NamespacedEpisodeRecorder, params={"namespace": "subtask_0", "terms": {inner_name: inner}}
         )
-    )
+    })
 
 
-def test_nested_episode_recorder_validation():
+@pytest.mark.parametrize("term_names", [("subtask_0", "subtask_1"), ("task_recorders", "child_recorders")])
+def test_nested_episode_recorder_validation(term_names):
     """Nested configuration validation needs no SimulationApp or scene."""
     from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderManager, EpisodeRecorderTermCfg
 
@@ -563,11 +564,12 @@ def test_nested_episode_recorder_validation():
         (EpisodeRecorderTermCfg(func=object), TypeError),
         (object(), TypeError),
     ):
-        with pytest.raises(error_type, match="subtask_0.*subtask_1.*capture"):
-            EpisodeRecorderManager(_nested_recorder_cfg(leaf_cfg), env)
+        with pytest.raises(error_type, match=f"{term_names[0]}.*{term_names[1]}.*capture"):
+            EpisodeRecorderManager(_nested_recorder_cfg(leaf_cfg, *term_names), env)
 
 
-def test_nested_episode_recorder_diagnostics():
+@pytest.mark.parametrize("term_names", [("subtask_0", "subtask_1"), ("task_recorders", "child_recorders")])
+def test_nested_episode_recorder_diagnostics(tmp_path, term_names):
     """Namespaced failures identify the leaf term without starting a simulation."""
     from isaaclab.managers import ManagerTermBase
 
@@ -587,14 +589,23 @@ def test_nested_episode_recorder_diagnostics():
             return {"unserializable": object()}
 
     env = SimpleNamespace(num_envs=1, sim=SimpleNamespace(is_playing=lambda: True))
-    manager = EpisodeRecorderManager(_nested_recorder_cfg(EpisodeRecorderTermCfg(func=BrokenTerm)), env)
+    manager = EpisodeRecorderManager(_nested_recorder_cfg(EpisodeRecorderTermCfg(func=BrokenTerm), *term_names), env)
     assert len(instances) == 1, "Recursive validation must not instantiate child terms twice"
-    path = "subtask_0/subtask_1/capture"
+    path = f"{term_names[0]}/{term_names[1]}/capture"
     with pytest.raises(RuntimeError, match=path) as error:
         manager.reset([0])
     assert isinstance(error.value.__cause__, ValueError), "Preserve the original leaf failure"
     with pytest.raises(TypeError, match=f"{path}.*non-JSON-serializable"):
         manager.record_pre_reset([0])
+
+    output_path = tmp_path / "namespaced_episodes.jsonl"
+    manager.set_output_path(output_path)
+    with patch.object(BrokenTerm, "__call__", return_value={"value": 42}):
+        manager.record_pre_reset([0])
+    assert json.loads(output_path.read_text()) == {
+        "job_name": "default",
+        "subtask_0": {"subtask_1": {"value": 42}},
+    }, "Diagnostic term names must not change JSON output namespaces"
 
 
 def test_episode_recorder_reset_contract():
@@ -801,6 +812,7 @@ if __name__ == "__main__":
             test_task_recorder_lifecycle(Path(_tmp_dir), initial_reset_mode=initial_reset_mode)
         test_builder_episode_recorder_terms()
         test_episode_recorder_reset_contract()
-        test_nested_episode_recorder_validation()
-        test_nested_episode_recorder_diagnostics()
+        for term_names in (("subtask_0", "subtask_1"), ("task_recorders", "child_recorders")):
+            test_nested_episode_recorder_validation(term_names)
+            test_nested_episode_recorder_diagnostics(Path(_tmp_dir), term_names)
         test_composite_episode_recorder_terms(Path(_tmp_dir))

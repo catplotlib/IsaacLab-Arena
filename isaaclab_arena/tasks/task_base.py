@@ -74,7 +74,8 @@ class TaskBase(ABC):
         """Return task-provided terms to merge with the environment's episode recorders.
 
         Args:
-            arena_env: The environment definition being built, including its scene and embodiment.
+            arena_env: The environment definition being built. Use its scene and embodiment
+                to select assets or attach provenance to recorder terms.
 
         Returns:
             Named terms, with names distinct from environment terms and built-in terms.
