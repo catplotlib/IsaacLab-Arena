@@ -52,8 +52,8 @@ def parallel_jaw_gripper_released(
     commanded = env.arena_world.get_processed_actions(gripper_action_name)[:, 0]
     # Each finger moves inward by (open_joint_m - measured), reducing the fully open gap by twice that amount.
     gap = span_m - 2.0 * (open_joint_m - measured)
-    # A finger stalled short of its closing target stays more open than commanded.
-    # Also require the jaw gap to match the object's width, indicating a grasp rather than another obstruction.
+    # Check that the finger is more open than commanded.
+    # Also check that the jaw gap matches the object's width.
     gripped = ((measured - commanded) > stall_threshold_m) & (torch.abs(gap - grasp_width_m) < grasp_width_tolerance_m)
     return ~gripped
 
