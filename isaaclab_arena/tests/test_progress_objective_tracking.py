@@ -792,6 +792,45 @@ def _test_flat_subtask_objectives_report_weighted_progress(simulation_app):
     return True
 
 
+def _test_tracker_rejects_excluding_every_subtask_from_success(simulation_app):
+    import pytest
+
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+
+    for subtasks_are_sequential in (False, True):
+        predicates = [_MockPredicate(num_envs=1) for _ in range(2)]
+        objectives = [
+            ProgressObjective(
+                name=f"subtask_{subtask_index}",
+                predicate_sequence=[predicate],
+                parent_subtask_idx=subtask_index,
+            )
+            for subtask_index, predicate in enumerate(predicates)
+        ]
+        with pytest.raises(AssertionError, match=r"At least one subtask must participate in the success check\."):
+            ProgressTracker(
+                objectives,
+                num_envs=1,
+                device="cpu",
+                subtasks_are_sequential=subtasks_are_sequential,
+                desired_subtask_success_state=[None, None],
+            )
+
+        # Omitting final-state requirements still requires every subtask to finish.
+        tracker = ProgressTracker(objectives, 1, "cpu", subtasks_are_sequential=subtasks_are_sequential)
+        env = _MockEnv()
+        tracker.step(env)
+        assert not tracker.is_complete().item()
+        predicates[0].set([True])
+        tracker.step(env)
+        assert not tracker.is_complete().item()
+        predicates[1].set([True])
+        tracker.step(env)
+        assert tracker.is_complete().item()
+    return True
+
+
 def _test_shared_predicate_results_are_reused_across_objectives(simulation_app):
     """Progress updates and current-condition checks share one evaluation of each callable per step."""
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
@@ -830,6 +869,12 @@ def _test_shared_predicate_results_are_reused_across_objectives(simulation_app):
 def test_flat_subtask_objectives_report_weighted_progress():
     assert run_function_with_persistent_simulation_app(
         _test_flat_subtask_objectives_report_weighted_progress, headless=HEADLESS
+    )
+
+
+def test_tracker_rejects_excluding_every_subtask_from_success():
+    assert run_function_with_persistent_simulation_app(
+        _test_tracker_rejects_excluding_every_subtask_from_success, headless=HEADLESS
     )
 
 
@@ -932,4 +977,5 @@ if __name__ == "__main__":
     test_recorder_publishes_to_extras_and_records_nothing()
     test_task_termination_cfg_assigns_flat_objectives_to_subtasks()
     test_flat_subtask_objectives_report_weighted_progress()
+    test_tracker_rejects_excluding_every_subtask_from_success()
     test_shared_predicate_results_are_reused_across_objectives()

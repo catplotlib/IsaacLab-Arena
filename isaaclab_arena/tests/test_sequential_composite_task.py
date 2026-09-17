@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -80,10 +80,10 @@ def _test_sequential_reset_preserves_other_environments(simulation_app):
     assert [len(events) for events in tracker.get_events()] == [0, 2]
     tracker.step(env)
     assert tracker.get_subtask_completion().tolist() == [[True, False], [True, True]]
-    tracker.reset(slice(None))
+    tracker.reset(torch.arange(env.num_envs))
     assert tracker.get_subtask_completion().tolist() == [[False, False], [False, False]]
     tracker.step(env)
-    tracker.reset()
+    tracker.reset(list(range(env.num_envs)))
     assert tracker.get_subtask_completion().tolist() == [[False, False], [False, False]]
     return True
 

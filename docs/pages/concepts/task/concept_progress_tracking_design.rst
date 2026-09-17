@@ -147,34 +147,6 @@ one combined condition; remembering each gear's earlier placement would allow a 
 before the task completes.
 
 
-Evaluation and reset lifecycle
-------------------------------
-
-``TaskSuccessTerm`` creates and owns ``ProgressTracker`` and connects it to Isaac Lab's ``TerminationManager``:
-
-#. Physics advances and ``TerminationManager`` evaluates ``TaskSuccessTerm``.
-#. ``TaskSuccessTerm`` updates ``ProgressTracker`` and returns task completion for that same step.
-#. ``ProgressTrackingRecorder`` publishes the resulting state and events to ``env.extras``.
-   Reading or recording these results does not evaluate predicates again.
-#. Before a completed environment resets, the episode recorder records its final progress.
-   ``TerminationManager`` then calls ``TaskSuccessTerm.reset()``, which resets ``ProgressTracker``
-   and recorded initial rest poses for the selected environments.
-
-The builder installs this term automatically. It inherits from ``ManagerTermBase`` so Isaac Lab
-calls its ``reset()`` when an episode resets. A plain success function could read completion,
-but the tracker would need its updates and resets connected elsewhere.
-
-The tracker stores progress state; the root success term manages its updates and resets.
-Predicates can be ordinary callables or managed predicate configurations. ``ProgressTracker``
-creates managed predicate instances and resets them for the selected environments.
-Progress tracking needs no separate reset event or updating recorder. If progress reporting is
-disabled, success evaluation and resets still work.
-Inspect the cached success result through ``env.unwrapped.termination_manager.get_term("success")``.
-
-A sequence orders milestones; it does not require any predicate to remain true for multiple steps.
-The existing ``ConsecutivePredicate`` supports that requirement. Redesigning its API remains follow-up work.
-
-
 Subtask progress tracking in composite and sequential tasks
 -----------------------------------------------------------
 

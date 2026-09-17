@@ -304,6 +304,66 @@ def _test_any_and_choose_do_not_count_unvisited_final_stages(_simulation_app):
     return True
 
 
+def _test_plain_final_conditions_require_reached_sequences_per_environment(_simulation_app):
+    from functools import partial
+
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+
+    for logical, required_sequences in (("any", 1), ("choose", 2)):
+        predicate_values = {
+            "alternative_ready": [False, True],
+            "alternative_finished": [True, True],
+            "door_closed": [False, False],
+        }
+        predicate_sequences = {}
+        for sequence_index in range(required_sequences):
+            sequence_name = f"completed_sequence_{sequence_index}"
+            predicate_values[sequence_name] = [True, True]
+            predicate_sequences[sequence_name] = [partial(_predicate_value, predicate_name=sequence_name)]
+        predicate_sequences["alternative"] = [
+            partial(_predicate_value, predicate_name="alternative_ready"),
+            partial(_predicate_value, predicate_name="alternative_finished"),
+        ]
+        env = _make_environment(predicate_values)
+        objectives = [
+            ProgressObjective(
+                name="alternatives",
+                predicate_sequences=predicate_sequences,
+                logical=logical,
+                K=required_sequences if logical == "choose" else None,
+                parent_subtask_idx=0,
+            ),
+            ProgressObjective(
+                name="close_door",
+                predicate_sequence=[partial(_predicate_value, predicate_name="door_closed")],
+                parent_subtask_idx=1,
+            ),
+        ]
+        tracker = ProgressTracker(
+            objectives,
+            env.num_envs,
+            env.device,
+            env=env,
+            subtasks_are_sequential=True,
+            desired_subtask_success_state=[True, True],
+        )
+        tracker.step(env)
+        assert tracker.get_subtask_completion().tolist() == [[True, False], [True, False]]
+        assert tracker.is_complete().tolist() == [False, False]
+
+        # Lose one completed condition while the final subtask keeps both episodes active.
+        env.predicate_values["completed_sequence_0"][:] = False
+        env.predicate_values["door_closed"][:] = True
+        tracker.step(env)
+        assert tracker.get_subtask_completion().tolist() == [[True, True], [True, True]]
+        assert tracker.is_complete().tolist() == [False, True], (
+            "The alternative may replace a completed condition only in the environment "
+            "where its prerequisite was satisfied."
+        )
+    return True
+
+
 def _test_newly_reached_alternative_final_stage_waits_until_next_step(_simulation_app):
     from functools import partial
 
@@ -444,6 +504,12 @@ def test_active_and_completed_environments_share_final_evaluation():
 
 def test_any_and_choose_do_not_count_unvisited_final_stages():
     assert run_function_with_persistent_simulation_app(_test_any_and_choose_do_not_count_unvisited_final_stages)
+
+
+def test_plain_final_conditions_require_reached_sequences_per_environment():
+    assert run_function_with_persistent_simulation_app(
+        _test_plain_final_conditions_require_reached_sequences_per_environment
+    )
 
 
 def test_newly_reached_alternative_final_stage_waits_until_next_step():
