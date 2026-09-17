@@ -1,15 +1,24 @@
 # syntax=docker/dockerfile:1
 ARG BASE_IMAGE=nvcr.io/nvidia/isaac-sim:6.1.0
 
+################################
+# STAGE: sim-base
+#
+# Install common system deps
+################################
 FROM ${BASE_IMAGE} AS sim-base
 USER root
 ARG WORKDIR="/workspaces/isaaclab_arena"
 ENV WORKDIR=${WORKDIR}
 WORKDIR "${WORKDIR}"
-# Common simulation dependencies [core].
 RUN --mount=type=bind,source=docker/setup/install-system-deps.sh,target=/tmp/install-system-deps.sh \
     bash /tmp/install-system-deps.sh
 
+################################
+# STAGE: isaaclab
+#
+# Install isaaclab with deps
+################################
 FROM sim-base AS isaaclab
 COPY ./submodules/IsaacLab ${WORKDIR}/submodules/IsaacLab
 ENV ISAACLAB_PATH=${WORKDIR}/submodules/IsaacLab
@@ -17,6 +26,11 @@ ENV TERM=xterm
 RUN --mount=type=bind,source=docker/setup/install-isaaclab.sh,target=/tmp/install-isaaclab.sh \
     bash /tmp/install-isaaclab.sh
 
+################################
+# STAGE: arena-deps
+#
+# Install deps for arena
+################################
 FROM isaaclab AS arena-deps
 COPY ./submodules/Isaac-GR00T ${WORKDIR}/submodules/Isaac-GR00T
 RUN --mount=type=bind,source=isaaclab_arena_openpi/docker/OPENPI_COMMIT,target=/tmp/openpi_commit \
@@ -26,10 +40,15 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
     --mount=type=bind,source=docker/setup/export_requirements.py,target=/tmp/export_requirements.py \
     --mount=type=bind,source=docker/setup/install-arena-deps.sh,target=/tmp/install-arena-deps.sh \
     bash /tmp/install-arena-deps.sh
-# End-user workflow submission and download tools.
 COPY --from=nvcr.io/nvidia/osmo/client:6.3.1 /osmo/osmo_cli_onedir/osmo /usr/local/osmo
 RUN ln -sf /usr/local/osmo/osmo /usr/local/bin/osmo
 
+######################################################################################
+# STAGE: curobo-builder
+#
+# Curobo wheel artifact is built in isolation to avoid polluting the delivered images
+# Clint layer should copy the artifact rather than importing the whole layer.
+######################################################################################
 FROM arena-deps AS curobo-builder
 ARG CUROBO_COMMIT=ebb71702f3f70e767f40fd8e050674af0288abe8
 ARG TORCH_CUDA_ARCH_LIST="8.0+PTX;8.6+PTX;8.9+PTX;9.0+PTX"
@@ -38,18 +57,25 @@ RUN --mount=type=bind,source=docker/setup/install_cuda.sh,target=/tmp/install_cu
     --mount=type=bind,source=docker/setup/build-curobo-wheel.sh,target=/tmp/build-curobo-wheel.sh \
     bash /tmp/build-curobo-wheel.sh
 
+################################################
+# STAGE: runtime
+#
+# Arena runtime containing source and entrypoint
+################################################
 FROM arena-deps AS runtime
 COPY *.* ${WORKDIR}/
-COPY isaaclab_arena ${WORKDIR}/isaaclab_arena
-COPY isaaclab_arena_cosmos ${WORKDIR}/isaaclab_arena_cosmos
-COPY isaaclab_arena_curobo ${WORKDIR}/isaaclab_arena_curobo
-COPY isaaclab_arena_dreamzero ${WORKDIR}/isaaclab_arena_dreamzero
-COPY isaaclab_arena_g1 ${WORKDIR}/isaaclab_arena_g1
-COPY isaaclab_arena_gr00t ${WORKDIR}/isaaclab_arena_gr00t
-COPY isaaclab_arena_openpi ${WORKDIR}/isaaclab_arena_openpi
-COPY isaaclab_arena_environments ${WORKDIR}/isaaclab_arena_environments
-COPY isaaclab_arena_examples ${WORKDIR}/isaaclab_arena_examples
-COPY docs ${WORKDIR}/docs
+COPY --parents \
+    isaaclab_arena \
+    isaaclab_arena_cosmos \
+    isaaclab_arena_curobo \
+    isaaclab_arena_dreamzero \
+    isaaclab_arena_g1 \
+    isaaclab_arena_gr00t \
+    isaaclab_arena_openpi \
+    isaaclab_arena_environments \
+    isaaclab_arena_examples \
+    docs \
+    ${WORKDIR}/
 RUN /isaac-sim/python.sh -m pip install --no-deps --no-build-isolation -e "${WORKDIR}"
 ENV LW_API_ENDPOINT="https://api-dev.lightwheel.net"
 RUN --mount=type=bind,source=docker/setup/configure-shell.sh,target=/tmp/configure-shell.sh \
@@ -57,6 +83,11 @@ RUN --mount=type=bind,source=docker/setup/configure-shell.sh,target=/tmp/configu
 COPY docker/setup/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
+####################################
+# STAGE: dev
+#
+# Add developer tools to runtime
+####################################
 FROM runtime AS dev
 # Contributor tools [dev]; user-facing tools are inherited from arena-deps.
 RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
@@ -64,6 +95,9 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
     --mount=type=bind,source=docker/setup/install-dev-tools.sh,target=/tmp/install-dev-tools.sh \
     bash /tmp/install-dev-tools.sh
 
+################################
+# STAGE: runtime-curobo
+################################
 FROM runtime AS runtime-curobo
 RUN --mount=type=bind,from=curobo-builder,source=/wheels,target=/wheels \
     --mount=type=bind,source=docker/setup/install-curobo-runtime-deps.sh,target=/tmp/install-curobo-runtime-deps.sh \
@@ -71,11 +105,14 @@ RUN --mount=type=bind,from=curobo-builder,source=/wheels,target=/wheels \
     /isaac-sim/python.sh -m pip install --no-deps /wheels/*.whl && \
     mkdir -p /usr/local/share/arena && cp /wheels/build.json /usr/local/share/arena/curobo-build.json
 
+################################
+# STAGE: dev-curobo
+################################
 FROM runtime-curobo AS dev-curobo
 RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
     --mount=type=bind,source=docker/setup/export_requirements.py,target=/tmp/export_requirements.py \
     --mount=type=bind,source=docker/setup/install-dev-tools.sh,target=/tmp/install-dev-tools.sh \
     bash /tmp/install-dev-tools.sh
 
-# Preserve no-target builds without implicitly enabling cuRobo.
+# Default to dev (without curobo)
 FROM dev AS default

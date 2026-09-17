@@ -136,6 +136,12 @@ Isolated COPY probes found two early-stage invalidation triggers without source 
 
 Recommended follow-up: exclude the generated symlink and package metadata, then narrow the root wildcard to required files. The proposed ignore rules retained cache in an isolated probe; production exclusions remain unchanged. These are verified possible triggers, not a diagnosis of the original user's particular rebuild. Detailed evidence: `/tmp/arena-rebuild-investigation/report.md`.
 
+### Original image comparison
+
+The original image and launcher also ran the scene without building or changing the image ID. The old unconditional “Building Docker image…” message was misleading. Controlled launcher tests confirmed that an image-query error is silently treated as a missing image, triggering a build request; a missing tag triggers a build even before checking for an existing container. The old uninitialized `NO_CACHE` variable could also inherit `--no-cache` from the shell when a build was requested.
+
+With the original ignore rules, isolated COPY probes confirmed that pytest cache updates and Emacs temporary files invalidate `COPY *.*`. In the original Dockerfile, Arena dependency installation and optional cuRobo compilation both follow that copy, explaining expensive rebuilds without source edits. This downstream effect is established from instruction order; a full original cuRobo compilation was not repeated. The staged implementation already excludes these pytest/Emacs files and moves cuRobo compilation before Arena source. Image-query error handling and generated submodule exclusions remain follow-ups. Evidence: `/tmp/arena-original-investigation/report.md`.
+
 ## Phase 2: CI and remote cache — deferred
 
 NGC registry-cache compatibility is verified: a tiny multi-stage build exported a cache, and a separate builder with no local cache reused all steps. Full Arena remote-cache performance and CI credentials remain untested.

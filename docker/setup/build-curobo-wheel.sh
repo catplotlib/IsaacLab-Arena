@@ -1,4 +1,5 @@
 #!/bin/bash
+# Install cuda and build curobo python wheel
 set -euo pipefail
 
 bash /tmp/install_cuda.sh

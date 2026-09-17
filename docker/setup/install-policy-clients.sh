@@ -1,4 +1,6 @@
 #!/bin/bash
+# Install policy clients and deps
+
 set -euo pipefail
 
 /isaac-sim/python.sh -m pip install msgpack==1.1.0 msgpack-numpy==0.4.8 pyzmq==27.0.1

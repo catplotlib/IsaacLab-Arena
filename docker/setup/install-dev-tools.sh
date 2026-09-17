@@ -1,4 +1,5 @@
 #!/bin/bash
+# Install developer tools
 set -euo pipefail
 
 /isaac-sim/python.sh /tmp/export_requirements.py /tmp/arena-pyproject.toml dev > /tmp/arena-dev-requirements.txt
