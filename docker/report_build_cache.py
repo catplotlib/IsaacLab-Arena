@@ -11,12 +11,23 @@ import sys
 from datetime import datetime
 
 
+def parse_time(value):
+    """Parse a BuildKit timestamp, including its UTC suffix."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def summarize(stream):
     """Return a Markdown report of cache imports and Dockerfile steps."""
     vertices = {}
     for line in stream:
         for vertex in json.loads(line).get("vertexes", []):
-            vertices.setdefault(vertex["digest"], {}).update(vertex)
+            previous = vertices.setdefault(vertex["digest"], {})
+            # Cache lookup, download, and extraction can reuse the same digest.
+            for field, boundary in (("started", min), ("completed", max)):
+                times = [v[field] for v in (previous, vertex) if v.get(field)]
+                if times:
+                    vertex[field] = boundary(times, key=parse_time)
+            previous.update(vertex)
 
     def status(vertex):
         if vertex.get("error"):
@@ -28,9 +39,7 @@ def summarize(stream):
     def seconds(vertex):
         if not vertex.get("started") or not vertex.get("completed"):
             return "—"
-        elapsed = datetime.fromisoformat(vertex["completed"].replace("Z", "+00:00")) - datetime.fromisoformat(
-            vertex["started"].replace("Z", "+00:00")
-        )
+        elapsed = parse_time(vertex["completed"]) - parse_time(vertex["started"])
         return f"{elapsed.total_seconds():.1f}"
 
     imports = [v for v in vertices.values() if v["name"].startswith("importing cache manifest from ")]
@@ -47,13 +56,17 @@ def summarize(stream):
         f"**{hits}/{len(steps)} Dockerfile steps CACHED.** Base-image and frontend downloads are excluded.",
         "Cache import success alone does not mean any build step was reused.",
         "",
-        "| Step | Result | Seconds |",
+        "| Step | Result | Elapsed seconds |",
         "| --- | --- | ---: |",
     ]
     for vertex in steps:
         name = vertex["name"].replace("|", "\\|").replace("`", "'")
         lines.append(f"| `{name}` | {status(vertex)} | {seconds(vertex)} |")
-    lines += ["", "Step durations can overlap and include fetching cached layers; they are not total build time."]
+    lines += [
+        "",
+        "Elapsed time spans the first start through the last completion, including fetching cached layers.",
+        "Steps can overlap; their durations are not total build time.",
+    ]
     if not steps:
         lines += ["", "No Dockerfile steps found; inspect the raw build record before drawing conclusions."]
     return "\n".join(lines)
