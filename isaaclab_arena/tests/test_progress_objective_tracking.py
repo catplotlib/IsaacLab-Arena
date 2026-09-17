@@ -47,6 +47,10 @@ class _MockEnv:
         self._object_initial_rest_pose_recorder = ObjectInitialRestPoseRecorder(num_envs, device)
 
     @property
+    def progress_tracker(self):
+        return self._progress_tracker
+
+    @property
     def object_initial_rest_pose_recorder(self):
         return self._object_initial_rest_pose_recorder
 
@@ -626,7 +630,7 @@ def _test_recorder_publishes_to_extras_and_records_nothing(simulation_app) -> bo
     objectives = [ProgressObjective(name="task", predicate_sequence=[first_predicate, final_predicate])]
     recorder_cfg = ProgressTrackingRecorderCfg()
     recorder = recorder_cfg.class_type(recorder_cfg, env)
-    assert env._progress_tracker is None
+    assert env.progress_tracker is None
     success_cfg = TerminationTermCfg(func=TaskSuccessTerm, params={"success_objectives": objectives})
     success = TaskSuccessTerm(success_cfg, env)
 

@@ -36,7 +36,9 @@ class SubtaskSuccessStateRecorder(RecorderTerm):
         self.name = cfg.name
 
     def record_post_step(self):
-        return self.name, self._env._progress_tracker.get_subtask_completion()
+        progress_tracker = self._env.progress_tracker
+        assert progress_tracker is not None, "Task success must initialize the progress tracker before recording."
+        return self.name, progress_tracker.get_subtask_completion()
 
 
 @configclass

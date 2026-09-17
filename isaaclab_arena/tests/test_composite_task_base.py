@@ -4,10 +4,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import traceback
+from types import SimpleNamespace
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 HEADLESS = True
+
+
+class _ProgressEnvironment(SimpleNamespace):
+    @property
+    def progress_tracker(self):
+        return self._progress_tracker
 
 
 def _test_add_suffix_configclass_transform(simulation_app) -> bool:
@@ -125,15 +132,15 @@ class _MultipleObjectiveTask(_ControlledTask):
 
 def _make_tracker(task, conditions):
     import torch
-    from types import SimpleNamespace
 
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
-    env = SimpleNamespace(
+    env = _ProgressEnvironment(
         conditions=torch.tensor(conditions, dtype=torch.bool),
         extras={},
         num_envs=len(conditions),
         device="cpu",
+        _progress_tracker=None,
     )
     termination_cfg = task.get_termination_cfg()
     tracker = ProgressTracker(

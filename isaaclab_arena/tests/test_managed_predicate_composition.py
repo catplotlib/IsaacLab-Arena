@@ -5,7 +5,15 @@
 
 """Check managed predicates across subtask ordering, final conditions, and resets."""
 
+from types import SimpleNamespace
+
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+
+class _ProgressEnvironment(SimpleNamespace):
+    @property
+    def progress_tracker(self):
+        return self._progress_tracker
 
 
 class _PlayingSimulation:
@@ -15,12 +23,11 @@ class _PlayingSimulation:
 
 def _make_environment(predicate_values):
     import torch
-    from types import SimpleNamespace
 
     from isaaclab_arena.tasks.predicates.object_settling import ObjectInitialRestPoseRecorder
 
     num_envs = len(next(iter(predicate_values.values())))
-    return SimpleNamespace(
+    return _ProgressEnvironment(
         num_envs=num_envs,
         device="cpu",
         scene=SimpleNamespace(),
@@ -119,7 +126,7 @@ def _test_manager_resets_only_selected_nested_predicates(_simulation_app):
         },
         env,
     )
-    tracker = env._progress_tracker
+    tracker = env.progress_tracker
     combined_predicate = tracker.get_predicate("stable")
     stable_predicate = combined_predicate.predicates[0].func
 
