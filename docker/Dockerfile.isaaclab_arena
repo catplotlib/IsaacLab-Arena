@@ -1,10 +1,25 @@
 # syntax=docker/dockerfile:1
+#
+# Arena images use a multi-stage build to share dependencies and select runtime/developer
+# variants, with or without cuRobo. Dependency installation and cuRobo compilation
+# are independent of Arena source copies, so source edits reuse those build caches.
+#
+# sim-base:       Isaac Sim, common system packages, and runtime permissions.
+# isaaclab:       Isaac Lab checkout and its dependencies, on top of sim-base.
+# arena-deps:     Arena dependencies, policy clients, and user tools, on isaaclab.
+# runtime:        Arena source, editable install, shell setup, and entrypoint.
+# dev [default]:  Runtime plus contributor tools; the default image target.
+# curobo-builder: CUDA toolkit and whekel compilation, branching from arena-deps.
+# runtime-curobo: Runtime plus cuRobo installed from the builder's mounted wheel.
+# dev-curobo:     cuRobo runtime plus the same contributor tools as dev.
+#
+# The cuRobo builder's toolchain and wheel archives stay out of runtime images.
+# Select a variant with --target. builds without a target default to dev.
+
 ARG BASE_IMAGE=nvcr.io/nvidia/isaac-sim:6.1.0
 
 ################################
 # STAGE: sim-base
-#
-# Install common system deps
 ################################
 FROM ${BASE_IMAGE} AS sim-base
 USER root
@@ -16,8 +31,6 @@ RUN --mount=type=bind,source=docker/setup/install-system-deps.sh,target=/tmp/ins
 
 ################################
 # STAGE: isaaclab
-#
-# Install isaaclab with deps
 ################################
 FROM sim-base AS isaaclab
 COPY ./submodules/IsaacLab ${WORKDIR}/submodules/IsaacLab
@@ -28,8 +41,6 @@ RUN --mount=type=bind,source=docker/setup/install-isaaclab.sh,target=/tmp/instal
 
 ################################
 # STAGE: arena-deps
-#
-# Install deps for arena
 ################################
 FROM isaaclab AS arena-deps
 COPY ./submodules/Isaac-GR00T ${WORKDIR}/submodules/Isaac-GR00T
@@ -43,27 +54,12 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
 COPY --from=nvcr.io/nvidia/osmo/client:6.3.1 /osmo/osmo_cli_onedir/osmo /usr/local/osmo
 RUN ln -sf /usr/local/osmo/osmo /usr/local/bin/osmo
 
-######################################################################################
-# STAGE: curobo-builder
-#
-# Curobo wheel artifact is built in isolation to avoid polluting the delivered images
-# Clint layer should copy the artifact rather than importing the whole layer.
-######################################################################################
-FROM arena-deps AS curobo-builder
-ARG CUROBO_COMMIT=ebb71702f3f70e767f40fd8e050674af0288abe8
-ARG TORCH_CUDA_ARCH_LIST="8.0+PTX;8.6+PTX;8.9+PTX;9.0+PTX"
-ARG MAX_JOBS=4
-RUN --mount=type=bind,source=docker/setup/install_cuda.sh,target=/tmp/install_cuda.sh \
-    --mount=type=bind,source=docker/setup/build-curobo-wheel.sh,target=/tmp/build-curobo-wheel.sh \
-    bash /tmp/build-curobo-wheel.sh
-
 ################################################
 # STAGE: runtime
-#
-# Arena runtime containing source and entrypoint
 ################################################
 FROM arena-deps AS runtime
 COPY *.* ${WORKDIR}/
+# Preserve package directory names when copying multiple sources into one layer.
 COPY --parents \
     isaaclab_arena \
     isaaclab_arena_cosmos \
@@ -85,8 +81,6 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 ####################################
 # STAGE: dev
-#
-# Add developer tools to runtime
 ####################################
 FROM runtime AS dev
 # Contributor tools [dev]; user-facing tools are inherited from arena-deps.
@@ -94,6 +88,17 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
     --mount=type=bind,source=docker/setup/export_requirements.py,target=/tmp/export_requirements.py \
     --mount=type=bind,source=docker/setup/install-dev-tools.sh,target=/tmp/install-dev-tools.sh \
     bash /tmp/install-dev-tools.sh
+
+######################################################################################
+# STAGE: curobo-builder
+######################################################################################
+FROM sim-base AS curobo-builder
+ARG CUROBO_COMMIT=ebb71702f3f70e767f40fd8e050674af0288abe8
+ARG TORCH_CUDA_ARCH_LIST="8.0+PTX;8.6+PTX;8.9+PTX;9.0+PTX"
+ARG MAX_JOBS=4
+RUN --mount=type=bind,source=docker/setup/install_cuda.sh,target=/tmp/install_cuda.sh \
+    --mount=type=bind,source=docker/setup/build-curobo-wheel.sh,target=/tmp/build-curobo-wheel.sh \
+    bash /tmp/build-curobo-wheel.sh
 
 ################################
 # STAGE: runtime-curobo
@@ -114,5 +119,5 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/arena-pyproject.toml \
     --mount=type=bind,source=docker/setup/install-dev-tools.sh,target=/tmp/install-dev-tools.sh \
     bash /tmp/install-dev-tools.sh
 
-# Default to dev (without curobo)
+# Default to dev (without cuRobo).
 FROM dev AS default

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Common simulation/runtime dependencies
+# Install common runtime dependencies and configure Isaac Sim permissions.
 
 set -euo pipefail
 

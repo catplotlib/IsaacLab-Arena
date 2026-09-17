@@ -1,9 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-
-# Export and install Arena requirements.
-# This prevents "pip install arena" to re-install deps every time a source file has changed.
+# Install dependencies from project metadata before copying Arena source.
+# The later editable install uses --no-deps, keeping this step cached on source edits.
 /isaac-sim/python.sh /tmp/export_requirements.py /tmp/arena-pyproject.toml runtime > /tmp/arena-requirements.txt
 /isaac-sim/python.sh -m pip install -r /tmp/arena-requirements.txt
 rm /tmp/arena-requirements.txt

@@ -26,8 +26,8 @@ Each stage adds the following to its parent's contents:
 
 | Stage | Contents added |
 | --- | --- |
-| `sim-base` | Isaac Sim `6.1.0` base and its Python/Kit libraries; common OS packages (`git`, `git-lfs`, `cmake`, `ffmpeg`, `sudo`, `jq`, `python3-pip`, `pqiv`); Vulkan workaround; workspace setup. |
-| `isaaclab` | Pinned Isaac Lab checkout, `_isaac_sim` link, existing Kit permission fixes, and `isaaclab.sh -i`. Preserve its Torch stack, Newton/PhysX, task packages, Mimic, teleoperation, RSL-RL, and visualizers. |
+| `sim-base` | Isaac Sim `6.1.0` base and its Python/Kit libraries; common OS packages (`git`, `git-lfs`, `cmake`, `ffmpeg`, `sudo`, `jq`, `python3-pip`, `pqiv`); Vulkan workaround; Isaac Sim/Kit permission fixes; workspace setup. |
+| `isaaclab` | Pinned Isaac Lab checkout, `_isaac_sim` link, and `isaaclab.sh -i`. Preserve its Torch stack, Newton/PhysX, task packages, Mimic, teleoperation, RSL-RL, and visualizers. |
 | `arena-deps` | Third-party dependencies from project metadata; lightweight GR00T/OpenPI clients and shared policy transports; AWS/HTTP compatibility repairs. User tools: search, review UI, notebooks, pipx-isolated Hugging Face CLI, and OSMO CLI. No Arena application source. |
 | `runtime` | All first-party Arena packages/adapters, examples, required metadata/data, and currently copied docs/fixtures; editable Arena install with `--no-deps`; entrypoint, common aliases/prompt, runtime defaults. |
 | `dev` | `pre-commit`, GitHub CLI, `debugpy`, and developer-only shell setup. |
@@ -66,8 +66,8 @@ Keep one Dockerfile for stage inheritance, copied inputs, script ordering, persi
 
 | Script | Stage / responsibility |
 | --- | --- |
-| `install-system-deps.sh` | `sim-base`: common OS packages and Vulkan workaround. |
-| `install-isaaclab.sh` | `isaaclab`: symlink/permission setup and existing installer. |
+| `install-system-deps.sh` | `sim-base`: common OS packages, Vulkan workaround, and Isaac Sim/Kit permissions. |
+| `install-isaaclab.sh` | `isaaclab`: symlink setup and existing installer. |
 | `install-policy-clients.sh` | `arena-deps`: pinned lightweight clients. |
 | `install-arena-deps.sh` | `arena-deps`: derived dependencies, selected user tools, compatibility repairs. |
 | `install-dev-tools.sh` | Both developer targets: shared contributor tools and debug alias. |
@@ -114,6 +114,8 @@ Two required verification outcomes:
 - Verify unchanged and source-only rebuilds reuse the expected stages; dependency/build-input changes invalidate the appropriate stages. Report remaining failures or unavailable external services explicitly.
 
 ## Local validation result
+
+These results precede the review changes that moved chmod into `sim-base` and combined the runtime source copies. Validation of those changes is deferred until review is complete.
 
 All four targets build. Mounted source edits are visible without rebuilding; explicit source-only builds reuse Isaac Lab, dependency installation, and cuRobo compilation. Baked-source simulation, user tools, GR00T integration, and cold-cache cuRobo GPU IK checks pass. Shell, Dockerfile, and pre-commit checks pass.
 

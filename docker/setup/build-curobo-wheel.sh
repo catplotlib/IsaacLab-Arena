@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install cuda and build curobo python wheel
+# Install the CUDA toolkit and build the cuRobo Python wheel.
 set -euo pipefail
 
 bash /tmp/install_cuda.sh

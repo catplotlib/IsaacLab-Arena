@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install policy clients and deps
+# Install the lightweight GR00T/OpenPI clients and their dependencies.
 
 set -euo pipefail
 

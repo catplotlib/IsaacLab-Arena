@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install isaac lab
+# Install Isaac Lab and its dependencies.
 
 set -euo pipefail
 
