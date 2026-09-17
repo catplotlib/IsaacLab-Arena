@@ -46,7 +46,11 @@ class EmbodimentBase(PlaceableAsset):
     tags: list[str] = ["embodiment"]
     default_arm_mode: ArmMode | None = None
     spawn_cfg_addon: dict[str, dict[str, Any]] = {}
-    """Spawn addons by scene asset name, applied after backend defaults (e.g. robot or left_robot)."""
+    """Define how embodiment USD/geometry is spawned and which schemas/properties are set.
+
+    Keys name embodiment scene entries (e.g. robot or left_robot); values override their
+    spawn configs after backend defaults.
+    """
 
     def __init__(
         self,
@@ -193,11 +197,11 @@ class EmbodimentBase(PlaceableAsset):
 
         replacements = {}
         for name, addons in self.spawn_cfg_addon.items():
-            asset_cfg = getattr(self.scene_config, name, None)
-            assert asset_cfg is not None, f"Embodiment spawn addon references unknown scene asset {name!r}"
-            assert getattr(asset_cfg, "spawn", None) is not None, f"Scene asset {name!r} has no spawn config"
-            replacements[name] = make_usd_spawn_cfg_with_addons(asset_cfg.spawn, addons)
-        # Publish only after every named asset validates, avoiding half-applied bimanual settings.
+            robot_cfg = getattr(self.scene_config, name, None)
+            assert robot_cfg is not None, f"Embodiment spawn addon references unknown scene entry {name!r}"
+            assert getattr(robot_cfg, "spawn", None) is not None, f"Embodiment scene entry {name!r} has no spawn config"
+            replacements[name] = make_usd_spawn_cfg_with_addons(robot_cfg.spawn, addons)
+        # Publish only after every embodiment entry validates, avoiding half-applied bimanual settings.
         for name, spawn_cfg in replacements.items():
             getattr(self.scene_config, name).spawn = spawn_cfg
 
