@@ -3,4 +3,4 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Control an Arena robot through explicit commands and observed motion results."""
+"""Control DROID with joint-action chunks or pose commands from a session."""

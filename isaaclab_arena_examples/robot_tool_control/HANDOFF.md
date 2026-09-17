@@ -3,7 +3,7 @@
 The example connects a model conversation to a persistent DROID simulation through a local command queue.
 It accepts one flange pose and gripper target per decision, executes bounded motion with differential IK,
 and returns camera images, calibration, measured robot state, and the command outcome. Physics pauses
-between commands. See [README.md](README.md) for the interface and launch instructions.
+between commands. See [POSE_COMMANDS.md](POSE_COMMANDS.md) for the interface and launch instructions.
 
 For another installed checkout with its Docker container and an Astra session already running,
 [CONTROLLER_PROMPT.md](CONTROLLER_PROMPT.md) provides portable instructions for starting the simulator,
@@ -16,8 +16,9 @@ of the historical evaluation; it is not required to run the example.
 - `server.py` maintains the simulation and records commands, observations, trajectories, and episode results.
 - `client.py` submits requests atomically and waits for their responses without automatic retries.
 - `export_videos.py` adds a two-second terminal-image pause to presentation copies, with no text overlay.
-- The DROID differential IK action and end-effector marker now target the Robotiq gripper flange, matching
-  the existing measured end-effector pose. Observation documentation specifies world coordinates and xyzw quaternions.
+- The DROID differential IK action targets the Robotiq gripper flange, matching the measured end-effector pose.
+  The end-effector marker remains at the fingertip grasp point used by other Arena controllers.
+  Observation documentation specifies world coordinates and xyzw quaternions.
 - Camera recording discards interrupted episodes on explicit reset and uses Isaac Lab's final observations
   to include the terminal frame before automatic reset.
 
@@ -57,7 +58,7 @@ The original working checkout had a pre-existing Isaac Lab submodule mismatch. I
 `bb0c8e1b9af381bf13064ec3303e17db79e4b6ef`. The demo left that checkout unchanged and used an extracted copy of the
 pinned revision in `outputs/robot_tool_control/isaaclab_pinned/`. The launch set `ISAACLAB_PATH` to that directory
 and put its immediate `source/` package directories on `PYTHONPATH`. Those local dependency files are not committed.
-A checkout with the supported pinned dependencies can use the normal README launch command.
+A checkout with the supported pinned dependencies can use the launch command in `POSE_COMMANDS.md`.
 
 Before another evaluation, start a new model conversation and session directory. Supply the interface and that
 episode's observations only; do not include these historical reports or previously derived targets. Keep the

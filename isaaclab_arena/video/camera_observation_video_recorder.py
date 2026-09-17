@@ -32,6 +32,8 @@ from dataclasses import dataclass
 
 from moviepy.video.io.ffmpeg_writer import FFMPEG_VideoWriter
 
+from isaaclab_arena.utils.timer import Timer
+
 CAMERA_OBS_GROUP_KEY = "camera_obs"
 
 # Regular expression to parse the filename of an episode video.
@@ -153,24 +155,27 @@ class CameraObsVideoRecorder(gym.Wrapper):
             done_envs = (terminated | truncated).nonzero().flatten().tolist()
             done_set = set(done_envs)
 
-            for camera_name, frames in cam_obs.items():
-                if camera_name not in self.writers:
-                    self.writers[camera_name] = [None] * n_envs
-                for env_idx in range(n_envs):
-                    episode_index = self.unwrapped.get_episode_index(env_idx)
-                    if env_idx in done_set:
-                        final_frames = final_cam_obs.get(camera_name)
-                        if final_frames is None:
-                            continue
-                        frame = final_frames[env_idx]
-                        # The counter has already advanced, including on a first-step termination.
-                        episode_index -= 1
-                    else:
-                        frame = frames[env_idx]
-                    self._write_frame(camera_name, env_idx, _to_uint8(frame), episode_index)
+            with Timer("record_camera_frames"):
+                for camera_name, frames in cam_obs.items():
+                    if camera_name not in self.writers:
+                        self.writers[camera_name] = [None] * n_envs
+                    for env_idx in range(n_envs):
+                        episode_index = self.unwrapped.get_episode_index(env_idx)
+                        if env_idx in done_set:
+                            final_frames = final_cam_obs.get(camera_name)
+                            if final_frames is None:
+                                continue
+                            frame = final_frames[env_idx]
+                            # The counter has already advanced, including on a first-step termination.
+                            episode_index -= 1
+                        else:
+                            frame = frames[env_idx]
+                        self._write_frame(camera_name, env_idx, _to_uint8(frame), episode_index)
 
             if done_envs:
-                self._finish_envs(done_envs)
+                # The encoder shutdown that finalises one episode's mp4 files.
+                with Timer("record_camera_finalize"):
+                    self._finish_envs(done_envs)
 
         return result
 
