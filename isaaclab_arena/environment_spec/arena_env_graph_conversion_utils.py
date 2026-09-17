@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.assets.asset import Asset
-from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.assets.object_reference import (
     ObjectReference,
     OpenableObjectReference,
@@ -18,6 +17,7 @@ from isaaclab_arena.assets.object_reference import (
 from isaaclab_arena.assets.object_set import RigidObjectSet
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry, ObjectRelationLibraryRegistry
+from isaaclab_arena.environment_spec.arena_env_graph_parsing import parse_asset_params
 from isaaclab_arena.environment_spec.arena_env_graph_task_conversion_utils import build_task_from_spec
 from isaaclab_arena.environment_spec.arena_env_graph_types import ObjectReferenceSpec, SpatialRelationSpec
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
@@ -153,7 +153,7 @@ def _instantiate_object_reference(
         "name": ref.id,
         "prim_path": _prim_path_for_relative(background_registry_name, ref.prim_path),
         "parent_asset": parent_asset,
-        **ref.params,
+        **parse_asset_params(ref.params),
     }
     if not joint_param_names:
         return ObjectReference(object_type=ref.object_type, **common_kwargs)
@@ -172,7 +172,7 @@ def instantiate_assets_from_spec(
     """Return ``{asset.id: live_asset}`` after materializing the typed graph spec."""
     assets_by_node_id: dict[str, type[Asset]] = {}
 
-    embodiment_params = dict(graph_spec.embodiment.params)
+    embodiment_params = parse_asset_params(graph_spec.embodiment.params)
     if enable_cameras:
         embodiment_params.setdefault("enable_cameras", True)
     assets_by_node_id[graph_spec.embodiment.id] = asset_registry.get_asset_by_name(graph_spec.embodiment.registry_name)(
@@ -180,27 +180,20 @@ def instantiate_assets_from_spec(
     )
 
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
-        **graph_spec.background.params
+        **parse_asset_params(graph_spec.background.params)
     )
 
     for obj in graph_spec.objects:
-        params = dict(obj.params)
+        params = parse_asset_params(obj.params)
         params.setdefault("instance_name", obj.id)
-        factory = asset_registry.get_asset_by_name(obj.registry_name)
-        if (
-            isinstance(factory, type)
-            and issubclass(factory, LibraryObject)
-            and isinstance(params.get("initial_pose"), dict)
-        ):
-            params["initial_pose"] = Pose.from_dict(params["initial_pose"])
-        assets_by_node_id[obj.id] = factory(**params)
+        assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
 
     for object_set in graph_spec.object_sets or []:
         assets_by_node_id[object_set.id] = RigidObjectSet(
             name=object_set.id,
             objects=[asset_registry.get_asset_by_name(registry_name)() for registry_name in object_set.members],
             random_choice=object_set.random_choice,
-            **object_set.params,
+            **parse_asset_params(object_set.params),
         )
 
     for ref in graph_spec.object_references or []:

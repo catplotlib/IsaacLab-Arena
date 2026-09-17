@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry, ObjectRelationLibraryRegistry, TaskRegistry
 from isaaclab_arena.assets.simready_constants import SIMREADY_USD_OBJECT_REGISTRY_NAME
+from isaaclab_arena.environment_spec.arena_env_graph_parsing import parse_asset_params
 
 
 def _extract_asset_usd_path(asset_cls: type, **params: Any) -> str | None:
@@ -27,7 +28,7 @@ def _extract_asset_usd_path(asset_cls: type, **params: Any) -> str | None:
     # Instantiate when usd_path is set lazily (e.g. Lightwheel backgrounds).
     # TODO(qianl): add support for embodiments, whose robot USD lives in scene_config.robot.spawn.
     try:
-        instance = asset_cls(**params)
+        instance = asset_cls(**parse_asset_params(params))
     except Exception:
         return None
 

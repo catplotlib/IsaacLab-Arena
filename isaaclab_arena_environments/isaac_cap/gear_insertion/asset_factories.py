@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 import isaaclab.sim as sim_utils
@@ -50,7 +49,7 @@ def _make_factory_gear(
 
 def make_factory_gear_base(
     instance_name: str = "gear_base",
-    initial_pose: Mapping[str, Sequence[float]] | None = None,
+    initial_pose: Pose | None = None,
     **_ignored: Any,
 ) -> Object:
     """Create the fixed Factory gear base."""
@@ -58,13 +57,13 @@ def make_factory_gear_base(
         instance_name,
         "FactoryGearBase",
         "factory_gear_base",
-        Pose.from_dict(initial_pose),
+        initial_pose,
     )
 
 
 def make_factory_gear_small(
     instance_name: str = "gear_small",
-    initial_pose: Mapping[str, Sequence[float]] | None = None,
+    initial_pose: Pose | None = None,
     **_ignored: Any,
 ) -> Object:
     """Create the source small Factory gear."""
@@ -72,13 +71,13 @@ def make_factory_gear_small(
         instance_name,
         "FactoryGearSmall",
         "factory_gear_small",
-        Pose.from_dict(initial_pose),
+        initial_pose,
     )
 
 
 def make_factory_gear_medium(
     instance_name: str = "gear_medium",
-    initial_pose: Mapping[str, Sequence[float]] | None = None,
+    initial_pose: Pose | None = None,
     **_ignored: Any,
 ) -> Object:
     """Create the source medium Factory gear."""
@@ -86,13 +85,13 @@ def make_factory_gear_medium(
         instance_name,
         "FactoryGearMedium",
         "factory_gear_medium",
-        Pose.from_dict(initial_pose),
+        initial_pose,
     )
 
 
 def make_factory_gear_large(
     instance_name: str = "gear_large",
-    initial_pose: Mapping[str, Sequence[float]] | None = None,
+    initial_pose: Pose | None = None,
     **_ignored: Any,
 ) -> Object:
     """Create the source large Factory gear."""
@@ -100,7 +99,7 @@ def make_factory_gear_large(
         instance_name,
         "FactoryGearLarge",
         "factory_gear_large",
-        Pose.from_dict(initial_pose),
+        initial_pose,
     )
 
 
@@ -126,14 +125,14 @@ class IndustrialFr3WorkcellTable(Background):
 
     def __init__(
         self,
-        initial_pose: Mapping[str, Sequence[float]] | None = None,
+        initial_pose: Pose | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
             name=self.name,
             usd_path=self.usd_path,
             object_min_z=self.object_min_z,
-            initial_pose=Pose.from_dict(initial_pose),
+            initial_pose=initial_pose,
             tags=self.tags,
             **kwargs,
         )
@@ -149,9 +148,9 @@ class IndustrialHdrShadowReceiver(Object):
         self,
         instance_name: str = "hdr_shadow_receiver",
         ground_z: float = 0.0,
+        initial_pose: Pose | None = None,
         **kwargs: Any,
     ) -> None:
-        initial_pose = Pose.from_dict(kwargs.pop("initial_pose", None))
         spawn_cfg_addon = dict(kwargs.pop("spawn_cfg_addon", {}) or {})
         spawn_cfg_addon["visible"] = False
         if initial_pose is None:
