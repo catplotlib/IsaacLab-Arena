@@ -114,7 +114,12 @@ def main() -> None:
         "--num_layouts", type=_positive_int, default=None, help="Total cached layouts; defaults to num_envs"
     )
     parser.add_argument("--num_envs", type=_positive_int, default=1, help="Parallel offline environments")
-    parser.add_argument("--presets", choices=("physx", "newton"), default=None, help="Arena physics preset")
+    parser.add_argument(
+        "--presets",
+        choices=("physx", "newton"),
+        default=None,
+        help="Physics backend override; otherwise use the environment's default",
+    )
     parser.add_argument(
         "--register",
         type=_registration_entry_point,

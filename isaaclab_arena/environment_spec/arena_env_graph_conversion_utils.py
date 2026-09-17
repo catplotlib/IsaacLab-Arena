@@ -247,39 +247,35 @@ def instantiate_assets_from_spec(
 ) -> dict[str, PlaceableAsset]:
     """Return ``{asset.id: live_asset}`` after materializing the typed graph spec."""
     assets_by_node_id: dict[str, PlaceableAsset] = {}
-    for node in [graph_spec.embodiment, graph_spec.background, *graph_spec.objects]:
+    nodes = [graph_spec.embodiment, graph_spec.background, *graph_spec.objects]
+    for node in nodes:
         if "initial_pose" in node.params:
             assert isinstance(node.params["initial_pose"], dict), f"Asset '{node.id}': initial_pose must be a mapping"
 
     embodiment_params = dict(graph_spec.embodiment.params)
-    embodiment_pose = embodiment_params.pop("initial_pose", None)
+    embodiment_params.pop("initial_pose", None)
     if enable_cameras:
         embodiment_params.setdefault("enable_cameras", True)
     assets_by_node_id[graph_spec.embodiment.id] = asset_registry.get_asset_by_name(graph_spec.embodiment.registry_name)(
         **embodiment_params
     )
 
-    assets_by_node_id[graph_spec.embodiment.id].maybe_set_initial_pose(
-        _get_pose_from_dict(embodiment_pose, assets_by_node_id[graph_spec.embodiment.id].get_initial_pose()),
-    )
-
     background_params = dict(graph_spec.background.params)
-    background_pose = background_params.pop("initial_pose", None)
+    background_params.pop("initial_pose", None)
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
         **background_params
-    )
-    assets_by_node_id[graph_spec.background.id].maybe_set_initial_pose(
-        _get_pose_from_dict(background_pose, assets_by_node_id[graph_spec.background.id].get_initial_pose()),
     )
 
     for obj in graph_spec.objects:
         params = dict(obj.params)
-        initial_pose = params.pop("initial_pose", None)
+        params.pop("initial_pose", None)
         params.setdefault("instance_name", obj.id)
         assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
-        assets_by_node_id[obj.id].maybe_set_initial_pose(
-            _get_pose_from_dict(initial_pose, assets_by_node_id[obj.id].get_initial_pose())
-        )
+
+    for node in nodes:
+        if "initial_pose" in node.params:
+            asset = assets_by_node_id[node.id]
+            asset.maybe_set_initial_pose(_get_pose_from_dict(node.params["initial_pose"], asset.get_initial_pose()))
 
     for object_set in graph_spec.object_sets or []:
         assets_by_node_id[object_set.id] = RigidObjectSet(

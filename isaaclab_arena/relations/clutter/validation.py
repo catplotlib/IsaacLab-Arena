@@ -113,6 +113,7 @@ class SettleTracker:
         """
         self._params = params or ClutterSettleParams()
         self._previous: tuple[torch.Tensor, torch.Tensor] | None = None
+        """Previous positions (N, 3) and xyzw quaternions (N, 4), or None before the first finite sample."""
         self._quiet_windows = 0
         self._diverged: list[int] = []
         self._moving: list[int] = []

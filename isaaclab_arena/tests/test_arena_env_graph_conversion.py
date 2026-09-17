@@ -321,7 +321,7 @@ def _test_companion_layout_paths_and_graph_ids(simulation_app):
     from isaaclab_arena.relations.placement_layouts import PlacementLayouts
     from isaaclab_arena.utils.pose import Pose
 
-    source = Path(__file__).parents[2] / "isaaclab_arena_environments/isaac_cap/clutter/clutter_scene.yaml"
+    source = Path(__file__).parents[2] / "isaaclab_arena_examples/relations/clutter/clutter_scene.yaml"
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
         data = yaml.safe_load(source.read_text())
@@ -403,3 +403,41 @@ def test_python_environment_loads_companion_layouts():
     from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
     assert run_function_with_persistent_simulation_app(_test_python_environment_loads_companion_layouts)
+
+
+def _test_cached_graph_preserves_physics_settings(simulation_app, tmp_path, preset):
+    import yaml
+
+    from isaaclab_newton.physics import NewtonCfg
+    from isaaclab_physx.physics import PhysxCfg
+
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.utils.pose import Pose
+
+    source = Path(__file__).parents[2] / "isaaclab_arena_examples/relations/clutter/clutter_scene.yaml"
+    data = yaml.safe_load(source.read_text())
+    data["default_physics_backend"] = "newton"
+    data["env_cfg_override"] = {"sim": {"dt": 0.007}}
+    data["placement_layouts"] = "poses.yaml"
+    path = tmp_path / "env.yaml"
+    path.write_text(yaml.safe_dump(data))
+    PlacementLayouts({f"cube_{i}": [Pose((i, 0, 1))] for i in range(4)}).write_yaml(tmp_path / "poses.yaml")
+    arena_env = ArenaEnvGraphSpec.from_yaml(path).to_arena_env()
+    builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(presets=preset))
+    cfg, _ = builder.compose_manager_cfg()
+    assert isinstance(cfg.sim.physics, NewtonCfg if preset is None else PhysxCfg)
+    assert cfg.sim.dt == pytest.approx(0.007)
+    assert cfg.scene.replicate_physics is (preset is None)
+    assert cfg.events.cached_placement_reset.params["poses"].keys() == arena_env.placement_layouts.poses.keys()
+    return True
+
+
+@pytest.mark.parametrize("preset", [None, "physx"])
+def test_cached_graph_preserves_physics_settings(tmp_path, preset):
+    from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+    assert run_function_with_persistent_simulation_app(
+        _test_cached_graph_preserves_physics_settings, tmp_path=tmp_path, preset=preset
+    )

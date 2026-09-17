@@ -47,7 +47,7 @@ Run inside the Arena development container, from ``/workspaces/isaaclab_arena``:
 .. code-block:: bash
 
    /isaac-sim/python.sh isaaclab_arena/scripts/generate_clutter_scene.py \
-       --env_spec isaaclab_arena_environments/isaac_cap/clutter/clutter_scene.yaml \
+       --env_spec isaaclab_arena_examples/relations/clutter/clutter_scene.yaml \
        --output outputs/clutter/placements.yaml --num_envs 4 --num_layouts 100 \
        --seed 42 --viz none
 
@@ -82,8 +82,20 @@ motion checks; it does not certify task reachability.
 
 Other placement must already be resolved to fixed anchors. Object sets are not
 supported by this cache format. Downstream packages can register assets and
-tasks with ``--register package.module:register_components``. ``--presets``
-selects the physics backend.
+tasks with ``--register package.module:register_components``. The generator uses
+Arena's standard graph loader and environment builder. ``default_physics_backend``
+and ``env_cfg_override`` apply during generation and replay, including when loaded
+from ``external_yaml``. ``--presets`` overrides the graph's backend default;
+backend-specific configuration and asset physics must remain compatible with
+that selection. The supplied office-table example uses PhysX. For Newton,
+use assets with valid MuJoCo inertias and a robot configuration that stays
+within the passive-motion tolerances, or generate without an embodiment.
+Keep task-specific physics settings in the environment YAML, as in the CAP gear
+environments, so generation and replay use the same configuration.
+
+The four-cube example lives in ``isaaclab_arena_examples/relations/clutter`` and
+uses only Arena assets. CAP-specific assets, registration, and task behavior
+remain in ``isaaclab_arena_environments/isaac_cap``.
 
 Load at runtime
 ---------------
@@ -93,7 +105,7 @@ Pass the companion file explicitly:
 .. code-block:: bash
 
    /isaac-sim/python.sh isaaclab_arena/scripts/environment_runner.py \
-       --env_spec isaaclab_arena_environments/isaac_cap/clutter/clutter_scene.yaml \
+       --env_spec isaaclab_arena_examples/relations/clutter/clutter_scene.yaml \
        --placement_layouts outputs/clutter/placements.yaml
 
 Alternatively, add ``placement_layouts: placements.yaml`` to the environment

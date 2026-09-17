@@ -397,3 +397,25 @@ def test_clutter_release_keeps_meshless_collision_bounds(collision_mode):
     layout = placer.place([support, objects[0]], collision_objects=[obstacle])[0]
     assert layout.success
     assert layout.positions[objects[0]][2] == pytest.approx(0.27, abs=1e-5)
+
+
+@pytest.mark.parametrize("kind,valid", [("on_overlap", True), ("on_contained", False), ("clutter_on", False)])
+def test_overhang_policy_agrees_between_loss_and_validation(kind, valid):
+    from isaaclab_arena.relations.placement_validators import OnRelationValidator
+    from isaaclab_arena.relations.relation_loss_strategies import ClutterOnLossStrategy, OnLossStrategy
+
+    support, objects = _scene()
+    obj = objects[0]
+    if kind == "clutter_on":
+        relation = ClutterOn(support, spread=1, random_yaw=False)
+        strategy = ClutterOnLossStrategy()
+    else:
+        relation = On(support, overlap=kind == "on_overlap", edge_margin_m=0)
+        strategy = OnLossStrategy()
+    obj.relations = [relation]
+    position = (0.49, 0.0, 0.13)
+    bounds = {asset: asset.get_bounding_box() for asset in (support, obj)}
+    loss = strategy.compute_loss(relation, torch.tensor(position), bounds[obj], bounds[support])
+    assert float(loss) == pytest.approx(0.0 if valid else 0.2, abs=1e-6)
+    validator = OnRelationValidator(ObjectPlacerParams())
+    assert validator.validate_batch([{support: (0, 0, 0), obj: position}], [{}], [bounds], []) == [valid]

@@ -13,7 +13,7 @@ import pytest
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
-SOURCE = Path(__file__).parents[3] / "isaaclab_arena_environments/isaac_cap/clutter/clutter_scene.yaml"
+SOURCE = Path(__file__).parents[3] / "isaaclab_arena_examples/relations/clutter/clutter_scene.yaml"
 
 
 def _arguments(output):
@@ -68,6 +68,14 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
         "enabled_checks": ["no_overlap", "on_relation"],
         "required_checks": ["no_overlap", "on_relation"],
     }
+    data["external_yaml"] = "physics.yaml"
+    physics = tmp_path / "physics.yaml"
+    physics.write_text(
+        yaml.safe_dump({
+            "default_physics_backend": "physx",
+            "env_cfg_override": {"sim": {"dt": 0.01}},
+        })
+    )
     source = tmp_path / "scene.yaml"
     source.write_text(yaml.safe_dump(data))
     original = source.read_bytes()
@@ -75,7 +83,12 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
     args = _arguments(path)
     args.env_spec = source
     args.num_layouts = 4
-    with patch("isaaclab_arena.relations.clutter.settle.settle_clutter", wraps=settle_clutter) as settle:
+
+    def settle_with_graph_settings(env, *args, **kwargs):
+        assert env.unwrapped.sim.get_physics_dt() == pytest.approx(0.01)
+        return settle_clutter(env, *args, **kwargs)
+
+    with patch("isaaclab_arena.relations.clutter.settle.settle_clutter", wraps=settle_with_graph_settings) as settle:
         assert generate_scene(args) == path
     # Each batch reserves seeds for 2 environments, 10 candidates and 3 trials.
     assert [call.kwargs["seed"] for call in settle.call_args_list] == [42, 102]
@@ -93,6 +106,7 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
         arena_env = spec.to_arena_env(placement_layouts=path)
         env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=3)).make_registered()
         try:
+            assert env.unwrapped.sim.get_physics_dt() == pytest.approx(0.01)
             scene = env.unwrapped.scene
             world = env.unwrapped.arena_world
             device = env.unwrapped.device
