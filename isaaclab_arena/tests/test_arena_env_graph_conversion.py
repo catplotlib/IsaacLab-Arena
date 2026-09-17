@@ -28,11 +28,12 @@ TEST_DATA_DIR = Path(__file__).parent / "test_data"
 
 
 def _test_arena_env_graph_conversion_builds_sequential_pick_and_place_task(simulation_app):
+    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import build_arena_env_from_graph_spec
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
     from isaaclab_arena.tasks.sequential_task_base import SequentialTaskBase
 
     spec = ArenaEnvGraphSpec.from_yaml(TEST_DATA_DIR / "pick_and_place_maple_table_env_graph.yaml")
-    arena_env = spec.to_arena_env()
+    arena_env = build_arena_env_from_graph_spec(spec)
 
     assert arena_env.name == "pick_and_place_maple_table_default"
     assert isinstance(arena_env.task, SequentialTaskBase)
@@ -116,10 +117,6 @@ def _test_get_arena_builder_from_cli_builds_env_from_graph_yaml(simulation_app):
         with pytest.raises(AssertionError):
             get_arena_builder_from_cli(bad)
 
-    with pytest.raises(AssertionError, match="--placement_layouts requires --env_spec"):
-        get_arena_builder_from_cli(
-            argparse.Namespace(env_spec=None, example_environment="lift_object", placement_layouts="poses.yaml")
-        )
     return True
 
 
@@ -268,23 +265,18 @@ def test_object_reference_uses_runtime_parent_name():
 
 
 def test_initial_pose_validation_and_reset_contract():
-    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import (
-        _apply_initial_pose,
-        _get_pose_from_dict,
-    )
+    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import _get_pose_from_dict
+    from isaaclab_arena.tests.dummy_object import DummyObject
+    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
-    class Asset:
-        def get_initial_pose(self):
-            return None
-
-        def set_initial_pose(self, pose, create_reset_event=True):
-            self.pose = pose
-            self.reset = create_reset_event
-
-    asset = Asset()
-    _apply_initial_pose(asset, _get_pose_from_dict({"position_xyz": [1, 2, 3], "rotation_xyzw": [0, 0, 0, 1]}))
-    assert asset.pose.position_xyz == (1.0, 2.0, 3.0)
-    assert asset.reset
+    asset = DummyObject("cube", AxisAlignedBoundingBox((0, 0, 0), (1, 1, 1)))
+    asset.maybe_set_initial_pose(_get_pose_from_dict({"position_xyz": [1, 2, 3], "rotation_xyzw": [0, 0, 0, 1]}))
+    assert asset.get_initial_pose().position_xyz == (1.0, 2.0, 3.0)
+    event = asset._pose_event_cfg
+    assert asset.has_pose_reset_event()
+    asset.maybe_set_initial_pose(None)
+    assert asset.get_initial_pose().position_xyz == (1.0, 2.0, 3.0)
+    assert asset._pose_event_cfg is event
     for bad in (
         {"position_xyz": [float("nan"), 0, 0]},
         {"position_xyz": [True, 0, 0]},
@@ -297,29 +289,21 @@ def test_initial_pose_validation_and_reset_contract():
 
 
 def test_partial_initial_pose_preserves_authored_components():
-    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import (
-        _apply_initial_pose,
-        _get_pose_from_dict,
+    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import _get_pose_from_dict
+    from isaaclab_arena.tests.dummy_object import DummyObject
+    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+    from isaaclab_arena.utils.pose import Pose, PosePerEnv
+
+    asset = DummyObject(
+        "cube", AxisAlignedBoundingBox((0, 0, 0), (1, 1, 1)), Pose((1.0, 2.0, 3.0), (1.0, 0.0, 0.0, 0.0))
     )
-    from isaaclab_arena.utils.pose import Pose
-
-    class Asset:
-        def __init__(self):
-            self.pose = Pose((1.0, 2.0, 3.0), (1.0, 0.0, 0.0, 0.0))
-
-        def get_initial_pose(self):
-            return self.pose
-
-        def set_initial_pose(self, pose, create_reset_event=True):
-            self.pose = pose
-            self.reset = create_reset_event
-
-    asset = Asset()
-    _apply_initial_pose(asset, _get_pose_from_dict({"position_xyz": [4, 5, 6]}, asset.get_initial_pose()))
-    assert asset.pose.rotation_xyzw == (1.0, 0.0, 0.0, 0.0)
-    _apply_initial_pose(asset, _get_pose_from_dict({"rotation_xyzw": [0, 0, 0, 1]}, asset.get_initial_pose()))
-    assert asset.pose.position_xyz == (4.0, 5.0, 6.0)
-    assert asset.reset
+    asset.maybe_set_initial_pose(_get_pose_from_dict({"position_xyz": [4, 5, 6]}, asset.get_initial_pose()))
+    assert asset.get_initial_pose().rotation_xyzw == (1.0, 0.0, 0.0, 0.0)
+    asset.maybe_set_initial_pose(_get_pose_from_dict({"rotation_xyzw": [0, 0, 0, 1]}, asset.get_initial_pose()))
+    assert asset.get_initial_pose().position_xyz == (4.0, 5.0, 6.0)
+    assert asset.has_pose_reset_event()
+    with pytest.raises(AssertionError, match="fixed default pose"):
+        _get_pose_from_dict({"position_xyz": [4, 5, 6]}, PosePerEnv([Pose()]))
 
 
 def test_no_task_accepts_base_constructor_parameters():
@@ -372,3 +356,50 @@ def test_companion_layout_paths_and_graph_ids():
     from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
     assert run_function_with_persistent_simulation_app(_test_companion_layout_paths_and_graph_ids)
+
+
+def _test_python_environment_loads_companion_layouts(simulation_app):
+    import sys
+    import tempfile
+    from unittest.mock import patch
+
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "poses.yaml"
+        with patch.object(sys, "argv", ["environment_runner.py", "droid_table_multi_object_placement"]):
+            args = get_isaaclab_arena_environments_cli_parser().parse_args()
+        original = get_arena_builder_from_cli(args).arena_env
+        poses = {
+            asset.get_scene_key(): [Pose((0.1 * i, 0, 1)), Pose((0.1 * i, 0.2, 1))]
+            for i, asset in enumerate(original.scene.assets.values())
+            if asset.get_spatial_relations() and not asset.is_anchor
+        }
+        assert poses
+        PlacementLayouts(poses).write_yaml(path)
+        with patch.object(
+            sys,
+            "argv",
+            ["environment_runner.py", "--placement_layouts", str(path), "droid_table_multi_object_placement"],
+        ):
+            args = get_isaaclab_arena_environments_cli_parser().parse_args()
+        loaded = get_arena_builder_from_cli(args).arena_env
+        assert loaded.placement_layouts.poses == poses
+        for invalid, message in (
+            ({"unknown": [Pose()]}, "Unknown cached"),
+            ({next(iter(poses)): [Pose()]}, "missing placed"),
+        ):
+            invalid_path = Path(directory) / f"{message.split()[0]}.yaml"
+            PlacementLayouts(invalid).write_yaml(invalid_path)
+            args.placement_layouts = str(invalid_path)
+            with pytest.raises(AssertionError, match=message):
+                get_arena_builder_from_cli(args)
+    return True
+
+
+def test_python_environment_loads_companion_layouts():
+    from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+    assert run_function_with_persistent_simulation_app(_test_python_environment_loads_companion_layouts)

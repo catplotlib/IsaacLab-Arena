@@ -80,3 +80,16 @@ def test_get_layout_selects_the_same_index_for_every_object():
     for index in (-1, 2):
         with pytest.raises(AssertionError, match="out of range"):
             cache.get_layout(index)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, {"position_xyz": [0, 0, 0], "rotation_xyzw": [0, 0, 0, 1], "extra": 1}],
+)
+def test_layout_yaml_rejects_missing_or_extra_pose_fields(tmp_path, value):
+    import yaml
+
+    path = tmp_path / "poses.yaml"
+    path.write_text(yaml.safe_dump({"cup": [value]}))
+    with pytest.raises(AssertionError, match="object 'cup', layout 0"):
+        PlacementLayouts.from_yaml(path)

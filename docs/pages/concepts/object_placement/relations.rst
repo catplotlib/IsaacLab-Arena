@@ -84,7 +84,9 @@ Most environments can be described with a small set of relations:
    parent.
 
 ``ClutterOn(parent)``
-   Defines a clutter release above a fixed ``IsAnchor`` support. ``ObjectPlacer``
+   Defines a clutter release above a fixed ``IsAnchor`` support. The support pose
+   must be known before release initialization; movable supports are unsupported.
+   ``ObjectPlacer``
    samples within a centered fraction of its footprint (``spread``, default
    0.2) and lowers objects into free vertical space in asset order, leaving
    ``clearance_m`` above the surface and at least ``gap_m`` between overlapping bounds.
@@ -234,16 +236,23 @@ The companion file maps graph object IDs to equal-length lists of poses:
 
 Positions are in the local environment frame, in metres. One index selects a
 complete layout across all objects. Environment ``i`` starts at index
-``i % num_layouts`` and cycles on its own resets. Reusing a cache bypasses
+``i % num_layouts`` and advances independently on each reset, wrapping to zero
+after the last layout. With two layouts, environment 0 selects 0, 1, 0, ...;
+environment 1 selects 1, 0, 1, ... . Partial resets advance only the resetting
+environments. There is no shared queue or exhaustion, and environments may
+reuse the same layout concurrently. Reusing a cache bypasses
 relation solving; it does not run physics settling. All non-anchor objects
 with spatial relations must be included, and object sets are unsupported.
 Assets must expose writable physics roots. Disable pose-changing variations
 and callbacks when exact replay is required.
 
-The CAP offline generator in
-``isaaclab_arena_environments/isaac_cap/clutter/generate_clutter_scene.py``
-creates such files from ``ClutterOn`` relations. Its adjacent ``README.rst``
-describes generation controls and validation limits.
+Registered Python environments also accept ``--placement_layouts`` before the
+environment subcommand; their companion files use runtime scene names. Python
+callers can pass a ``PlacementLayouts`` instance to the environment constructor.
+
+``isaaclab_arena/scripts/generate_clutter_scene.py`` generates companion files
+from ``ClutterOn`` relations. See :doc:`./clutter_placement` for generation controls
+and validation limits.
 
 Cached placement validation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

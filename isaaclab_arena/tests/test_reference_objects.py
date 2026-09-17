@@ -53,6 +53,18 @@ def _object_reference_with_cached_bbox(parent_pose: Pose | None, relative_pose: 
     return obj_ref
 
 
+@pytest.mark.parametrize("parent_pose", [None, Pose((1.0, 2.0, 3.0), (0.0, 0.0, 1.0, 0.0))])
+def test_object_reference_parent_pose_and_identity_fallback(parent_pose):
+    reference = _object_reference_with_cached_bbox(
+        parent_pose, Pose((1.0, 0.0, 0.0)), AxisAlignedBoundingBox((0, 0, 0), (1, 1, 1))
+    )
+    if parent_pose is None:
+        assert reference.get_initial_pose() is reference.initial_pose_relative_to_parent
+    assert reference.get_parent_pose() is parent_pose
+    assert reference.get_parent_pose_or_identity() == (parent_pose if parent_pose is not None else Pose.identity())
+    assert reference.get_initial_pose().position_xyz == ((1, 0, 0) if parent_pose is None else (0, 2, 3))
+
+
 def test_object_reference_world_bbox_applies_parent_yaw():
     """Parent yaw, not the prim's relative yaw, rotates the already-local referenced bbox."""
     yaw_90 = (0.0, 0.0, 2**-0.5, 2**-0.5)

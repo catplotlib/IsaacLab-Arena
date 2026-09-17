@@ -12,12 +12,8 @@ import torch
 
 import pytest
 
-from isaaclab_arena_environments.isaac_cap.clutter.geometry import ClutterRegion
-from isaaclab_arena_environments.isaac_cap.clutter.validation import (
-    ClutterSettleParams,
-    SettleTracker,
-    check_resting_poses,
-)
+from isaaclab_arena.relations.clutter.geometry import ClutterRegion
+from isaaclab_arena.relations.clutter.validation import ClutterSettleParams, SettleTracker, check_resting_poses
 
 IDENTITY = (0.0, 0.0, 0.0, 1.0)
 REGION = ClutterRegion(min_x=-0.5, min_y=-0.5, max_x=0.5, max_y=0.5, floor_z=0.75)
@@ -150,8 +146,8 @@ def test_tracker_is_unaffected_by_caller_mutating_the_snapshot():
     ],
 )
 def test_containment_uses_rotated_body_extents(position, margin, fell_off, fell_through):
+    from isaaclab_arena.relations.clutter.geometry import resting_extents
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
-    from isaaclab_arena_environments.isaac_cap.clutter.geometry import resting_extents
 
     bbox = AxisAlignedBoundingBox(min_point=(-0.1, -0.2, -0.05), max_point=(0.3, 0.4, 0.05))
     extents = resting_extents(bbox, _yaw_quaternion(90))
@@ -164,7 +160,7 @@ def test_containment_uses_rotated_body_extents(position, margin, fell_off, fell_
 
 
 def test_passive_drift_is_independent_of_quiet_thresholds():
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _pose_drift_reason
+    from isaaclab_arena.relations.clutter.settle import _pose_drift_reason
 
     initial = torch.tensor([[0.0, 0.0, 0.0, *IDENTITY]])
     current = initial.clone()
@@ -177,7 +173,7 @@ def test_passive_drift_is_independent_of_quiet_thresholds():
 
 
 def test_passive_rotation_has_its_own_tolerance():
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _pose_drift_reason
+    from isaaclab_arena.relations.clutter.settle import _pose_drift_reason
 
     initial = torch.tensor([[0.0, 0.0, 0.0, *IDENTITY]])
     current = torch.tensor([[0.0, 0.0, 0.0, *_yaw_quaternion(3)]])
@@ -194,8 +190,8 @@ def test_passive_rotation_has_its_own_tolerance():
 )
 @pytest.mark.parametrize("device", ["cpu", "cuda:0"])
 def test_support_region_rotates_offset_bounds(angle, lower, upper, device):
+    from isaaclab_arena.relations.clutter.geometry import region_above_support
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
-    from isaaclab_arena_environments.isaac_cap.clutter.geometry import region_above_support
 
     if device == "cuda:0" and not torch.cuda.is_available():
         pytest.skip("CUDA is unavailable")
@@ -209,8 +205,8 @@ def test_support_region_rotates_offset_bounds(angle, lower, upper, device):
 
 
 def test_support_region_rejects_off_axis_rotation():
+    from isaaclab_arena.relations.clutter.geometry import region_above_support
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
-    from isaaclab_arena_environments.isaac_cap.clutter.geometry import region_above_support
 
     box = AxisAlignedBoundingBox(min_point=(-1, -1, 0), max_point=(1, 1, 0.5))
     with pytest.raises(AssertionError, match="90° rotation multiples"):
@@ -218,7 +214,7 @@ def test_support_region_rejects_off_axis_rotation():
 
 
 def test_step_budget_accounts_for_physics_step_rounding():
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _step_budget
+    from isaaclab_arena.relations.clutter.settle import _step_budget
 
     params = ClutterSettleParams(timeout_s=1.23, poll_interval_s=0.41)
     with pytest.raises(AssertionError, match="allows 2 polls.*need 3"):
@@ -242,8 +238,8 @@ def test_tracker_names_moving_and_diverged_objects():
 
 
 def test_release_settings_preserve_custom_checks_without_mutating_the_caller():
+    from isaaclab_arena.relations.clutter.settle import _release_placer_params
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_placer_params
 
     params = ObjectPlacerParams(enabled_checks={"custom"}, required_checks=set(), max_placement_attempts=7)
     release = _release_placer_params(params)
@@ -257,16 +253,16 @@ def test_release_settings_preserve_custom_checks_without_mutating_the_caller():
 
 @pytest.mark.parametrize("check", ["ik_reachable", "physics_settled"])
 def test_release_checks_cannot_certify_settled_poses(check):
+    from isaaclab_arena.relations.clutter.settle import _release_placer_params
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_placer_params
 
     with pytest.raises(AssertionError, match="settled-pose checks"):
         _release_placer_params(ObjectPlacerParams(required_checks={check}))
 
 
 def test_required_release_checks_must_be_enabled():
+    from isaaclab_arena.relations.clutter.settle import _release_placer_params
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_placer_params
 
     with pytest.raises(AssertionError, match="must be enabled"):
         _release_placer_params(ObjectPlacerParams(enabled_checks=set(), required_checks={"custom"}))

@@ -96,6 +96,13 @@ class PlaceableAsset(Asset, ABC):
         if create_reset_event:
             self._pose_event_cfg = self._build_reset_event()
 
+    def maybe_set_initial_pose(
+        self, pose: Pose | PoseRange | PosePerEnv | None, create_reset_event: bool = True
+    ) -> None:
+        """Set the initial pose and reset event when pose is provided; otherwise leave both unchanged."""
+        if pose is not None:
+            self.set_initial_pose(pose, create_reset_event=create_reset_event)
+
     def _set_initial_pose(self, pose: Pose | PoseRange | PosePerEnv) -> None:
         """Store the configured pose; subclasses also update any derived construction config."""
         self.initial_pose = pose
@@ -150,11 +157,6 @@ class PlaceableAsset(Asset, ABC):
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
         """Return root-relative axis-aligned bounds."""
 
-    def get_bounding_box_rotation_xyzw(self) -> tuple[float, float, float, float]:
-        """World orientation of the axes used by get_bounding_box()."""
-        pose = self.get_initial_pose()
-        return pose.rotation_xyzw if isinstance(pose, Pose) else (0.0, 0.0, 0.0, 1.0)
-
     def get_world_bounding_box(self) -> AxisAlignedBoundingBox:
         """Return bounds transformed by a fixed root pose with a quarter-turn Z rotation.
 
@@ -164,7 +166,7 @@ class PlaceableAsset(Asset, ABC):
         initial_pose = self.get_initial_pose()
         if not isinstance(initial_pose, Pose):
             return bounding_box
-        quarters = quaternion_to_90_deg_z_quarters(self.get_bounding_box_rotation_xyzw())
+        quarters = quaternion_to_90_deg_z_quarters(initial_pose.rotation_xyzw)
         return bounding_box.rotated_90_around_z(quarters).translated(initial_pose.position_xyz)
 
     def get_collision_mesh(self) -> trimesh.Trimesh | None:

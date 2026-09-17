@@ -20,10 +20,10 @@ def generate_scene(args: argparse.Namespace) -> Path:
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.relations.clutter.geometry import dynamic_rigid_object_keys
+    from isaaclab_arena.relations.clutter.settle import groups_from_assets, settle_clutter
+    from isaaclab_arena.relations.clutter.validation import ClutterSettleParams
     from isaaclab_arena.relations.placement_layouts import PlacementLayouts
-    from isaaclab_arena_environments.isaac_cap.clutter.geometry import dynamic_rigid_object_keys
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import groups_from_assets, settle_clutter
-    from isaaclab_arena_environments.isaac_cap.clutter.validation import ClutterSettleParams
 
     output = Path(args.output)
     assert not output.exists(), f"Output already exists: {output}"

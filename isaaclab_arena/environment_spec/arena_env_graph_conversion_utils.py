@@ -41,19 +41,23 @@ _AFFORDANCE_REFERENCE_CLASSES: dict[str, type[ObjectReference]] = {
 if TYPE_CHECKING:
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 
 
 def build_arena_env_from_graph_spec(
     graph_spec: ArenaEnvGraphSpec, enable_cameras: bool = False, placement_layouts: str | Path | None = None
 ) -> IsaacLabArenaEnvironment:
-    """Build an IsaacLabArenaEnvironment from a validated ArenaEnvGraphSpec.
+    """Build an environment description from a graph specification.
 
     Args:
-        graph_spec: A validated graph spec (asset refs exist, ids unique, etc.).
-        enable_cameras: Forwarded to the embodiment so its cameras are added.
+        graph_spec: Validated graph specification.
+        enable_cameras: Whether to configure embodiment cameras.
         placement_layouts: Companion pose file overriding the graph reference, relative to the working directory.
     """
-    return build_arena_env_with_assets_from_graph_spec(graph_spec, enable_cameras, placement_layouts)[0]
+    arena_env, _ = build_arena_env_with_assets_from_graph_spec(
+        graph_spec, enable_cameras=enable_cameras, placement_layouts=placement_layouts
+    )
+    return arena_env
 
 
 def build_arena_env_with_assets_from_graph_spec(
@@ -83,6 +87,7 @@ def build_arena_env_with_assets_from_graph_spec(
     default_physics_backend = (
         graph_spec.default_physics_backend if graph_spec.default_physics_backend is not None else PhysicsBackend.PHYSX
     )
+    layouts = _load_placement_layouts(graph_spec, assets_by_node_id, placement_layouts)
     arena_env = IsaacLabArenaEnvironment(
         name=graph_spec.env_name,
         scene=Scene(assets=scene_assets),
@@ -91,22 +96,31 @@ def build_arena_env_with_assets_from_graph_spec(
         placer_params=build_checks_for_placer_params(graph_spec),
         env_cfg_callback=env_cfg_callback,
         default_physics_backend=default_physics_backend,
+        placement_layouts=layouts,
     )
-    cache_path = placement_layouts
-    if cache_path is None and graph_spec.placement_layouts is not None:
-        cache_path = graph_spec.placement_layouts_path
-    if cache_path is not None:
-        from isaaclab_arena.relations.placement_layouts import PlacementLayouts
-
-        assert not graph_spec.object_sets, "Cached layouts require concrete assets, not object sets"
-        layouts = PlacementLayouts.from_yaml(cache_path)
-        unknown = set(layouts.poses) - set(assets_by_node_id)
-        assert not unknown, f"Unknown cached graph objects: {unknown}"
-        runtime_poses = {assets_by_node_id[key].get_scene_key(): poses for key, poses in layouts.poses.items()}
-        assert len(runtime_poses) == len(layouts.poses), "Cached graph nodes must have distinct scene keys"
-        arena_env.placement_layouts = PlacementLayouts(runtime_poses)
-        arena_env.placement_layouts.validate_assets(list(assets_by_node_id.values()))
     return arena_env, assets_by_node_id
+
+
+def _load_placement_layouts(
+    graph_spec: ArenaEnvGraphSpec,
+    assets_by_node_id: dict[str, PlaceableAsset],
+    path: str | Path | None,
+) -> PlacementLayouts | None:
+    """Load companion poses and translate graph node IDs to runtime scene names."""
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+
+    path = path if path is not None else graph_spec.placement_layouts_path
+    if path is None:
+        return None
+    assert not graph_spec.object_sets, "Cached layouts require concrete assets, not object sets"
+    layouts = PlacementLayouts.from_yaml(path)
+    unknown = set(layouts.poses) - set(assets_by_node_id)
+    assert not unknown, f"Unknown cached graph objects: {unknown}"
+    runtime_poses = {assets_by_node_id[key].get_scene_key(): poses for key, poses in layouts.poses.items()}
+    assert len(runtime_poses) == len(layouts.poses), "Cached graph nodes must have distinct scene keys"
+    layouts = PlacementLayouts(runtime_poses)
+    layouts.validate_assets(list(assets_by_node_id.values()))
+    return layouts
 
 
 def build_checks_for_placer_params(graph_spec: ArenaEnvGraphSpec) -> ObjectPlacerParams:
@@ -218,6 +232,7 @@ def _get_pose_from_dict(
     if pose_dict is None:
         return None
     assert isinstance(pose_dict, dict), "initial_pose must be a mapping"
+    assert not (set(pose_dict) - {"position_xyz", "rotation_xyzw"}), "Unknown initial_pose fields"
     if "position_xyz" not in pose_dict or "rotation_xyzw" not in pose_dict:
         assert default_pose is None or isinstance(
             default_pose, Pose
@@ -225,12 +240,6 @@ def _get_pose_from_dict(
         default = default_pose if default_pose is not None else Pose.identity()
         pose_dict = default.to_dict() | pose_dict
     return Pose.from_dict(pose_dict)
-
-
-def _apply_initial_pose(asset: PlaceableAsset, pose: Pose | None) -> None:
-    """Set an asset's fixed pose at construction and on reset."""
-    if pose is not None:
-        asset.set_initial_pose(pose)
 
 
 def instantiate_assets_from_spec(
@@ -250,8 +259,7 @@ def instantiate_assets_from_spec(
         **embodiment_params
     )
 
-    _apply_initial_pose(
-        assets_by_node_id[graph_spec.embodiment.id],
+    assets_by_node_id[graph_spec.embodiment.id].maybe_set_initial_pose(
         _get_pose_from_dict(embodiment_pose, assets_by_node_id[graph_spec.embodiment.id].get_initial_pose()),
     )
 
@@ -260,8 +268,7 @@ def instantiate_assets_from_spec(
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
         **background_params
     )
-    _apply_initial_pose(
-        assets_by_node_id[graph_spec.background.id],
+    assets_by_node_id[graph_spec.background.id].maybe_set_initial_pose(
         _get_pose_from_dict(background_pose, assets_by_node_id[graph_spec.background.id].get_initial_pose()),
     )
 
@@ -270,8 +277,8 @@ def instantiate_assets_from_spec(
         initial_pose = params.pop("initial_pose", None)
         params.setdefault("instance_name", obj.id)
         assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
-        _apply_initial_pose(
-            assets_by_node_id[obj.id], _get_pose_from_dict(initial_pose, assets_by_node_id[obj.id].get_initial_pose())
+        assets_by_node_id[obj.id].maybe_set_initial_pose(
+            _get_pose_from_dict(initial_pose, assets_by_node_id[obj.id].get_initial_pose())
         )
 
     for object_set in graph_spec.object_sets or []:

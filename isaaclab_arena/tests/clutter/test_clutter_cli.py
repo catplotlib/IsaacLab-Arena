@@ -13,7 +13,7 @@ import pytest
 from isaaclab_arena.tests.utils.constants import TestConstants
 
 CLUTTER_DIR = Path(__file__).parents[3] / "isaaclab_arena_environments/isaac_cap/clutter"
-SCRIPT = CLUTTER_DIR / "generate_clutter_scene.py"
+SCRIPT = Path(TestConstants.scripts_dir) / "generate_clutter_scene.py"
 
 
 def _arguments(output):
@@ -47,7 +47,7 @@ def test_settle_import_does_not_load_usd():
             TestConstants.python_path,
             "-c",
             (
-                "import sys; import isaaclab_arena_environments.isaac_cap.clutter.settle; "
+                "import sys; import isaaclab_arena.relations.clutter.settle; "
                 "assert 'pxr' not in sys.modules, 'USD imported before SimulationApp startup'"
             ),
         ],

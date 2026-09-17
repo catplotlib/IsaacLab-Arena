@@ -215,14 +215,21 @@ def get_arena_builder_from_cli(
         f" (got example_environment={example_environment!r}, env_spec={env_spec!r})"
     )
 
-    assert env_spec is not None or args_cli.placement_layouts is None, "--placement_layouts requires --env_spec"
-
     # Either env graph spec yaml OR example env name
     arena_env = (
         arena_env_from_graph_spec(env_spec, args_cli)
         if env_spec is not None
         else _arena_env_from_example_name(example_environment, args_cli)
     )
+    if env_spec is None and args_cli.placement_layouts is not None:
+        from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+
+        layouts = PlacementLayouts.from_yaml(args_cli.placement_layouts)
+        assets = list(arena_env.scene.assets.values())
+        if arena_env.embodiment is not None:
+            assets.append(arena_env.embodiment)
+        layouts.validate_assets(assets)
+        arena_env.placement_layouts = layouts
     builder_cfg = arena_env_builder_cfg_from_argparse(args_cli)
     return ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides)
 

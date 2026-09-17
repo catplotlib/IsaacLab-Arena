@@ -5,6 +5,7 @@
 
 import math
 import torch
+from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Real
 
@@ -29,13 +30,19 @@ class Pose:
         assert len(self.rotation_xyzw) == 4
 
     @classmethod
-    def from_dict(cls, value: dict) -> "Pose":
-        """Parse a complete position_xyz/rotation_xyzw mapping with a finite unit quaternion."""
+    def from_dict(cls, value: dict[str, Sequence[float]] | None) -> "Pose | None":
+        """Parse a finite pose, defaulting an omitted rotation to identity.
+
+        None returns None. Extra fields are ignored. Quaternions must be unit length.
+        """
+        if value is None:
+            return None
         assert isinstance(value, dict), "Pose must be a mapping"
-        assert set(value) == {"position_xyz", "rotation_xyzw"}, "Pose requires position_xyz and rotation_xyzw"
+        assert "position_xyz" in value, "Pose requires position_xyz"
+        value = {"position_xyz": value["position_xyz"], "rotation_xyzw": value.get("rotation_xyzw", (0, 0, 0, 1))}
         for name, size in (("position_xyz", 3), ("rotation_xyzw", 4)):
             values = value[name]
-            assert isinstance(values, (list, tuple)) and len(values) == size, f"{name} needs {size} numbers"
+            assert isinstance(values, Sequence) and len(values) == size, f"{name} needs {size} numbers"
             assert all(
                 isinstance(v, Real) and not isinstance(v, bool) and math.isfinite(v) for v in values
             ), f"{name} must contain finite numbers"

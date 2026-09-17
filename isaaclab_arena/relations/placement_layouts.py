@@ -86,6 +86,11 @@ class PlacementLayouts:
             poses[name] = []
             for index, value in enumerate(values):
                 try:
+                    assert isinstance(value, dict), "Cached pose must be a mapping"
+                    assert set(value) == {
+                        "position_xyz",
+                        "rotation_xyzw",
+                    }, "Cached pose requires position_xyz and rotation_xyzw only"
                     poses[name].append(Pose.from_dict(value))
                 except AssertionError as error:
                     raise AssertionError(f"{path}: object '{name}', layout {index}: {error}") from error

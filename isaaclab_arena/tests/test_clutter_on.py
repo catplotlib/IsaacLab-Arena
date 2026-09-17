@@ -372,7 +372,7 @@ def test_clutter_release_stays_inside_a_room_mesh():
 def test_release_rejects_an_incomplete_layout_before_writing():
     from unittest.mock import MagicMock
 
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_objects
+    from isaaclab_arena.relations.clutter.settle import _release_objects
 
     support, objects = _scene()
     assets = [support, *objects]

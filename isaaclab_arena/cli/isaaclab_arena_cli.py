@@ -113,6 +113,12 @@ def add_isaaclab_arena_cli_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     arena_group.add_argument(
+        "--placement_layouts",
+        type=str,
+        default=None,
+        help="Companion pose YAML; graph node IDs for --env_spec, scene names for Python environments",
+    )
+    arena_group.add_argument(
         "--list_variations",
         action="store_true",
         default=False,
@@ -124,12 +130,6 @@ def add_env_graph_spec_cli_args(parser: argparse.ArgumentParser) -> None:
     """Add environment graph spec specific command line arguments to the given parser."""
     env_graph_spec_group = parser.add_argument_group(
         "Environment Graph Spec Arguments", "Arguments specific to environment graph spec"
-    )
-    env_graph_spec_group.add_argument(
-        "--placement_layouts",
-        type=str,
-        default=None,
-        help="Companion pose YAML overriding the environment's placement_layouts file (requires --env_spec)",
     )
     env_graph_spec_group.add_argument(
         "--env_spec",

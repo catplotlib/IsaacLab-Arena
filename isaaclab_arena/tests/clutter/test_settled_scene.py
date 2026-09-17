@@ -56,12 +56,12 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.relations.clutter.settle import settle_clutter
     from isaaclab_arena.relations.object_placer import ObjectPlacer
     from isaaclab_arena.relations.placement_events import write_scene_poses_to_sim
     from isaaclab_arena.relations.placement_layouts import PlacementLayouts
     from isaaclab_arena.relations.relation_solver import RelationSolver
-    from isaaclab_arena_environments.isaac_cap.clutter.generate_clutter_scene import generate_scene
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import settle_clutter
+    from isaaclab_arena.scripts.generate_clutter_scene import generate_scene
 
     data = yaml.safe_load(SOURCE.read_text())
     data["placement_validators"] = {
@@ -75,7 +75,7 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
     args = _arguments(path)
     args.env_spec = source
     args.num_layouts = 4
-    with patch("isaaclab_arena_environments.isaac_cap.clutter.settle.settle_clutter", wraps=settle_clutter) as settle:
+    with patch("isaaclab_arena.relations.clutter.settle.settle_clutter", wraps=settle_clutter) as settle:
         assert generate_scene(args) == path
     # Each batch reserves seeds for 2 environments, 10 candidates and 3 trials.
     assert [call.kwargs["seed"] for call in settle.call_args_list] == [42, 102]
@@ -197,8 +197,8 @@ def _test_settling_restores_scene_and_retries_only_rejected_layouts(simulation_a
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_objects, settle_clutter
-    from isaaclab_arena_environments.isaac_cap.clutter.validation import ClutterRestVerdict, check_resting_poses
+    from isaaclab_arena.relations.clutter.settle import _release_objects, settle_clutter
+    from isaaclab_arena.relations.clutter.validation import ClutterRestVerdict, check_resting_poses
 
     arena_env, assets = build_arena_env_with_assets_from_graph_spec(ArenaEnvGraphSpec.from_yaml(SOURCE))
     env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False)).make_registered()
@@ -212,11 +212,9 @@ def _test_settling_restores_scene_and_retries_only_rejected_layouts(simulation_a
         env.reset()
         initial = env.unwrapped.scene.get_state()
         with (
+            patch("isaaclab_arena.relations.clutter.settle._release_objects", wraps=_release_objects) as release,
             patch(
-                "isaaclab_arena_environments.isaac_cap.clutter.settle._release_objects", wraps=_release_objects
-            ) as release,
-            patch(
-                "isaaclab_arena_environments.isaac_cap.clutter.settle.check_resting_poses",
+                "isaaclab_arena.relations.clutter.settle.check_resting_poses",
                 side_effect=reject_second_once,
             ),
         ):
@@ -227,7 +225,7 @@ def _test_settling_restores_scene_and_retries_only_rejected_layouts(simulation_a
             torch.testing.assert_close(actual, checked[check_index], atol=0, rtol=0)
         _assert_scene_state_equal(env.unwrapped.scene.get_state(), initial)
         with patch(
-            "isaaclab_arena_environments.isaac_cap.clutter.settle.check_resting_poses",
+            "isaaclab_arena.relations.clutter.settle.check_resting_poses",
             return_value=ClutterRestVerdict(fell_off=[0]),
         ):
             with pytest.raises(AssertionError, match="fell off: cube_0"):
@@ -246,7 +244,7 @@ def _test_displaced_passive_neighbor_prevents_cache_output(simulation_app):
     import tempfile
     import yaml
 
-    from isaaclab_arena_environments.isaac_cap.clutter.generate_clutter_scene import generate_scene
+    from isaaclab_arena.scripts.generate_clutter_scene import generate_scene
 
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory) / "source.yaml"
@@ -276,10 +274,10 @@ def _test_release_failures_retry_without_releasing_invalid_layouts(simulation_ap
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.relations.clutter.settle import _release_objects, settle_clutter
     from isaaclab_arena.relations.object_placer import ObjectPlacer
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
     from isaaclab_arena.relations.placement_validation import PlacementCheck
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_objects, settle_clutter
 
     arena_env, assets = build_arena_env_with_assets_from_graph_spec(ArenaEnvGraphSpec.from_yaml(SOURCE))
     env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False)).make_registered()
@@ -303,9 +301,7 @@ def _test_release_failures_retry_without_releasing_invalid_layouts(simulation_ap
 
             with (
                 patch.object(ObjectPlacer, "_validate_candidates", reject_candidates),
-                patch(
-                    "isaaclab_arena_environments.isaac_cap.clutter.settle._release_objects", wraps=_release_objects
-                ) as release,
+                patch("isaaclab_arena.relations.clutter.settle._release_objects", wraps=_release_objects) as release,
             ):
                 if exhaust:
                     with pytest.raises(AssertionError, match="No settled layout after 3.*release placement failed"):
@@ -436,10 +432,10 @@ def _test_generation_honors_requested_validators(simulation_app, tmp_path, check
     from contextlib import nullcontext
     from unittest.mock import patch
 
+    from isaaclab_arena.relations.clutter.settle import _release_objects
     from isaaclab_arena.relations.placement_validator_registry import PlacementValidatorRegistry
     from isaaclab_arena.relations.placement_validators import PlacementValidator
-    from isaaclab_arena_environments.isaac_cap.clutter.generate_clutter_scene import generate_scene
-    from isaaclab_arena_environments.isaac_cap.clutter.settle import _release_objects
+    from isaaclab_arena.scripts.generate_clutter_scene import generate_scene
 
     validated_batches = []
 
@@ -466,9 +462,7 @@ def _test_generation_honors_requested_validators(simulation_app, tmp_path, check
     with (
         patch.dict(registry._components, reject_release=RejectRelease),
         patch.object(RejectRelease, "is_available", return_value=available),
-        patch(
-            "isaaclab_arena_environments.isaac_cap.clutter.settle._release_objects", wraps=_release_objects
-        ) as release,
+        patch("isaaclab_arena.relations.clutter.settle._release_objects", wraps=_release_objects) as release,
     ):
         with pytest.raises(AssertionError, match=expected_error) if expected_error else nullcontext():
             assert generate_scene(args) == output
