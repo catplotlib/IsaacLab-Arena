@@ -19,11 +19,11 @@ External-right camera views after one second of settling (placement seed 43 for 
 
 ## Zero action
 
-Run the single variant in the GUI from the Arena repository root inside its container:
+Run the cluttered variant in the GUI from the Arena repository root inside its container:
 
 ```bash
 /isaac-sim/python.sh isaaclab_arena/evaluation/experiment_runner.py \
-  --experiment_config isaaclab_arena_environments/isaac_cap/syringe_sort/experiment_configs/single_zero_action_experiment.yaml \
+  --experiment_config isaaclab_arena_environments/isaac_cap/syringe_sort/experiment_configs/cluttered_zero_action_experiment.yaml \
   --viz kit
 ```
 
@@ -49,7 +49,7 @@ planning code into Arena. These instructions cover `both` and `cluttered`.
        --viz none shared.environment_builder.placement_seed=43'
    ```
 
-   Use `experiment_configs/both_cap_remote_experiment.yaml` for both, or `--viz kit` for the GUI.
+   Add `shared.environment.type=syringe_both_newton` for both, or use `--viz kit` for the GUI.
    Keep this process running and wait for `Completed setting up the environment`.
    Arena waits up to 180 seconds for CAP; starting CAP earlier can exhaust its
    60-second first-image timeout while the scene loads.

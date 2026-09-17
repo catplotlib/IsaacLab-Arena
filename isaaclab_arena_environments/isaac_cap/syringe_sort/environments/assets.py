@@ -9,6 +9,8 @@ from isaaclab_arena.assets.nucleus import ARENA_STAGING_NUCLEUS_DIR
 from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.utils.pose import Pose
 
+# TODO(alexmillane) [syringe-assets-s3-sync]: Switch to ARENA_NUCLEUS_DIR after the S3 mirror syncs.
+# TODO(alexmillane) [cap-assets-permanent-location]: Replace temp_newton_envs with the permanent asset layout.
 SYRINGE_ASSET_ROOT = (
     f"{ARENA_STAGING_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets"
 )

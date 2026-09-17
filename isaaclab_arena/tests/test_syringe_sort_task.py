@@ -16,20 +16,21 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 
 def _test_syringe_drop(_simulation_app):
     import torch
-    from pathlib import Path
 
     from isaaclab.utils.math import quat_apply
 
-    from isaaclab_arena.evaluation.arena_experiment_config_loader import load_arena_experiment_from_config_file
-    from isaaclab_arena.evaluation.run_execution import build_arena_builder_from_run_cfg
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.policy.zero_action_policy import ZeroActionPolicy, ZeroActionPolicyCfg
-    from isaaclab_arena_environments.isaac_cap import syringe_sort
-
-    experiment = load_arena_experiment_from_config_file(
-        Path(syringe_sort.__file__).parent / "experiment_configs/single_zero_action_experiment.yaml",
-        device="cuda:0",
+    from isaaclab_arena_environments.isaac_cap.registration import register_components
+    from isaaclab_arena_environments.isaac_cap.syringe_sort.environments.environment import (
+        SyringeSingleEnvironment,
+        SyringeSortEnvironmentCfg,
     )
-    env = build_arena_builder_from_run_cfg(next(iter(experiment.runs.values()))).make_registered()
+
+    register_components()
+    arena_env = SyringeSingleEnvironment().build(SyringeSortEnvironmentCfg())
+    env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(solve_relations=False)).make_registered()
     try:
         obs, _ = env.reset()
         base = env.unwrapped
