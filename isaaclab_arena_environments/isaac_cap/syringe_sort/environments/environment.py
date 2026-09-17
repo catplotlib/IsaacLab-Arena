@@ -3,54 +3,36 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# TODO(alexmillane) [physics-parameters-overrides-missing-feature]: Remove this file once we can
-# control the physics parameters in the yaml files.
+"""Syringe factories with camera, placement, and solver-schema adaptations."""
 
-"""Syringe sorting with the shared CAP FR3 embodiment and task-owned physics."""
-
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from functools import partial
 from pathlib import Path
 
 from isaaclab.utils.configclass import configclass
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
+from isaaclab_newton.physics import MJWarpSolverCfg
 
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
-from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 
+# TODO(alexmillane) [isaaclab-multiccd-config-missing-feature]: Remove this shim once
+# Isaac Lab exposes enable_multiccd in MJWarpSolverCfg so YAML can set it directly.
 @configclass
 class SyringeSolverCfg(MJWarpSolverCfg):
-    enable_multiccd: bool = True
-    """Enable multiple contacts for convex collision pairs, as in CAP."""
+    enable_multiccd: bool = False
+    """Expose Newton's multi-contact option for graph YAML overrides."""
 
 
-def configure_syringe_physics(env_cfg):
-    """Apply CAP's 50 Hz, ten-substep Newton tool-sort profile."""
-    env_cfg.sim.dt = 0.02
-    env_cfg.sim.render_interval = 1
-    env_cfg.sim.gravity = (0.0, 0.0, -9.81)
-    env_cfg.sim.use_newton_actuators = True
-    env_cfg.decimation = 1
-    env_cfg.scene.replicate_physics = False
-    env_cfg.sim.physics = NewtonCfg(
-        solver_cfg=SyringeSolverCfg(
-            solver="newton",
-            disable_sensors=True,
-            integrator="implicitfast",
-            nconmax=5000,
-            njmax=5000,
-            iterations=100,
-            ls_iterations=50,
-            impratio=20.0,
-            cone="elliptic",
-            use_mujoco_contacts=True,
-        ),
-        default_shape_cfg=NewtonShapeCfg(ke=60000.0, kd=500.0, gap=0.002),
-        num_substeps=10,
-        use_cuda_graph=True,
-        debug_mode=False,
+def _apply_syringe_graph_config(env_cfg, graph_callback):
+    """Expose the missing solver field before applying the graph's configuration."""
+    solver_cfg = env_cfg.sim.physics.solver_cfg
+    env_cfg.sim.physics.solver_cfg = SyringeSolverCfg(
+        **{field.name: getattr(solver_cfg, field.name) for field in fields(solver_cfg)}
     )
-    return env_cfg
+    # TODO(alexmillane) [yaml-scene-annotation-resolution]: Move this to YAML once
+    # env_cfg_override resolves inherited and composed scene field annotations.
+    env_cfg.scene.replicate_physics = False
+    return graph_callback(env_cfg)
 
 
 @dataclass
@@ -92,8 +74,7 @@ class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
         if cfg.episode_length_s is not None:
             assert cfg.episode_length_s > 0
             arena_env.task.episode_length_s = cfg.episode_length_s
-        arena_env.default_physics_backend = PhysicsBackend.NEWTON
-        arena_env.env_cfg_callback = configure_syringe_physics
+        arena_env.env_cfg_callback = partial(_apply_syringe_graph_config, graph_callback=arena_env.env_cfg_callback)
         return arena_env
 
 
