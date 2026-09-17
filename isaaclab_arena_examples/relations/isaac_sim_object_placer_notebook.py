@@ -13,9 +13,8 @@ from __future__ import annotations
 # NOTE: When running as a notebook, first run this cell to launch the simulation app:
 from isaaclab.app import AppLauncher
 
-if __name__ == "__main__":
-    print("Launching simulation app once in notebook")
-    simulation_app = AppLauncher()
+print("Launching simulation app once in notebook")
+simulation_app = AppLauncher()
 
 # %%
 
@@ -102,7 +101,6 @@ def smoke_test_isaac_sim_object_placer(simulation_app: SimulationApp) -> bool:
 
 # %%
 # When running as a notebook (after launching simulation_app), uncomment and run:
-if __name__ == "__main__":
-    run_isaac_sim_object_placer_demo()
+run_isaac_sim_object_placer_demo()
 
 # %%

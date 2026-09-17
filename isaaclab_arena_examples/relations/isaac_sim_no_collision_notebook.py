@@ -14,9 +14,8 @@ from __future__ import annotations
 import pinocchio  # noqa: F401
 from isaaclab.app import AppLauncher
 
-if __name__ == "__main__":
-    print("Launching simulation app once in notebook")
-    simulation_app = AppLauncher()
+print("Launching simulation app once in notebook")
+simulation_app = AppLauncher()
 
 # %%
 
