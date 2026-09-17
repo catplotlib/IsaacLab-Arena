@@ -122,11 +122,19 @@ The test sweep covered **1,413 distinct cases: 1,403 passed, seven skipped, one 
 - `isaaclab_arena_g1/g1_whole_body_controller/wbc_policy/tests/test_g1_agile_policy.py::test_agile_standing`: robot falls.
 - `isaaclab_arena_examples/tests/test_review_gui.py::TestSimAppSimPreview::test_run_sim_preview_via_simapp_subprocess`: expected one viewport video, found zero.
 
- Five skips require endpoint credentials; two are existing Mimic skips. This is not a fully passing suite.
+Five skips require endpoint credentials; two are existing Mimic skips. This is not a fully passing suite.
 
 Two notebook examples needed import guards to avoid starting another simulator during test collection/execution; that crash also reproduced on the original image. After the guards, targeted tests and the remaining non-camera cases passed. The non-camera total combines the initial successful cases with a resumed run. Preview failure cleanup also hung; the baseline comparison used a temporary shutdown timeout without changing preview behavior.
 
-Detailed results, image IDs, JUnit files, and build logs are in `/tmp/arena-local-validation/`. The user approved committing with these baseline failures documented. The reported unexpected-rebuild investigation follows that commit on `dev-curobo`; no CI changes are included.
+Detailed results, image IDs, JUnit files, and build logs are in `/tmp/arena-local-validation/`. The user approved committing with these baseline failures documented. The follow-up unexpected-rebuild investigation ran on `dev-curobo`; results are below. No CI changes are included.
+
+## Unexpected-rebuild investigation (`dev-curobo`)
+
+A normal launcher run of the zero-action `cube_goal_pose` scene completed without invoking a Docker build or changing the image ID. Explicit builds before and after the scene reused every COPY/RUN step. Only two files under `outputs/` appeared; neither entered a copied Docker path.
+
+Isolated COPY probes found two early-stage invalidation triggers without source edits: the entrypoint-created `submodules/IsaacLab/_isaac_sim` symlink and generated `*.egg-info` metadata. The symlink already existed in this checkout, so this scene run did not reproduce the first-launch case. Ignored bytecode and timestamp-only changes retained cache. Root notes and editor settings also invalidate the broad `COPY *.*`, but only at the later runtime boundary.
+
+Recommended follow-up: exclude the generated symlink and package metadata, then narrow the root wildcard to required files. The proposed ignore rules retained cache in an isolated probe; production exclusions remain unchanged. These are verified possible triggers, not a diagnosis of the original user's particular rebuild. Detailed evidence: `/tmp/arena-rebuild-investigation/report.md`.
 
 ## Phase 2: CI and remote cache — deferred
 
