@@ -8,7 +8,40 @@ experiment runner owns simulation, episode limits, success checks, and recording
 `DroidSessionPolicy` exchanges observations and joint-action chunks through files;
 it does not require an inference server or start a model session.
 
-## Run the experiment
+## Ask a fresh Astra agent to run it
+
+Check out `cvolk/feature/astra-droid-tool-control` from
+[PR #1271](https://github.com/isaac-sim/IsaacLab-Arena/pull/1271) in an installed Arena
+checkout with its Docker container running. Open a fresh Astra agent in that
+checkout, with terminal access, image viewing, and support for spawning agents
+without inherited conversation history. Give it this instruction:
+
+```text
+Read isaaclab_arena_examples/robot_tool_control/EXPERIMENT_PROMPT.md and run
+/absolute/path/to/robolab_openpi_jobs_config.yaml with Astra.
+Arena is installed and its Docker container is running.
+```
+
+For the included one-episode Rubik's-cube experiment, use:
+
+```text
+Read isaaclab_arena_examples/robot_tool_control/EXPERIMENT_PROMPT.md and run
+isaaclab_arena_examples/robot_tool_control/experiment_configs/robolab_rubiks_cube.yaml
+with Astra. Arena is installed and its Docker container is running.
+```
+
+The [experiment instructions](EXPERIMENT_PROMPT.md) tell the agent to discover the
+container, make the supplied YAML available, launch the Experiment Runner, assign
+each episode to a fresh controller, and return the results and video paths. You do
+not need to start the runner or attach controllers yourself. The full downloaded
+file requests 38 Runs with ten episodes each; the agent preserves that scope.
+
+The top-level agent coordinates the run using its agent tools. Arena does not
+create model sessions, and this workflow requires fresh-controller support in the
+hosting session. It uses the checkout's supported dependencies and does not depend
+on the original author's container name, output directories, or validation helper.
+
+## Run the experiment manually
 
 Use an installed Arena checkout and its running Docker container. Run these commands
 from `/workspaces/isaaclab_arena` inside the container as the host user. Outside an
@@ -44,7 +77,7 @@ Configuration paths resolve from the runtime working directory. Copy downloaded
 YAML files into the mounted checkout or another existing mount before running them.
 For Docker, a host Downloads directory is not automatically available in the container.
 
-## Attach a controller
+## Attach a controller manually
 
 The runner prints the policy's unique session directory under the experiment outputs.
 It waits for the controller without advancing physics, with a 600-second timeout
@@ -109,8 +142,10 @@ boundary under `session.last_event` and closure under `session.status`.
 One controller conversation serves one episode. It can use feedback from earlier
 chunks in that episode, but must not reuse targets or observations from prior
 episodes. Resetting an Arena policy does not erase the model's conversation.
-For multiple episodes, an external driver must start a fresh conversation at each
-boundary. This example supplies the exchange protocol and client, not that driver.
+For multiple episodes, the coordinating agent following [EXPERIMENT_PROMPT.md](EXPERIMENT_PROMPT.md)
+starts a fresh controller at each boundary. If launching manually, provide the same
+handoff yourself or through an external driver. The policy and client do not create
+model conversations.
 
 The initial interface supports one DROID environment with `droid_abs_joint_pos`.
 Invalid, stale, or timed-out responses stop the Run and retain diagnostic artifacts;

@@ -74,9 +74,14 @@ waiting. Use the next images and measured state to decide the next chunk.
 
 ## Stop at the episode boundary
 
-Remember the first request's `episode_index` and serve only that episode. Stop if
-the episode ends, the session closes, or a request has a different episode index.
-Read the latest boundary event in `inspect` output under `session.last_event`.
+If the caller supplies an expected `policy_instance_id`, `env_id`, and
+`episode_index`, verify all three before serving the first request. Otherwise,
+remember that identity from the first request. Serve only that episode. Stop if
+the episode ends, the session closes, or a request has a different identity.
+Read the assigned episode's status in
+`episodes/env<env_id>_episode<episode_index>/episode.json` under the session directory;
+`ended` and `stopped` are terminal. The latest boundary event is also exposed under
+`session.last_event`, but it may already describe the next episode when you inspect it.
 An `episode_ended` event marks a boundary, not proof of success. Arena's episode
 records own the outcome. Do not claim success solely because you submitted a
 placement action, and do not continue with another attempt in this conversation.

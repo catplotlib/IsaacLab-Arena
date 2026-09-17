@@ -54,6 +54,12 @@ There is no host, port, model API key, or manually selected session directory.
 The attached session determines the actual model. Selecting this configuration does not
 launch or authenticate a model session.
 
+For an agent-led run, give a fresh Astra agent the Experiment YAML path and
+[`EXPERIMENT_PROMPT.md`](../../isaaclab_arena_examples/robot_tool_control/EXPERIMENT_PROMPT.md).
+The agent discovers the existing runtime, launches the runner, and uses its agent tools
+to create a controller without inherited history for each episode. The hosting session
+must support fresh controller conversations; this is not a model-launching API in Arena.
+
 OpenPI requires its server to be ready. The session policy requires a controller session
 to consume requests. The runner prints the policy request directory so that the controller
 can attach; it waits without advancing physics and fails explicitly if the timeout expires.
@@ -181,9 +187,10 @@ Within an episode it retains feedback and can correct its next chunk.
 
 The filesystem protocol can separate artifacts and reject old responses, but cannot prove
 that a model context is fresh. Controller provenance must state how conversations were
-created. No completed or interrupted attempt is replaced by a retry. Automatically serving
-all 380 episodes requires a driver that can create fresh conversations; the policy adapter
-alone does not supply that capability.
+created. No completed or interrupted attempt is replaced by a retry. The coordinating
+agent following `EXPERIMENT_PROMPT.md` supplies episode handoffs using the hosting
+session's fresh-agent capability. A standalone driver can also supply them; the policy
+adapter alone does not create conversations.
 
 ## Output ownership and lifecycle
 
@@ -306,3 +313,7 @@ pinned Isaac Lab revision, `bb0c8e1b9af381bf13064ec3303e17db79e4b6ef`. The local
 was already at a different revision, which causes CLI/import incompatibilities. The submodule
 and container configuration were left unchanged; the temporary validation snapshot and
 launcher are not part of the implementation.
+
+The agent-led launch instructions were added after these runtime checks. Their shell
+commands and episode handoffs were reviewed, but the complete launch prompt has not
+been exercised on another person's installation.
