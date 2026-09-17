@@ -248,7 +248,7 @@ def test_direction_variation_lights_injected_directional_light():
     assert result
 
 
-def _test_graph_parses_cap_asset_poses(simulation_app):
+def _test_graph_parses_asset_poses(simulation_app):
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_environments import isaac_cap
@@ -275,7 +275,7 @@ def _test_graph_parses_cap_asset_poses(simulation_app):
     return True
 
 
-def test_graph_parses_cap_asset_poses():
+def test_graph_parses_asset_poses():
     from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
-    assert run_function_with_persistent_simulation_app(_test_graph_parses_cap_asset_poses)
+    assert run_function_with_persistent_simulation_app(_test_graph_parses_asset_poses)
