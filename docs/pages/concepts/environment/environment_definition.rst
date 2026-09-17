@@ -247,17 +247,21 @@ values may have different freshness than on normal resets.
 Every reset, including ``reset_to()``, records and ends any started episode, even if it was
 interrupted. Each environment's first reset only captures its starting state. A JSONL row
 is emitted only for an episode whose starting-state capture succeeded. Retrying a failed reset
-does not emit a JSONL row for the failed attempt; failed attempts consume episode indices
-so variation draws remain distinct.
+does not emit a JSONL row for the failed attempt. Attempts that reach reset events consume
+an episode index even if they later fail, so variation draws remain distinct.
+
+JSONL writes are per environment, not atomic across a reset batch. If recording raises,
+rows already written remain; retrying starts fresh episodes without re-emitting the failed
+batch. Unwritten episodes from that batch are lost.
 
 This filtering applies only to the episode JSONL. Isaac Lab's dataset recorder runs before
 Arena's reset bookkeeping and can still export retry attempts; demo-based metrics may count
 those attempts as well. Use JSONL as the authoritative list of recorded episodes and match
 demos by ``(env_id, episode_in_env)``, excluding demos with no matching row.
 
-Partial first resets remain unsupported by ``SuccessRateMetric``; ``EpisodeIdentityRecorder`` still
-uses a global first-reset flag. Those dataset-recorder limitations are separate from the
-per-environment JSONL lifecycle.
+Begin with a full reset when using Isaac Lab's dataset or metric recorders. ``SuccessRateMetric``
+requires it, and ``EpisodeIdentityRecorder`` uses a global first-reset flag, so demo IDs are not
+reliable after a partial first reset. Per-environment first-reset handling applies to Arena JSONL.
 
 **Most placement tuning.** YAML ``placement_validators`` can set only four
 ``ObjectPlacerParams`` fields: ``enabled_checks``, ``required_checks``,

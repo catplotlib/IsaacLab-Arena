@@ -481,6 +481,35 @@ def _test_task_recorder_lifecycle(simulation_app, output_dir, initial_reset_mode
             records = read_records()
             assert records[-1]["episode_in_env"] == previous_index + 2, failure_stage
 
+        # A write can fail after one environment's row is persisted. Retrying must not duplicate it.
+        records_before = len(records)
+        notification_count = len(notifications)
+        previous_indices = [base_env.get_episode_index(i) for i in range(NUM_ENVS)]
+        append_record = base_env.episode_recorder_manager._append_record
+
+        def append_then_fail(record):
+            append_record(record)
+            raise OSError("episode output failed after append")
+
+        with patch.object(base_env.episode_recorder_manager, "_append_record", side_effect=append_then_fail):
+            with pytest.raises(OSError, match="episode output failed after append"):
+                env.reset()
+        records = read_records()
+        assert len(records) == records_before + 1, "The first row persists even though the batch failed"
+        assert records[-1]["env_id"] == 0, "The second environment's row must not have been written"
+        assert notifications[notification_count:] == [], "Failed recording must stop the reset before capture"
+        assert [base_env.get_episode_index(i) for i in range(NUM_ENVS)] == previous_indices
+
+        env.reset()
+        assert read_records() == records, "Retry must not re-emit any finishing episode from the failed batch"
+        assert notifications[notification_count:] == [[0, 1]], "Retry must capture fresh starts for both environments"
+        env.reset()
+        records = read_records()
+        assert len(records) == records_before + 3, "Both fresh episodes must be recordable after recovery"
+        assert [(record["env_id"], record["episode_in_env"]) for record in records[-NUM_ENVS:]] == [
+            (env_id, episode_index + 1) for env_id, episode_index in enumerate(previous_indices)
+        ], "Failure before reset events must not reserve an extra episode index"
+
         # Force a timeout through step() to exercise automatic resets as well as explicit ones.
         previous_poses = dict(term.starting_poses)
         notification_count = len(notifications)
@@ -568,7 +597,8 @@ def test_nested_episode_recorder_diagnostics():
         manager.record_pre_reset([0])
 
 
-def _test_episode_recorder_reset_contract(simulation_app):  # noqa: ARG001
+def test_episode_recorder_reset_contract():
+    """Stateful reset dispatch needs only a fake environment, not SimulationApp."""
     from isaaclab.managers import ManagerTermBase
 
     from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderManager, EpisodeRecorderTermCfg
@@ -602,7 +632,6 @@ def _test_episode_recorder_reset_contract(simulation_app):  # noqa: ARG001
     with pytest.raises(RuntimeError, match="Episode recorder term 'broken' failed during reset") as error:
         failing_manager.reset()
     assert isinstance(error.value.__cause__, ValueError)
-    return True
 
 
 def _test_builder_episode_recorder_terms(simulation_app):  # noqa: ARG001
@@ -743,12 +772,6 @@ def test_builder_episode_recorder_terms():
     assert run_function_with_persistent_simulation_app(
         _test_builder_episode_recorder_terms, headless=HEADLESS
     ), "builder episode recorder terms test failed"
-
-
-def test_episode_recorder_reset_contract():
-    assert run_function_with_persistent_simulation_app(
-        _test_episode_recorder_reset_contract, headless=HEADLESS
-    ), "episode recorder reset contract test failed"
 
 
 def test_core_terms(tmp_path):
