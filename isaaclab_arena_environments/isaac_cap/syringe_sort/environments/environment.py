@@ -15,6 +15,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
 
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
+from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 
 @configclass
@@ -91,6 +92,7 @@ class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
         if cfg.episode_length_s is not None:
             assert cfg.episode_length_s > 0
             arena_env.task.episode_length_s = cfg.episode_length_s
+        arena_env.default_physics_backend = PhysicsBackend.NEWTON
         arena_env.env_cfg_callback = configure_syringe_physics
         return arena_env
 
