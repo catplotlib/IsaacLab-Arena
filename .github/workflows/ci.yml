@@ -175,18 +175,22 @@ jobs:
                           env.ARENA_IMAGE, env.ARENA_TARGET) || '' }}
 
       - name: Report Docker cache usage
+        shell: bash
         if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
         # Diagnostics must not hide the original build result.
         continue-on-error: true
         env:
           BUILD_REF: ${{ fromJSON(steps.build.outputs.metadata || '{}')['buildx.build.ref'] }}
         run: |
+          # History logs expects the record ID, not the full builder/node/record reference.
+          BUILD_REF=${BUILD_REF##*/}
           # On failure, metadata may be absent; this dedicated builder has only one build.
           docker buildx history logs --progress=rawjson ${BUILD_REF:+"$BUILD_REF"} > build-cache.jsonl 2>&1
           python3 docker/report_build_cache.py < build-cache.jsonl | tee build-cache-summary.md
           cat build-cache-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload cache diagnostics
+        continue-on-error: true
         if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
         uses: actions/upload-artifact@v4
         with:
