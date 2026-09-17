@@ -42,6 +42,10 @@ class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
 
         spec = ArenaEnvGraphSpec.from_yaml(str(Path(__file__).with_name(self.yaml_file)))
         arena_env = spec.to_arena_env(enable_cameras=cfg.enable_cameras)
+        arena_env.placer_params.random_yaw_init = False
+        arena_env.placer_params.allow_best_loss_fallbacks = False
+        arena_env.placer_params.solver_params.clearance_m = 0.015
+        arena_env.placer_params.max_placement_attempts = 30
 
         # TODO(alexmillane) [berkley-cap-align-embodiments]: Remove these per-task custom
         # embodiment configurations once the upstream repo has done it.
@@ -83,12 +87,6 @@ class SyringeBothEnvironment(SyringeBase):
     yaml_file = "syringe_both.yaml"
     _legacy_argparse_cfg_type = SyringeBothEnvironmentCfg
 
-    def build(self, cfg: SyringeBothEnvironmentCfg):
-        arena_env = super().build(cfg)
-        arena_env.placer_params.random_yaw_init = False
-        arena_env.placer_params.allow_best_loss_fallbacks = False
-        return arena_env
-
 
 @dataclass
 class SyringeClutteredEnvironmentCfg(SyringeBothEnvironmentCfg):
@@ -101,9 +99,3 @@ class SyringeClutteredEnvironment(SyringeBothEnvironment):
     name = "syringe_cluttered_newton"
     yaml_file = "syringe_cluttered.yaml"
     _legacy_argparse_cfg_type = SyringeClutteredEnvironmentCfg
-
-    def build(self, cfg: SyringeClutteredEnvironmentCfg):
-        arena_env = super().build(cfg)
-        arena_env.placer_params.solver_params.clearance_m = 0.015
-        arena_env.placer_params.max_placement_attempts = 30
-        return arena_env
