@@ -16,7 +16,7 @@ flowchart TD
     S[sim-base] --> L[isaaclab] --> A[arena-deps] --> R[runtime]
     R --> D[dev]
     R --> RC[runtime-curobo] --> DC[dev-curobo]
-    A --> B[curobo-builder]
+    L --> B[curobo-builder]
     B -. wheel artifacts .-> RC
 ```
 
@@ -31,7 +31,7 @@ Each stage adds the following to its parent's contents:
 | `arena-deps` | Third-party dependencies from project metadata; lightweight GR00T/OpenPI clients and shared policy transports; AWS/HTTP compatibility repairs. User tools: search, review UI, notebooks, pipx-isolated Hugging Face CLI, and OSMO CLI. No Arena application source. |
 | `runtime` | All first-party Arena packages/adapters, examples, required metadata/data, and currently copied docs/fixtures; editable Arena install with `--no-deps`; entrypoint, common aliases/prompt, runtime defaults. |
 | `dev` | `pre-commit`, GitHub CLI, `debugpy`, and developer-only shell setup. |
-| `curobo-builder` | CUDA toolkit/compiler/headers, wheel-build requirements, pinned cuRobo source, and resulting wheels/build metadata under `/wheels`. No Arena source. |
+| `curobo-builder` | From `isaaclab`: CUDA toolkit/compiler/headers, wheel-build requirements, pinned cuRobo source, and resulting wheels/build metadata under `/wheels`. No Arena source. |
 | `runtime-curobo` | Validated cuRobo runtime dependencies and installed wheel contents; required CUDA runtime environment settings. |
 | `dev-curobo` | Same developer additions as `dev`, using the same script; inherits installed cuRobo from `runtime-curobo`. |
 | `default` | Final `FROM dev AS default` alias; no additional contents. Keeps no-target builds compatible. |
@@ -76,7 +76,7 @@ Keep one Dockerfile for stage inheritance, copied inputs, script ordering, persi
 | `configure-shell.sh` | `runtime`: common aliases and prompt. |
 | Existing `entrypoint.sh` | Container startup: host-user setup, mounted directories, command execution. |
 
-Use Bash with `set -euo pipefail`; mount or copy only the scripts needed by each build step. Add a build-only entry point shared by launcher/publisher, so builds do not automatically start or attach to containers. Publisher integration belongs to the deferred CI phase.
+Use Bash with `set -euo pipefail`; mount or copy only the scripts needed by each build step. The launcher and publisher share `build_docker.sh`, so building alone does not start or attach to containers. The publisher selects `dev` by default or `dev-curobo` with `-c`; `-t` overrides the output tag and `-R` disables cache. CI build-before-test and remote-cache integration remain deferred.
 
 | Setting | Owner |
 | --- | --- |
@@ -115,7 +115,7 @@ Two required verification outcomes:
 
 ## Local validation result
 
-These results precede the review changes that moved chmod into `sim-base` and combined the runtime source copies. Validation of those changes is deferred until review is complete.
+These results precede the review changes that moved chmod into `sim-base`, combined the runtime source copies, moved the cuRobo builder parent to `isaaclab`, and updated the publisher. Validation of those changes is deferred until review is complete.
 
 All four targets build. Mounted source edits are visible without rebuilding; explicit source-only builds reuse Isaac Lab, dependency installation, and cuRobo compilation. Baked-source simulation, user tools, GR00T integration, and cold-cache cuRobo GPU IK checks pass. Shell, Dockerfile, and pre-commit checks pass.
 

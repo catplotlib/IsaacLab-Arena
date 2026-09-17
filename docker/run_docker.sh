@@ -13,7 +13,7 @@ DATASETS_HOST_MOUNT_DIRECTORY="$HOME/datasets"
 MODELS_HOST_MOUNT_DIRECTORY="$HOME/models"
 # Default mount directory on the host machine for the evaluation directory
 EVAL_HOST_MOUNT_DIRECTORY="$HOME/eval"
-# Named image target; cuRobo is selected by a stage, not a build argument.
+# Named image target
 DOCKER_TARGET="dev"
 BUILD_OPTIONS=()
 # Whether to forcefully rebuild the docker image

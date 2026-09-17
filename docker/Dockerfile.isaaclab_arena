@@ -2,7 +2,7 @@
 #
 # Arena image uses a multi-stage build to share dependencies and select runtime/developer
 # variants, with or without cuRobo. Dependency installation and cuRobo compilation
-# are independent of Arena source copies and this source edits reuse those build caches.
+# are independent of Arena source copies, so source edits reuse those build caches.
 #
 # sim-base:       Isaac Sim, common system packages, and runtime permissions.
 # isaaclab:       Isaac Lab checkout and its dependencies, on top of sim-base.
