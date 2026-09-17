@@ -57,7 +57,7 @@ def parallel_jaw_gripper_released(
     return ~gripped
 
 
-def withdrawn(
+def tcp_distance_from_object_exceeds_threshold(
     env: IsaacLabArenaManagerBasedRLEnv,
     subject_name: str,
     robot_name: str,

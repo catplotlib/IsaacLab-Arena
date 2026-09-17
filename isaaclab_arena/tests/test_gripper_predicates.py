@@ -63,14 +63,14 @@ def test_parallel_jaw_gripper_released() -> None:
     assert run_function_with_persistent_simulation_app(_test_parallel_jaw_gripper_released)
 
 
-def _test_withdrawn(_simulation_app) -> bool:
+def _test_tcp_distance_from_object_exceeds_threshold(_simulation_app) -> bool:
     import math
     import torch
     from types import SimpleNamespace
 
     from isaaclab.utils.math import quat_from_euler_xyz
 
-    from isaaclab_arena.tasks.predicates.gripper import withdrawn
+    from isaaclab_arena.tasks.predicates.gripper import tcp_distance_from_object_exceeds_threshold
 
     for device in ("cpu", "cuda:0"):
         for dtype in (torch.float32, torch.float64):
@@ -87,7 +87,7 @@ def _test_withdrawn(_simulation_app) -> bool:
             subject_positions = torch.tensor([[0.125, 0, 0], [0.25, 0, 0], [0.5, 0, 0]], device=device, dtype=dtype)
             poses = torch.cat((subject_positions, q_W_B), dim=-1)
             env = SimpleNamespace(scene={"robot": robot}, arena_world=SimpleNamespace(get_pose_w=lambda _: poses))
-            result = withdrawn(
+            result = tcp_distance_from_object_exceeds_threshold(
                 env,
                 subject_name="object",
                 robot_name="robot",
@@ -102,7 +102,7 @@ def _test_withdrawn(_simulation_app) -> bool:
             robot.data.body_link_quat_w = quat_from_euler_xyz(zeros, zeros, zeros + math.pi / 2)[:, None, :]
             body_positions[:] = body_positions.new_tensor([1.0, 2.0, 3.0])
             poses[:, :3] = poses.new_tensor([[1.0, 2.125, 3.0], [1.0, 2.0, 3.0], [1.0, 2.625, 3.0]])
-            result = withdrawn(
+            result = tcp_distance_from_object_exceeds_threshold(
                 env,
                 subject_name="object",
                 robot_name="robot",
@@ -114,5 +114,5 @@ def _test_withdrawn(_simulation_app) -> bool:
     return True
 
 
-def test_withdrawn() -> None:
-    assert run_function_with_persistent_simulation_app(_test_withdrawn)
+def test_tcp_distance_from_object_exceeds_threshold() -> None:
+    assert run_function_with_persistent_simulation_app(_test_tcp_distance_from_object_exceeds_threshold)
