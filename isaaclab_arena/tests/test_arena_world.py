@@ -64,5 +64,61 @@ def test_arena_world():
     assert run_function_with_persistent_simulation_app(_test_arena_world)
 
 
+def _test_arena_world_articulation_and_action_queries(_simulation_app) -> bool:
+    import torch
+    from types import SimpleNamespace
+
+    import pytest
+
+    from isaaclab_arena.environments.arena_world import ArenaWorld
+
+    joint_positions = torch.tensor([[0.1, 0.2], [0.3, 0.4]])
+    body_poses = torch.tensor(
+        [[[0, 0, 0, 0, 0, 0, 1], [1, 2, 3, 0, 0, 0, 1]], [[0, 0, 0, 0, 0, 0, 1], [4, 5, 6, 0, 0, 1, 0]]],
+        dtype=torch.float32,
+    )
+    data = SimpleNamespace(
+        joint_names=["unused", "finger"],
+        joint_pos=SimpleNamespace(torch=joint_positions),
+        body_names=["base", "wrist"],
+        body_link_pose_w=SimpleNamespace(torch=body_poses),
+    )
+    scene = SimpleNamespace(num_envs=2, articulations={"robot": SimpleNamespace(data=data)})
+    # Articulation queries work before the action manager exists.
+    managers = []
+    world = ArenaWorld(scene, action_manager_getter=lambda: managers[0])
+    torch.testing.assert_close(world.get_joint_position("robot", "finger"), joint_positions[:, 1])
+    torch.testing.assert_close(world.get_body_pose_w("robot", "wrist"), body_poses[:, 1])
+    action = SimpleNamespace(processed_actions=torch.tensor([[0.01], [0.02]]))
+    managers.append(SimpleNamespace(get_term={"gripper": action}.__getitem__))
+    torch.testing.assert_close(world.get_processed_actions("gripper"), action.processed_actions)
+
+    # Replacing the backing tensors or manager must not leave cached state behind.
+    data.joint_pos.torch = joint_positions + 0.5
+    data.body_link_pose_w.torch = body_poses.clone()
+    data.body_link_pose_w.torch[:, 1, 0] += 0.5
+    action = SimpleNamespace(processed_actions=torch.tensor([[0.03], [0.04]]))
+    managers[0] = SimpleNamespace(get_term={"gripper": action}.__getitem__)
+    torch.testing.assert_close(world.get_joint_position("robot", "finger"), joint_positions[:, 1] + 0.5)
+    torch.testing.assert_close(world.get_body_pose_w("robot", "wrist"), data.body_link_pose_w.torch[:, 1])
+    torch.testing.assert_close(world.get_processed_actions("gripper"), action.processed_actions)
+
+    with pytest.raises(AssertionError, match="must name an articulation"):
+        world.get_joint_position("missing", "finger")
+    with pytest.raises(AssertionError, match="has no joint"):
+        world.get_joint_position("robot", "missing")
+    with pytest.raises(AssertionError, match="has no body"):
+        world.get_body_pose_w("robot", "missing")
+    with pytest.raises(AssertionError, match="action-manager getter"):
+        ArenaWorld(scene).get_processed_actions("gripper")
+    with pytest.raises(KeyError):
+        world.get_processed_actions("missing")
+    return True
+
+
+def test_arena_world_articulation_and_action_queries() -> None:
+    assert run_function_with_persistent_simulation_app(_test_arena_world_articulation_and_action_queries)
+
+
 if __name__ == "__main__":
     test_arena_world()

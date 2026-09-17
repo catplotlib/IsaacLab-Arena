@@ -12,6 +12,7 @@ def _test_parallel_jaw_gripper_released(_simulation_app) -> bool:
     import torch
     from types import SimpleNamespace
 
+    from isaaclab_arena.environments.arena_world import ArenaWorld
     from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
 
     release_params = dict(
@@ -33,11 +34,16 @@ def _test_parallel_jaw_gripper_released(_simulation_app) -> bool:
             commanded = torch.tensor(
                 [[0.0], [0.0], [0.015625], [0.0], [0.013671875], [0.0]], device=device, dtype=dtype
             )
-            robot = SimpleNamespace(data=SimpleNamespace(joint_names=["finger"], joint_pos=measured))
+            robot = SimpleNamespace(
+                data=SimpleNamespace(joint_names=["finger"], joint_pos=SimpleNamespace(torch=measured))
+            )
             action = SimpleNamespace(processed_actions=commanded)
+            action_manager = SimpleNamespace(get_term={"gripper": action}.__getitem__)
             env = SimpleNamespace(
-                scene={"robot": robot},
-                action_manager=SimpleNamespace(get_term=lambda _name: action),
+                arena_world=ArenaWorld(
+                    SimpleNamespace(num_envs=6, articulations={"robot": robot}),
+                    action_manager_getter=lambda: action_manager,
+                ),
             )
             result = parallel_jaw_gripper_released(
                 env, **release_params, stall_threshold_m=0.001953125, grasp_width_tolerance_m=0.00390625
@@ -70,6 +76,7 @@ def _test_tcp_distance_from_object_exceeds_threshold(_simulation_app) -> bool:
 
     from isaaclab.utils.math import quat_from_euler_xyz
 
+    from isaaclab_arena.environments.arena_world import ArenaWorld
     from isaaclab_arena.tasks.predicates.gripper import tcp_distance_from_object_exceeds_threshold
 
     for device in ("cpu", "cuda:0"):
@@ -77,16 +84,21 @@ def _test_tcp_distance_from_object_exceeds_threshold(_simulation_app) -> bool:
             zeros = torch.zeros(3, device=device, dtype=dtype)
             q_W_B = quat_from_euler_xyz(zeros, zeros, zeros)
             body_positions = torch.zeros((3, 1, 3), device=device, dtype=dtype)
+            body_poses = torch.cat((body_positions, q_W_B[:, None, :]), dim=-1)
+            body_positions = body_poses[:, :, :3]
             robot = SimpleNamespace(
-                data=SimpleNamespace(
-                    body_names=["wrist"],
-                    body_link_pos_w=body_positions,
-                    body_link_quat_w=q_W_B[:, None, :],
-                )
+                data=SimpleNamespace(body_names=["wrist"], body_link_pose_w=SimpleNamespace(torch=body_poses))
             )
             subject_positions = torch.tensor([[0.125, 0, 0], [0.25, 0, 0], [0.5, 0, 0]], device=device, dtype=dtype)
             poses = torch.cat((subject_positions, q_W_B), dim=-1)
-            env = SimpleNamespace(scene={"robot": robot}, arena_world=SimpleNamespace(get_pose_w=lambda _: poses))
+            scene = SimpleNamespace(
+                num_envs=3,
+                articulations={"robot": robot},
+                rigid_objects={
+                    "object": SimpleNamespace(data=SimpleNamespace(root_pose_w=SimpleNamespace(torch=poses)))
+                },
+            )
+            env = SimpleNamespace(arena_world=ArenaWorld(scene))
             result = tcp_distance_from_object_exceeds_threshold(
                 env,
                 subject_name="object",
@@ -99,7 +111,7 @@ def _test_tcp_distance_from_object_exceeds_threshold(_simulation_app) -> bool:
             assert result.device == body_positions.device and result.dtype == torch.bool
 
             # Rotate the local X offset onto world Y and translate the parent body.
-            robot.data.body_link_quat_w = quat_from_euler_xyz(zeros, zeros, zeros + math.pi / 2)[:, None, :]
+            body_poses[:, :, 3:] = quat_from_euler_xyz(zeros, zeros, zeros + math.pi / 2)[:, None, :]
             body_positions[:] = body_positions.new_tensor([1.0, 2.0, 3.0])
             poses[:, :3] = poses.new_tensor([[1.0, 2.125, 3.0], [1.0, 2.0, 3.0], [1.0, 2.625, 3.0]])
             result = tcp_distance_from_object_exceeds_threshold(

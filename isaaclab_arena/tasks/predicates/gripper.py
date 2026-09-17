@@ -48,10 +48,9 @@ def parallel_jaw_gripper_released(
     Returns:
         Boolean tensor with one result per environment.
     """
-    robot = env.scene[robot_name]
-    joint_index = robot.data.joint_names.index(gripper_joint_name)
-    measured = robot.data.joint_pos[:, joint_index]
-    commanded = env.action_manager.get_term(gripper_action_name).processed_actions[:, 0]
+    measured = env.arena_world.get_joint_position(robot_name, gripper_joint_name)
+    commanded = env.arena_world.get_processed_actions(gripper_action_name)[:, 0]
+    # Each finger moves inward by (open_joint_m - measured), reducing the fully open gap by twice that amount.
     gap = span_m - 2.0 * (open_joint_m - measured)
     gripped = ((measured - commanded) > stall_threshold_m) & (torch.abs(gap - grasp_width_m) < grasp_width_tolerance_m)
     return ~gripped
@@ -78,11 +77,9 @@ def tcp_distance_from_object_exceeds_threshold(
     Returns:
         Boolean tensor with one result per environment.
     """
-    robot = env.scene[robot_name]
-    body_index = robot.data.body_names.index(tcp_body_name)
     # W is the world frame; B is the TCP's parent body frame.
-    t_W_B = robot.data.body_link_pos_w[:, body_index]
-    q_W_B = robot.data.body_link_quat_w[:, body_index]
+    T_W_B = env.arena_world.get_body_pose_w(robot_name, tcp_body_name)
+    t_W_B, q_W_B = T_W_B[:, :3], T_W_B[:, 3:]
     tcp_position_B = t_W_B.new_tensor(tcp_offset_xyz_m).expand_as(t_W_B)
     tcp_position_W = t_W_B + quat_apply(q_W_B, tcp_position_B)
     subject_position_W = env.arena_world.get_pose_w(subject_name)[:, :3]
