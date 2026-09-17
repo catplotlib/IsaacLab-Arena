@@ -20,7 +20,7 @@ userdel ubuntu 2>/dev/null || true
 groupadd --force --gid "$DOCKER_RUN_GROUP_ID" "$DOCKER_RUN_GROUP_NAME"
 
 # Re-add the user
-useradd --no-log-init \
+useradd --create-home --no-log-init \
         --uid "$DOCKER_RUN_USER_ID" \
         --gid "$DOCKER_RUN_GROUP_NAME" \
         --groups sudo,isaac-sim \
