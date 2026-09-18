@@ -94,7 +94,7 @@ def add_isaaclab_arena_cli_args(parser: argparse.ArgumentParser) -> None:
         "--placement_seed",
         type=int,
         default=None,
-        help="Seed for object placement. If set, objects are placed at the same positions across runs.",
+        help="Seed for solved object placement. Not supported with cached placement layouts.",
     )
     arena_group.add_argument(
         "--presets",
@@ -116,7 +116,7 @@ def add_isaaclab_arena_cli_args(parser: argparse.ArgumentParser) -> None:
         "--placement_layouts",
         type=str,
         default=None,
-        help="Companion pose YAML; graph node IDs for --env_spec, scene names for Python environments",
+        help="Companion placement JSONL; graph node IDs for --env_spec, scene names for Python environments",
     )
     arena_group.add_argument(
         "--list_variations",

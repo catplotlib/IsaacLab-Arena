@@ -140,7 +140,7 @@ class PlaceableAsset(Asset, ABC):
             name: pose.to_tensor(device=env.device).unsqueeze(0)
             for name, pose in self.layout_pose_to_scene_writes(layout_pose)
         }
-        write_scene_poses_to_sim(env, env_ids, scene_poses, validate=False)
+        write_scene_poses_to_sim(env, env_ids, scene_poses)
 
     def has_pose_reset_event(self) -> bool:
         """Return whether the asset owns a root-pose reset event."""

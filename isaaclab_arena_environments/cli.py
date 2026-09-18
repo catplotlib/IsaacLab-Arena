@@ -94,8 +94,15 @@ def build_environment_from_cli(
     """Build an environment through its typed or external legacy CLI path."""
     environment_factory = environment_factory_type()
     if isinstance(environment_factory, ExampleEnvironmentBase):
-        return environment_factory.get_env(args_cli)
-    return environment_factory.build(_environment_cfg_from_cli(environment_factory_type, args_cli))
+        arena_env = environment_factory.get_env(args_cli)
+    else:
+        arena_env = environment_factory.build(_environment_cfg_from_cli(environment_factory_type, args_cli))
+    placement_layouts_path = getattr(args_cli, "placement_layouts", None)
+    if placement_layouts_path is not None:
+        from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+
+        arena_env.placement_layouts = PlacementLayouts.from_episode_jsonl(placement_layouts_path)
+    return arena_env
 
 
 def parse_and_return_external_environment_from_string(
@@ -224,10 +231,6 @@ def get_arena_builder_from_cli(
         if env_spec is not None
         else _arena_env_from_example_name(example_environment, args_cli)
     )
-    if env_spec is None and args_cli.placement_layouts is not None:
-        from isaaclab_arena.relations.placement_layouts import PlacementLayouts
-
-        arena_env.placement_layouts = PlacementLayouts.from_yaml(args_cli.placement_layouts)
     builder_cfg = arena_env_builder_cfg_from_argparse(args_cli)
     return ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides)
 
@@ -237,7 +240,7 @@ def arena_env_from_graph_spec(env_spec: str, args_cli: argparse.Namespace) -> Is
     spec = ArenaEnvGraphSpec.from_yaml(env_spec)
     spec.apply_cli_override_args(args_cli)
     # cameras are enabled in embodiment, need to pass along to the env
-    return spec.to_arena_env(enable_cameras=args_cli.enable_cameras, placement_layouts=args_cli.placement_layouts)
+    return spec.to_arena_env(enable_cameras=args_cli.enable_cameras, placement_layouts_path=args_cli.placement_layouts)
 
 
 def _arena_env_from_example_name(example_environment: str, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:

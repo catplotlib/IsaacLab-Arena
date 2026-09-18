@@ -222,54 +222,45 @@ relation.
 Cached Layouts
 --------------
 
-An environment can load a companion pose YAML through ``placement_layouts``
-in its graph specification or the ``--placement_layouts`` runtime flag. The
-YAML field is relative to the environment file; the CLI override is relative
-to the working directory and takes precedence.
+Set ``placement_layouts_path: layouts.jsonl`` in the environment YAML, or pass
+``--placement_layouts layouts.jsonl`` at runtime. YAML paths are relative to the
+environment file; the CLI override is relative to the working directory and takes
+precedence. Loading from YAML resolves the path so a serialized spec remains usable.
 
-The companion file maps graph object IDs to equal-length lists of poses:
+Each JSONL line contains one complete layout under
+``variations["scene.relation_placement"]["poses"]``. Poses use graph node IDs for
+YAML environments and runtime scene names for registered Python environments.
+Positions are environment-local, in metres; rotations are xyzw quaternions.
+Other episode fields are ignored. Python callers can pass ``PlacementLayouts``
+directly to ``IsaacLabArenaEnvironment``.
 
-.. code-block:: yaml
+Resetting environments draw consecutive layouts from one shared queue, in reset
+request order. The queue wraps after its last layout. For four layouts and three
+environments, successive full resets select ``[0, 1, 2]``, then ``[3, 0, 1]``.
+A partial reset consumes only the layouts needed by those environments; other
+poses remain unchanged. Layouts can repeat across active environments after the
+queue wraps. If the environment count is a multiple of the layout count,
+repeated full resets assign the same layout to each environment. The queue covers
+all layouts across the batch; it does not guarantee that each environment visits
+every layout. Partial-reset order determines later assignments, so different
+policies may receive different per-environment sequences.
 
-   mug:
-   - position_xyz: [0.1, 0.2, 0.8]
-     rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
-   - position_xyz: [-0.1, 0.2, 0.8]
-     rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+Replay validates finite poses, unit quaternions, consistent object coverage and
+reset ownership. Cached objects share one reset writer, which zeros their root
+velocities. All non-anchor objects with spatial relations must be included,
+as must a non-anchor embodiment carrying any placement relation or marker.
+Object sets, disabled pose resets, non-fixed pose-reset policies and nonzero
+initial velocities are unsupported.
 
-Positions are in the local environment frame, in metres. One index selects a
-complete layout across all objects. Environment ``i`` starts at index
-``i % num_layouts`` and advances independently on each reset, wrapping to zero
-after the last layout. With two layouts, environment 0 selects 0, 1, 0, ...;
-environment 1 selects 1, 0, 1, ... . Partial resets advance only the resetting
-environments. There is no shared queue or exhaustion, and environments may
-reuse the same layout concurrently. Reusing a cache bypasses
-relation solving; it does not run physics settling. All non-anchor objects
-with spatial relations must be included, and object sets are unsupported.
-Cached layouts replace fixed initial poses and their asset-owned reset events.
-Randomized and per-environment pose-reset policies are rejected.
-Assets must expose writable physics roots. Disable pose-changing variations
+Cached replay requires ``resolve_on_reset=True``; an explicit
+``--no-resolve_on_reset`` or a false environment default is rejected. An explicit
+``--placement_seed`` is also rejected because layouts are read in file order.
+``--no_solve_relations`` is compatible: cached replay never invokes the solver.
+
+Loading bypasses solving and does not rerun geometry, reachability or settling
+checks. ``placement_validators`` still configure generation. Recordings must match
+the scene and robot configuration being replayed; disable pose-changing variations
 and callbacks when exact replay is required.
-
-Registered Python environments also accept ``--placement_layouts`` before the
-environment subcommand; their companion files use runtime scene names. Python
-callers can pass a ``PlacementLayouts`` instance to the environment constructor.
-
-``isaaclab_arena/scripts/generate_clutter_scene.py`` generates companion files
-from ``ClutterOn`` relations. See :doc:`./clutter_placement` for generation controls
-and validation limits.
-
-Cached placement validation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Companion pose files validate finite values, unit quaternions, object coverage
-and layout counts. Loading does not rerun geometric, relation or reachability
-checks. ``placement_validators`` configure generated placements and are not
-rerun on cached replay. Keep those settings in the source environment YAML;
-loading its companion file does not require removing them. Cached poses must
-match the scene used to generate them; successful loading does not certify
-physical validity or reachability.
-
 
 Offline settling
 ----------------

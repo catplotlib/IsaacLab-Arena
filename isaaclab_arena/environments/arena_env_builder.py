@@ -42,18 +42,21 @@ from isaaclab_arena.recording.common_terms import CoreEpisodeRecorderTermCfg, Va
 from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg
 from isaaclab_arena.recording.progress_terms import ProgressEpisodeRecorderTermCfg
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-from isaaclab_arena.relations.placement_events import CACHED_PLACEMENT_RESET_EVENT_NAME, PLACEMENT_RESET_EVENT_NAME
+from isaaclab_arena.relations.placement_events import (
+    CACHED_PLACEMENT_RESET_EVENT_NAME,
+    PLACEMENT_RESET_EVENT_NAME,
+    make_cached_placement_event,
+)
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
 from isaaclab_arena.tasks.no_task import NoTask
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
-from isaaclab_arena.terms.events import ResetBackgroundPhysics, ResetPlacementLayouts
+from isaaclab_arena.terms.events import ResetBackgroundPhysics
 from isaaclab_arena.terms.recorders import ArenaEnvRecorderManagerCfg
 from isaaclab_arena.utils.configclass import combine_configclass_instances, make_configclass
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import reapply_viewer_cfg
 from isaaclab_arena.utils.isaaclab_utils.warp_patch import install_empty_cpu_warp_to_torch_patch
 from isaaclab_arena.utils.multiprocess import get_local_rank
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
-from isaaclab_arena.utils.pose import Pose, PosePerEnv
 from isaaclab_arena.variations import variations_hydra, variations_printing
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
@@ -129,34 +132,16 @@ class ArenaEnvBuilder:
         )
 
     def _apply_cached_layouts(self) -> None:
-        """Seed cached root poses and register synchronized complete-layout resets."""
+        """Seed cached poses and register their reset event."""
         layouts = self.arena_env.placement_layouts
         assert layouts is not None
-        placement_assets = self.arena_env.get_placement_assets()
-        layouts.validate_assets(placement_assets)
-        assets = {asset.get_scene_key(): asset for asset in placement_assets}
-        for name in layouts.poses:
-            asset = assets[name]
-            assert not asset.has_pose_reset_event() or isinstance(
-                asset.get_initial_pose(), Pose
-            ), f"Cached asset '{name}' has a non-fixed pose-reset policy"
-        scene_poses: dict[str, list[list[float]]] = {}
-        for name, poses in layouts.poses.items():
-            asset = assets[name]
-            asset.clear_pose_reset_event()
-            asset.set_initial_pose(
-                PosePerEnv([poses[i % layouts.num_layouts] for i in range(self.cfg.num_envs)]), create_reset_event=False
-            )
-            for pose in poses:
-                for scene_name, scene_pose in asset.layout_pose_to_scene_writes(pose):
-                    scene_poses.setdefault(scene_name, []).append(
-                        list(scene_pose.position_xyz + scene_pose.rotation_xyzw)
-                    )
-        assert scene_poses and all(
-            len(poses) == layouts.num_layouts for poses in scene_poses.values()
-        ), "Cached assets must write distinct scene entities in every layout"
-        self._placement_event_cfg = EventTermCfg(
-            func=ResetPlacementLayouts, mode="reset", params={"poses": scene_poses}
+        assert self.cfg.placement_seed is None, "placement_seed applies to solving, not cached layouts"
+        resolve_on_reset = self.cfg.resolve_on_reset
+        if resolve_on_reset is None and self.arena_env.placer_params is not None:
+            resolve_on_reset = self.arena_env.placer_params.resolve_on_reset
+        assert resolve_on_reset is not False, "Cached replay requires resolve_on_reset=True"
+        self._placement_event_cfg = make_cached_placement_event(
+            layouts, self.arena_env.get_placement_assets(), self.cfg.num_envs
         )
 
     def get_all_variations(self) -> dict[str, list[VariationBase]]:
