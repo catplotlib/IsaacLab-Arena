@@ -15,11 +15,11 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors.contact_sensor.contact_sensor import ContactSensor
 from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
-from isaaclab_arena.embodiments.gripper import Gripper
 from isaaclab_arena.tasks.predicates.object_settling import get_object_initial_rest_state
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.gripper import Gripper
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env import IsaacLabArenaManagerBasedRLEnv
 
 

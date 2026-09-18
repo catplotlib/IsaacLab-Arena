@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import math
 import torch
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils import math as math_utils
 
-from isaaclab_arena.embodiments.gripper import Gripper
-from isaaclab_arena.tasks.predicates.spatial import gripper_distance_from_object_exceeds_threshold
+from isaaclab_arena.tasks.predicates.gripper import gripper_released
+
+if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.gripper import Gripper
 
 
 def _torch(value):
@@ -23,14 +26,14 @@ def _torch(value):
 
 
 class gear_mesh_success(ManagerTermBase):
-    """Latch the motor on button press and require released, seated rotation."""
+    """Latch the motor and require seated rotation after jaw release and withdrawal."""
 
     def __init__(self, cfg: TerminationTermCfg, env):
         super().__init__(cfg, env)
         self.board = env.scene[cfg.params["board_asset_cfg"].name]
         self.gears = tuple(env.scene[asset_cfg.name] for asset_cfg in cfg.params["gear_asset_cfgs"])
         self.gear = self.gears[0]
-        assert callable(cfg.params["release_condition"]), "Gear mesh requires a gripper release condition."
+        assert cfg.params.get("gripper") is not None, "Gear mesh requires a bound embodiment gripper."
         self.pinion_joint = self.board.data.joint_names.index("pinion_joint")
         self.button_joint = self.board.data.joint_names.index("button_joint")
         self.latched = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
@@ -63,7 +66,8 @@ class gear_mesh_success(ManagerTermBase):
         board_asset_cfg: SceneEntityCfg,
         gear_asset_cfgs: Sequence[SceneEntityCfg],
         gripper: Gripper,
-        release_condition: Callable,
+        grasp_width_m: float,
+        release_clearance_m: float,
         target_offsets_xyz: Sequence[Sequence[float]] | Sequence[Sequence[Sequence[float]]],
         button_latch_m: float = 0.005,
         drive_speed_rad_s: float = 4.0,
@@ -78,6 +82,7 @@ class gear_mesh_success(ManagerTermBase):
     ) -> torch.Tensor:
         del (
             board_asset_cfg,
+            gear_asset_cfgs,
             hold_time_s,
             spin_window_s,
         )
@@ -149,18 +154,20 @@ class gear_mesh_success(ManagerTermBase):
         selected_spin = torch.gather(windowed_spin, 1, safe_chosen)
         gates = spin_fraction * drive_speed_rad_s * 14.0 / station_teeth
         turning = assigned & (torch.abs(selected_spin) >= gates)
-        gripper_clears_gears = release_condition(env)
-        gripper_away_by_gear = torch.stack(
-            [
-                gripper_distance_from_object_exceeds_threshold(
-                    env,
-                    subject_name=asset_cfg.name,
-                    gripper=gripper,
-                    distance_threshold_m=release_distance_m,
-                )
-                for asset_cfg in gear_asset_cfgs
-            ],
-            dim=1,
+        # Both gates are intentional: withdrawal alone can pass while the jaws
+        # still hold a seated gear, so success also requires physical clearance.
+        gripper_clears_gears = gripper_released(
+            env,
+            gripper=gripper,
+            grasp_width_m=grasp_width_m,
+            release_clearance_m=release_clearance_m,
+        )
+        assert (
+            math.isfinite(release_distance_m) and release_distance_m >= 0.0
+        ), "Release distance must be non-negative and finite."
+        gripper_position_w = gripper.get_position_w(env.arena_world)
+        gripper_away_by_gear = (
+            torch.linalg.vector_norm(gear_pos - gripper_position_w[:, None, :], dim=-1) > release_distance_m
         )
         selected_gripper_away = torch.gather(gripper_away_by_gear, 1, safe_chosen)
         all_seated = assigned.all(dim=1)

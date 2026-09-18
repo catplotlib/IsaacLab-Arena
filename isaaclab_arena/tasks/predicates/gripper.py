@@ -11,9 +11,8 @@ import math
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab_arena.embodiments.gripper import Gripper
-
 if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.gripper import Gripper
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env import IsaacLabArenaManagerBasedRLEnv
 
 
