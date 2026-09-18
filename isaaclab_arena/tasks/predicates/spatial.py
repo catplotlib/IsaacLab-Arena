@@ -15,7 +15,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors.contact_sensor.contact_sensor import ContactSensor
 from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
-from isaaclab_arena.embodiments.end_effector import EndEffector
+from isaaclab_arena.embodiments.gripper import Gripper
 from isaaclab_arena.tasks.predicates.object_settling import get_object_initial_rest_state
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
@@ -23,18 +23,18 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env import IsaacLabArenaManagerBasedRLEnv
 
 
-def end_effector_distance_from_object_exceeds_threshold(
+def gripper_distance_from_object_exceeds_threshold(
     env: IsaacLabArenaManagerBasedRLEnv,
     subject_name: str,
-    end_effector: EndEffector,
+    gripper: Gripper,
     distance_threshold_m: float,
 ) -> torch.Tensor:
-    """Check that an end effector is farther than a threshold from an object.
+    """Check that a gripper is farther than a threshold from an object.
 
     Args:
         env: Environment supplying object and frame positions through ArenaWorld.
         subject_name: Object asset whose origin defines the distance.
-        end_effector: Embodiment-owned end-effector implementation.
+        gripper: Embodiment-owned gripper implementation.
         distance_threshold_m: Strict minimum distance, in meters.
 
     Returns:
@@ -43,9 +43,9 @@ def end_effector_distance_from_object_exceeds_threshold(
     assert (
         math.isfinite(distance_threshold_m) and distance_threshold_m >= 0.0
     ), "Distance threshold must be non-negative and finite."
-    end_effector_position_W = end_effector.get_position_w(env.arena_world)
+    gripper_position_W = gripper.get_position_w(env.arena_world)
     subject_position_W = env.arena_world.get_pose_w(subject_name)[:, :3]
-    return torch.linalg.vector_norm(subject_position_W - end_effector_position_W, dim=-1) > distance_threshold_m
+    return torch.linalg.vector_norm(subject_position_W - gripper_position_W, dim=-1) > distance_threshold_m
 
 
 def object_bounds_center_over_destination(

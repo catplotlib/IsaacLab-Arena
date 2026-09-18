@@ -3,50 +3,42 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Behavioral end-effector interfaces and robot-specific implementations."""
+"""Behavioral gripper interfaces and robot-specific implementations."""
 
 from __future__ import annotations
 
-import math
 import torch
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 @runtime_checkable
-class EndEffector(Protocol):
-    """End-effector behavior exposed to embodiment-agnostic tasks."""
+class Gripper(Protocol):
+    """Gripper state exposed to embodiment-agnostic tasks."""
 
     def get_position_w(self, world: ArenaWorld) -> torch.Tensor:
-        """Return the end-effector position in world frame with shape ``(num_envs, 3)``."""
+        """Return the gripper position in world frame with shape ``(num_envs, 3)``."""
         ...
 
-    def is_released(self, world: ArenaWorld, **release_params: Any) -> torch.Tensor:
-        """Return whether the end effector satisfies its configured release condition."""
+    def get_opening_width_m(self, world: ArenaWorld) -> torch.Tensor:
+        """Return the gripper opening width in meters with shape ``(num_envs,)``."""
         ...
 
 
 @runtime_checkable
-class ParallelJawGripper(EndEffector, Protocol):
-    """End effector whose grasp state is represented by a physical jaw gap."""
+class ParallelJawGripper(Gripper, Protocol):
+    """Gripper whose grasp state is represented by a physical jaw gap."""
 
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical jaw gap in meters with shape ``(num_envs,)``."""
         ...
 
-    def is_released(self, world: ArenaWorld, **release_params: Any) -> torch.Tensor:
-        """Check whether the jaw gap clears the configured grasp width."""
-        grasp_width_m = release_params.get("grasp_width_m")
-        release_clearance_m = release_params.get("release_clearance_m", 1.5e-3)
-        assert grasp_width_m is not None, "Parallel-jaw release requires grasp_width_m."
-        assert math.isfinite(grasp_width_m) and grasp_width_m > 0.0, "Grasp width must be positive and finite."
-        assert (
-            math.isfinite(release_clearance_m) and release_clearance_m >= 0.0
-        ), "Release clearance must be non-negative and finite."
-        return self.get_jaw_gap_m(world) > grasp_width_m + release_clearance_m
+    def get_opening_width_m(self, world: ArenaWorld) -> torch.Tensor:
+        """Return the jaw gap as the gripper opening width."""
+        return self.get_jaw_gap_m(world)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -93,7 +85,7 @@ class RobotiqGripper(ParallelJawGripper):
     """Robotiq base body, or None to use the frame-transformer target."""
 
     body_point_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """End-effector point offset expressed in the configured body frame."""
+    """Gripper point offset expressed in the configured body frame."""
 
     frame_transformer_name: str = "ee_frame"
     """Scene key of the Robotiq frame transformer."""
@@ -126,4 +118,4 @@ class RobotiqGripper(ParallelJawGripper):
         return world.get_frame_position_w(self.frame_transformer_name, self.target_frame_name)
 
 
-__all__ = ["EndEffector", "PandaGripper", "ParallelJawGripper", "RobotiqGripper"]
+__all__ = ["Gripper", "PandaGripper", "ParallelJawGripper", "RobotiqGripper"]

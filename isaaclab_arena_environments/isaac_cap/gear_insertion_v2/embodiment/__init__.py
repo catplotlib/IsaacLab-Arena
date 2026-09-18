@@ -12,7 +12,7 @@ from typing import ClassVar
 
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
-from isaaclab_arena.embodiments.end_effector import RobotiqGripper
+from isaaclab_arena.embodiments.gripper import RobotiqGripper
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.variations.camera_extrinsics_variation import CameraExtrinsicsVariation
 
@@ -52,7 +52,7 @@ class _IndustrialFr3Robotiq2f85Base(EmbodimentBase):
             concatenate_observation_terms,
             arm_mode,
         )
-        self.end_effector = RobotiqGripper(
+        self.gripper = RobotiqGripper(
             asset_name="robot",
             driver_joint_name=GRIPPER_JOINT_NAME,
             body_name=END_EFFECTOR_BODY_NAME,

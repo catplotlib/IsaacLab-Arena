@@ -14,8 +14,8 @@ from collections.abc import Callable, Sequence
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils import math as math_utils
 
-from isaaclab_arena.embodiments.end_effector import ParallelJawGripper
-from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
+from isaaclab_arena.embodiments.gripper import Gripper
+from isaaclab_arena.tasks.predicates.spatial import gripper_distance_from_object_exceeds_threshold
 
 
 def _torch(value):
@@ -30,7 +30,7 @@ class gear_mesh_success(ManagerTermBase):
         self.board = env.scene[cfg.params["board_asset_cfg"].name]
         self.gears = tuple(env.scene[asset_cfg.name] for asset_cfg in cfg.params["gear_asset_cfgs"])
         self.gear = self.gears[0]
-        assert isinstance(cfg.params["gripper"], ParallelJawGripper), "Gear mesh requires a parallel-jaw gripper."
+        assert isinstance(cfg.params["gripper"], Gripper), "Gear mesh requires a supported gripper."
         assert callable(cfg.params["release_condition"]), "Gear mesh requires a gripper release condition."
         self.pinion_joint = self.board.data.joint_names.index("pinion_joint")
         self.button_joint = self.board.data.joint_names.index("button_joint")
@@ -63,7 +63,7 @@ class gear_mesh_success(ManagerTermBase):
         env,
         board_asset_cfg: SceneEntityCfg,
         gear_asset_cfgs: Sequence[SceneEntityCfg],
-        gripper: ParallelJawGripper,
+        gripper: Gripper,
         release_condition: Callable,
         target_offsets_xyz: Sequence[Sequence[float]] | Sequence[Sequence[Sequence[float]]],
         button_latch_m: float = 0.005,
@@ -153,10 +153,10 @@ class gear_mesh_success(ManagerTermBase):
         gripper_clears_gears = release_condition(env)
         gripper_away_by_gear = torch.stack(
             [
-                end_effector_distance_from_object_exceeds_threshold(
+                gripper_distance_from_object_exceeds_threshold(
                     env,
                     subject_name=asset_cfg.name,
-                    end_effector=gripper,
+                    gripper=gripper,
                     distance_threshold_m=release_distance_m,
                 )
                 for asset_cfg in gear_asset_cfgs

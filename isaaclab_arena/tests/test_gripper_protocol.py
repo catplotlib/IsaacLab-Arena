@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for embodiment-owned behavioral end-effectors."""
+"""Tests for embodiment-owned behavioral grippers."""
 
 import torch
 from types import SimpleNamespace
@@ -11,10 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
-from isaaclab_arena.embodiments.end_effector import EndEffector, PandaGripper, ParallelJawGripper, RobotiqGripper
+from isaaclab_arena.embodiments.gripper import Gripper, PandaGripper, ParallelJawGripper, RobotiqGripper
 from isaaclab_arena.environments.arena_world import ArenaWorld
-from isaaclab_arena.tasks.predicates.gripper import end_effector_released
-from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
+from isaaclab_arena.tasks.predicates.gripper import gripper_released
+from isaaclab_arena.tasks.predicates.spatial import gripper_distance_from_object_exceeds_threshold
 
 
 def _make_world() -> ArenaWorld:
@@ -53,9 +53,10 @@ def test_panda_gripper_implements_parallel_jaw_interface() -> None:
     gripper = PandaGripper()
 
     assert issubclass(PandaGripper, ParallelJawGripper)
-    assert isinstance(gripper, EndEffector)
+    assert isinstance(gripper, Gripper)
     assert isinstance(gripper, ParallelJawGripper)
     torch.testing.assert_close(gripper.get_jaw_gap_m(world), torch.tensor([0.03, 0.08]))
+    torch.testing.assert_close(gripper.get_opening_width_m(world), torch.tensor([0.03, 0.08]))
     torch.testing.assert_close(gripper.get_position_w(world), torch.tensor([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]))
 
 
@@ -86,38 +87,54 @@ def test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details() -> N
     )
 
 
-def test_embodiment_requires_a_supported_end_effector() -> None:
+def test_embodiment_requires_a_supported_gripper() -> None:
     embodiment = object.__new__(EmbodimentBase)
     embodiment.name = "test"
-    embodiment.end_effector = None
-    with pytest.raises(AssertionError, match="has no supported end-effector"):
-        embodiment.get_end_effector()
+    embodiment.gripper = None
+    with pytest.raises(AssertionError, match="has no supported gripper"):
+        embodiment.get_gripper()
 
-    embodiment.end_effector = PandaGripper()
-    assert embodiment.get_end_effector() is embodiment.end_effector
-    assert embodiment.get_gripper() is embodiment.end_effector
+    embodiment.gripper = PandaGripper()
+    assert embodiment.get_gripper() is embodiment.gripper
 
 
 def test_gripper_predicates_are_implementation_agnostic() -> None:
     env = SimpleNamespace(arena_world=_make_world())
 
-    clears = end_effector_released(env, PandaGripper(), grasp_width_m=0.035, release_clearance_m=0.004)
-    away = end_effector_distance_from_object_exceeds_threshold(
-        env, subject_name="object", end_effector=RobotiqGripper(), distance_threshold_m=0.2
+    clears = gripper_released(env, PandaGripper(), grasp_width_m=0.035, release_clearance_m=0.004)
+    away = gripper_distance_from_object_exceeds_threshold(
+        env, subject_name="object", gripper=RobotiqGripper(), distance_threshold_m=0.2
     )
     assert clears.tolist() == [False, True]
     assert away.tolist() == [False, True]
 
 
+def test_release_predicate_supports_multi_finger_hands() -> None:
+    class ThreeFingerHand:
+        def get_position_w(self, world):
+            return world.get_frame_position_w("ee_frame", "end_effector")
+
+        def get_opening_width_m(self, _world):
+            return torch.tensor([0.03, 0.08])
+
+    env = SimpleNamespace(arena_world=_make_world())
+    hand = ThreeFingerHand()
+
+    assert isinstance(hand, Gripper)
+    assert not isinstance(hand, ParallelJawGripper)
+    released = gripper_released(env, hand, grasp_width_m=0.035, release_clearance_m=0.004)
+    assert released.tolist() == [False, True]
+
+
 def test_gripper_predicates_validate_distances() -> None:
     env = SimpleNamespace(arena_world=_make_world())
     with pytest.raises(AssertionError, match="Grasp width"):
-        end_effector_released(env, PandaGripper(), grasp_width_m=0.0, release_clearance_m=0.001)
+        gripper_released(env, PandaGripper(), grasp_width_m=0.0, release_clearance_m=0.001)
     with pytest.raises(AssertionError, match="clearance"):
-        end_effector_released(env, PandaGripper(), grasp_width_m=0.01, release_clearance_m=-0.001)
+        gripper_released(env, PandaGripper(), grasp_width_m=0.01, release_clearance_m=-0.001)
     with pytest.raises(AssertionError, match="Distance"):
-        end_effector_distance_from_object_exceeds_threshold(
-            env, subject_name="object", end_effector=PandaGripper(), distance_threshold_m=-0.1
+        gripper_distance_from_object_exceeds_threshold(
+            env, subject_name="object", gripper=PandaGripper(), distance_threshold_m=-0.1
         )
 
 
@@ -136,7 +153,7 @@ def test_gear_task_binds_release_checks_to_the_embodiment_gripper() -> None:
     task.bind_embodiment(embodiment)
 
     params = task.get_termination_cfg().success.params
-    assert params["gripper"] is embodiment.end_effector
+    assert params["gripper"] is embodiment.gripper
     assert "robot_asset_cfg" not in params
     assert "tcp_body_name" not in params
     assert "tcp_offset_xyz" not in params

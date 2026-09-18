@@ -22,7 +22,7 @@ from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.predicates.composite import CompositePredicate
-from isaaclab_arena.tasks.predicates.gripper import end_effector_released
+from isaaclab_arena.tasks.predicates.gripper import gripper_released
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
     tilt_axis_aligned,
@@ -114,11 +114,11 @@ class GearMeshTask(TaskBase):
         )
 
     def bind_embodiment(self, embodiment: EmbodimentBase) -> None:
-        """Bind the embodiment's parallel-jaw gripper to release checks."""
+        """Bind the embodiment's gripper to release checks."""
         self.gripper = embodiment.get_gripper()
         self.release_condition = partial(
-            end_effector_released,
-            end_effector=self.gripper,
+            gripper_released,
+            gripper=self.gripper,
             grasp_width_m=self.grasp_width_m,
             release_clearance_m=self.release_clearance_m,
         )
