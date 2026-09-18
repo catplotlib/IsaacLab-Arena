@@ -16,7 +16,12 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
 
     from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
 
-    from isaaclab_arena.tasks.predicates.spatial import _relative_axial_distances
+    from isaaclab_arena.tasks.predicates.spatial import (
+        _relative_axial_distances,
+        depth_in_range,
+        velocity_below_threshold,
+        xy_in_proximity,
+    )
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.usbc_env_behaviour_demo import (
         _MATING_ROTATIONS_XYZW,
         _build_demo_environment,
@@ -29,14 +34,26 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
     )
     for variant in ("easy", "medium"):
         task = _build_demo_environment(variant).task
-        assert task.plug.scale == ((1.0, 1.0, 1.0) if variant == "easy" else (0.5, 0.5, 0.5))
+        assert task.plug.scale == (1.0, 1.0, 1.0)
         predicates = task.get_termination_cfg().success.params["predicates"]
+        geometry_predicates = [
+            predicate
+            for predicate in predicates
+            if predicate.func in (depth_in_range, xy_in_proximity, velocity_below_threshold)
+        ]
+        assert [predicate.func for predicate in geometry_predicates] == [
+            depth_in_range,
+            xy_in_proximity,
+            velocity_below_threshold,
+        ]
         mating = predicates[0].params
         geometry = {key: value for key, value in mating.items() if key not in ("depth_min", "depth_max")}
         q_R_P = torch.tensor([_MATING_ROTATIONS_XYZW[variant]]).expand(2, -1)
         wide_axis_R = quat_apply(q_R_P, torch.tensor([[1.0, 0.0, 0.0]]).expand(2, -1))
-        expected_wide_axis_R = torch.tensor([0.0, 0.0, 1.0] if variant == "easy" else [1.0, 0.0, 0.0])
+        expected_wide_axis_R = torch.tensor([0.0, 0.0, 1.0])
         assert torch.allclose(wide_axis_R, expected_wide_axis_R.expand(2, -1), atol=1.0e-6)
+        insertion_axis_R = quat_apply(q_R_P, torch.tensor([[0.0, 0.0, 1.0]]).expand(2, -1))
+        assert torch.allclose(insertion_axis_R, torch.tensor(mating["receiver_axis"]).expand(2, -1), atol=1.0e-6)
         target = (mating["depth_min"] + mating["depth_max"]) / 2 if mating["depth_max"] else mating["depth_min"] + 0.001
         for depth in (-0.004, target):
             T_W_P = _plug_pose_at_depth(T_W_R, q_R_P, mating, depth)
@@ -48,7 +65,7 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
             measured_depth, lateral = _relative_axial_distances(env, **geometry)
             assert torch.allclose(measured_depth, torch.full((2,), depth), atol=1.0e-6)
             assert torch.allclose(lateral, torch.zeros(2), atol=1.0e-6)
-            results = [predicate.func(env, **predicate.params) for predicate in predicates]
+            results = [predicate.func(env, **predicate.params) for predicate in geometry_predicates]
             assert bool(torch.stack(results).all().item()) == (depth == target)
             assert all(bool(result.all().item()) for result in results[1:])
     return True
@@ -58,17 +75,22 @@ def test_usbc_demo_geometry() -> None:
     assert run_function_with_persistent_simulation_app(_test_usbc_demo_geometry)
 
 
-def _test_usbc_demo_success_reset(simulation_app, variant: str, control: str) -> bool:
+def _test_usbc_demo_success_reset(simulation_app, variant: str) -> bool:
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.usbc_env_behaviour_demo import run_demo
 
-    run_demo(simulation_app, variant=variant, control=control, cycles=2, pause_steps=1, real_time=False)
+    run_demo(
+        simulation_app,
+        variant=variant,
+        cycles=2,
+        pause_steps=1,
+        real_time=False,
+    )
     return True
 
 
 @pytest.mark.parametrize("variant", ("medium", "easy"))
-@pytest.mark.parametrize("control", ("plug", "receiver"))
-def test_usbc_demo_success_reset(variant: str, control: str) -> None:
-    assert run_function_with_persistent_simulation_app(_test_usbc_demo_success_reset, variant=variant, control=control)
+def test_usbc_demo_success_reset(variant: str) -> None:
+    assert run_function_with_persistent_simulation_app(_test_usbc_demo_success_reset, variant=variant)
 
 
 def _test_usbc_demo_cli_visualizers(_simulation_app) -> bool:
@@ -80,10 +102,9 @@ def _test_usbc_demo_cli_visualizers(_simulation_app) -> bool:
     from isaaclab_arena.utils.isaaclab_utils import simulation_app as simulation_app_utils
     from isaaclab_arena_environments.isaac_cap.usbc_insertion import usbc_env_behaviour_demo as demo_module
 
-    for arguments, expected_kit, expected_teleop in (
-        ([], True, False),
-        (["--viz", "none"], False, False),
-        (["--teleop", "--control", "receiver"], True, True),
+    for arguments, expected_kit in (
+        ([], True),
+        (["--viz", "none"], False),
     ):
         app_context = SimpleNamespace(app_launcher=SimpleNamespace(has_window=True))
         context_factory = Mock(return_value=nullcontext(app_context))
@@ -99,7 +120,8 @@ def _test_usbc_demo_cli_visualizers(_simulation_app) -> bool:
         assert not hasattr(parsed_args, "headless")
         assert visualizer_factory.called == expected_kit
         run_demo_mock.assert_called_once()
-        assert run_demo_mock.call_args.kwargs["teleop"] == expected_teleop
+        assert "teleop" not in run_demo_mock.call_args.kwargs
+        assert "control" not in run_demo_mock.call_args.kwargs
         assert run_demo_mock.call_args.kwargs["visualizer_cfg"] == (
             visualizer_factory.return_value if expected_kit else None
         )
@@ -131,4 +153,12 @@ def test_usbc_demo_headless_cli(variant: str) -> None:
         ],
         capture_output=True,
     )
+    for predicate_name in (
+        "depth_in_range",
+        "xy_in_proximity",
+        "velocity_below_threshold",
+        "parallel_jaw_gripper_released",
+        "end_effector_distance_from_object_exceeds_threshold",
+    ):
+        assert predicate_name in result.stdout, result.stdout
     assert "success reset observed" in result.stdout, result.stdout

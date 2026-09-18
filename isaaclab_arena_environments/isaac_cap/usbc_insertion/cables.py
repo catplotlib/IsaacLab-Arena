@@ -3,7 +3,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Procedural cable loads attached to the easy USB-C connectors."""
+"""Procedural cable loads attached to the USB-C connectors.
+
+Arena's general ``Cable`` asset is a standalone, unwelded VBD articulation. These
+CAP cables instead run in MJWarp and joint their first link directly to a dynamic
+plug or bulkhead, so they require this connector-attached implementation.
+"""
 
 from __future__ import annotations
 
@@ -20,8 +25,8 @@ from isaaclab_newton.physics import NewtonMJWarpManager
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.assets.register import register_asset
 
-_PLUG_LINKS = 24
-_PLUG_LENGTH = 0.18 * 2.0
+_PLUG_LINKS = 16
+_PLUG_LENGTH = 0.12 * 2.0
 _PLUG_REAR_Z = -0.034
 _BULKHEAD_LINKS = 8
 _BULKHEAD_CABLE_LENGTH = 0.05 * 2.0
@@ -35,8 +40,6 @@ _CABLE_CONTACT_GAP = 2.0e-4
 _CABLE_COLOR = (0.90, 0.90, 0.90)
 _CABLE_CONTACT_STIFFNESS = 1.0e3
 _CABLE_CONTACT_DAMPING = 300.0
-_CABLE_LABEL_MARKER = "UsbcConnectorCable"
-_CONNECTOR_TORSIONAL_FRICTION = 1.0
 
 _BULKHEAD_POSITION = (0.44, 0.0148, 0.8234)
 _BULKHEAD_ROTATION = (0.5, 0.5, 0.5, 0.5)
@@ -214,21 +217,6 @@ def _add_cable_chain(
     builder.add_articulation(joints, label=f"{root_path}/articulation")
 
 
-def _configure_connector_friction(builder, world_index: int, _world_position, _world_quaternion) -> None:
-    """Apply torsional friction to the connector and gripper contact shapes."""
-    grasp_shape_indices = [
-        index
-        for index, label in enumerate(builder.shape_label)
-        if _CABLE_LABEL_MARKER.casefold() not in str(label).casefold()
-        and any(token in str(label).casefold() for token in ("plug", "bulkhead", "finger"))
-    ]
-    assert (
-        len(grasp_shape_indices) >= 4
-    ), f"USB-C torsional friction matched {len(grasp_shape_indices)} shapes; expected at least four."
-    for shape_index in grasp_shape_indices:
-        builder.shape_material_mu_torsional[shape_index] = _CONNECTOR_TORSIONAL_FRICTION
-
-
 def _add_connector_cable(builder, world_index: int, _world_position, _world_quaternion, *, cfg) -> None:
     """Build one asset's attached hinge chain in the selected Newton world."""
     import warp as wp
@@ -255,18 +243,6 @@ def _add_connector_cable(builder, world_index: int, _world_position, _world_quat
         segment_half_length=0.5 * length / links,
         root_path=cfg.cable_prim_path.replace("{ENV_REGEX_NS}", env_path),
     )
-
-
-class NewtonEasyUsbcManager(NewtonMJWarpManager):
-    """Install the easy USB-C connector contact tuning for this simulation only."""
-
-    @classmethod
-    def initialize(cls, sim_context) -> None:
-        from isaaclab_newton.physics import NewtonManager
-
-        if _configure_connector_friction not in NewtonManager._per_world_builder_hooks:
-            NewtonManager._per_world_builder_hooks.append(_configure_connector_friction)
-        super().initialize(sim_context)
 
 
 def reset_connector_cable(env, env_ids: Sequence[int] | None, *, prim_path: str, links: int) -> None:

@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Registered Nucleus-hosted assets used by the USB-C environment graphs."""
+"""Registered S3-hosted assets used by the USB-C environment graphs."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import isaaclab.sim as sim_utils
 from isaaclab_newton.sim.schemas import NewtonCollisionCfg, NewtonMaterialPropertiesCfg
 
 from isaaclab_arena.assets.background import Background
+from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.object_library import DomeLight, LibraryObject
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.register import register_asset
@@ -22,9 +23,7 @@ from isaaclab_arena.utils.pose import Pose, PoseRange
 
 from .cables import UsbcConnectorCable
 
-ASSET_ROOT = (
-    "omniverse://isaac-dev.ov.nvidia.com/Projects/nvblox/isaac_arena/newton_envs/cap_envs/usbc_insertion/assets"
-)
+ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/usbc_insertion/assets"
 
 FR3_TABLE_USD_PATH = f"{ASSET_ROOT}/industrial__fr3_workcell_table/industrial__fr3_workcell_table.usda"
 YAM_TABLE_USD_PATH = f"{ASSET_ROOT}/industrial__yam_workcell_table/industrial__yam_workcell_table.usda"
@@ -35,6 +34,9 @@ YAM_USBC_CRADLE_REAR_USD_PATH = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/cra
 USBC_PLUG_USD_PATH = f"{ASSET_ROOT}/vabar_usbc_insert__plug/task_frame_plug.usda"
 USBC_BULKHEAD_USD_PATH = f"{ASSET_ROOT}/vabar_usbc_insert__bulkhead/vabar_usbc_insert__bulkhead.usda"
 USBC_PORT_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_port/industrial__usbc_port.usda"
+USBC_EASY_PLUG_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_plug/industrial__usbc_easy_plug.usda"
+USBC_MEDIUM_PLUG_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_plug/medium_plug.usda"
+USBC_EASY_PORT_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_port/industrial__usbc_easy_port.usda"
 
 
 class _UsbcAsset(LibraryObject):
@@ -44,7 +46,10 @@ class _UsbcAsset(LibraryObject):
     spawn_cfg_addon = {"copy_from_source": False}
 
     def __init__(
-        self, *, initial_pose: Pose | PoseRange | Mapping[str, Sequence[float]] | None = None, **kwargs
+        self,
+        *,
+        initial_pose: Pose | PoseRange | Mapping[str, Sequence[float]] | None = None,
+        **kwargs,
     ) -> None:
         """Accept a typed pose or a YAML mapping describing a pose or reset range.
 
@@ -81,7 +86,7 @@ class _UsbcConnector(_UsbcAsset):
 
 @register_asset
 class UsbcPlug(_UsbcConnector):
-    """Full-size USB-C plug used by the easy cabled task."""
+    """Full-size USB-C plug retained for existing asset consumers."""
 
     name = "usbc_insertion_plug"
     usd_path = USBC_PLUG_USD_PATH
@@ -89,7 +94,7 @@ class UsbcPlug(_UsbcConnector):
 
 @register_asset
 class UsbcPrecisionPlug(UsbcPlug):
-    """Half-scale USB-C plug with the medium task's mass and contact material."""
+    """Half-scale precision plug with its original mass and material."""
 
     name = "usbc_insertion_precision_plug"
     scale = (0.5, 0.5, 0.5)
@@ -107,11 +112,38 @@ class UsbcPrecisionPlug(UsbcPlug):
 
 
 @register_asset
+class UsbcEasyPlug(_UsbcConnector):
+    """CAP's scaled plug with the easy task's authored mesh contacts."""
+
+    name = "usbc_insertion_easy_plug"
+    usd_path = USBC_EASY_PLUG_USD_PATH
+    spawn_cfg_addon = {key: value for key, value in _UsbcConnector.spawn_cfg_addon.items() if key != "collision_props"}
+
+
+@register_asset
+class UsbcMediumPlug(_UsbcConnector):
+    """CAP's medium plug with matched bulkhead contact geometry."""
+
+    name = "usbc_insertion_medium_plug"
+    usd_path = USBC_MEDIUM_PLUG_USD_PATH
+    spawn_cfg_addon = UsbcEasyPlug.spawn_cfg_addon
+
+
+@register_asset
+class UsbcEasyPort(_UsbcFixture):
+    """Fixed chamfered receptacle for the easy task."""
+
+    name = "usbc_insertion_easy_port"
+    usd_path = USBC_EASY_PORT_USD_PATH
+
+
+@register_asset
 class UsbcBulkhead(_UsbcConnector):
     """Dynamic receiver used by the bimanual USB-C task."""
 
     name = "usbc_insertion_bulkhead"
     usd_path = USBC_BULKHEAD_USD_PATH
+    spawn_cfg_addon = UsbcEasyPlug.spawn_cfg_addon
 
 
 @register_asset
@@ -124,7 +156,7 @@ class UsbcPort(_UsbcFixture):
 
 @register_asset
 class UsbcBench(_UsbcFixture):
-    """Bench supporting the easy USB-C fixture assembly."""
+    """Bench supporting the plug in both USB-C variants."""
 
     name = "usbc_insertion_bench"
     usd_path = YAM_USBC_BENCH_USD_PATH
@@ -132,7 +164,7 @@ class UsbcBench(_UsbcFixture):
 
 @register_asset
 class UsbcCradleFront(_UsbcFixture):
-    """Front support for the easy USB-C bulkhead."""
+    """Front support for the medium USB-C bulkhead."""
 
     name = "usbc_insertion_cradle_front"
     usd_path = YAM_USBC_CRADLE_FRONT_USD_PATH
@@ -140,7 +172,7 @@ class UsbcCradleFront(_UsbcFixture):
 
 @register_asset
 class UsbcCradleRear(_UsbcFixture):
-    """Rear support for the easy USB-C bulkhead."""
+    """Rear support for the medium USB-C bulkhead."""
 
     name = "usbc_insertion_cradle_rear"
     usd_path = YAM_USBC_CRADLE_REAR_USD_PATH
@@ -230,6 +262,9 @@ class UsbcDomeLight(DomeLight):
 
 
 USBC_ASSET_CLASSES = (
+    UsbcEasyPlug,
+    UsbcMediumPlug,
+    UsbcEasyPort,
     UsbcPlug,
     UsbcPrecisionPlug,
     UsbcBulkhead,

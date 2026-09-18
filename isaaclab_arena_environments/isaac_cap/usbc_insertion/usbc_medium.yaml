@@ -3,52 +3,36 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+external_yaml: usbc_env_config.yaml
 env_name: vabar_contact_rich_insertion__usbc_insertion_medium
 embodiment:
-  id: robot
-  registry_name: industrial_fr3_robotiq_2f85
+  id: yam
+  registry_name: industrial_bimanual_yam
   params:
-    initial_pose:
-      position_xyz: [-0.5, -0.1, 0.912]
-      rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
-    initial_joint_pose:
-    - 0.07864274298115631
-    - 0.3298062995394371
-    - 0.044335304471795095
-    - -2.5311067752004224
-    - -0.05172078111771767
-    - 2.860254870341865
-    - 0.17028217529806985
+    left_mount_position: [0.2525, 0.31, 0.75]
+    right_mount_position: [0.2525, -0.31, 0.75]
+    robot_usd_path: https://omniverse-content-staging.s3-us-west-2.amazonaws.com/Assets/Isaac/6.1/Isaac/IsaacLab/Arena/assets/object_library/temp_newton_envs/usbc_insertion/assets/industrial__i2rt_yam/i2rt_yam_default.usda
+    instanceable_robot_usd_path: https://omniverse-content-staging.s3-us-west-2.amazonaws.com/Assets/Isaac/6.1/Isaac/IsaacLab/Arena/assets/object_library/temp_newton_envs/usbc_insertion/assets/industrial__i2rt_yam/i2rt_yam_instanceable.usda
 background:
-  id: table
-  registry_name: usbc_insertion_fr3_table
+  id: background
+  registry_name: usbc_insertion_yam_table
   params:
-    instance_name: table
-    prim_path: "{ENV_REGEX_NS}/Table"
+    instance_name: background
     initial_pose:
-      position_xyz: [-0.5, -0.1, 0.912]
+      position_xyz: [0.2525, 0.0, 0.75]
+      rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    prim_path: '{ENV_REGEX_NS}/background'
+object_references:
+- id: table
+  parent_id: background
+  prim_path: '{ENV_REGEX_NS}/background/placement_surface'
+  object_type: base
+  params: {}
 objects:
-- id: usbc_port
-  registry_name: usbc_insertion_port
-  params:
-    prim_path: "{ENV_REGEX_NS}/UsbcPort"
-    initial_pose:
-      position_xyz: [-0.05, -0.1, 0.805]
-- id: usbc_plug
-  registry_name: usbc_insertion_precision_plug
-  params:
-    prim_path: "{ENV_REGEX_NS}/UsbcPlug"
-    initial_pose:
-      position_xyz_min: [-0.07, -0.05, 0.7825]
-      position_xyz_max: [-0.03, -0.03, 0.7825]
-      rpy_min: [1.5707963267948966, 0.0, -3.141592653589793]
-      rpy_max: [1.5707963267948966, 0.0, 3.141592653589793]
 - id: hdr_shadow_receiver
   registry_name: usbc_insertion_hdr_shadow_receiver
   params:
-    prim_path: "{ENV_REGEX_NS}/HdrShadowReceiver"
-    initial_pose:
-      position_xyz: [0.0, 0.0, 0.0005]
+    prim_path: '{ENV_REGEX_NS}/HdrShadowReceiver'
 - id: sky_light
   registry_name: usbc_insertion_dome_light
   params:
@@ -56,20 +40,153 @@ objects:
     hdr_name: empty_warehouse_robolab
     intensity: 1500.0
     color: [0.75, 0.75, 0.75]
+- id: bench
+  registry_name: usbc_insertion_bench
+  params:
+    instance_name: bench
+    initial_pose:
+      position_xyz: [0.44, -0.06285, 0.775]
+      rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    prim_path: '{ENV_REGEX_NS}/Bench'
+- id: plug
+  registry_name: usbc_insertion_medium_plug
+  params:
+    instance_name: plug
+    prim_path: '{ENV_REGEX_NS}/Plug'
+- id: cradle_front
+  registry_name: usbc_insertion_cradle_front
+  params:
+    instance_name: cradle_front
+    initial_pose:
+      position_xyz: [0.44, 0.0228, 0.7717]
+      rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    prim_path: '{ENV_REGEX_NS}/CradleFront'
+- id: cradle_rear
+  registry_name: usbc_insertion_cradle_rear
+  params:
+    instance_name: cradle_rear
+    initial_pose:
+      position_xyz: [0.44, 0.0448, 0.7762]
+      rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    prim_path: '{ENV_REGEX_NS}/CradleRear'
+- id: bulkhead
+  registry_name: usbc_insertion_bulkhead
+  params:
+    instance_name: bulkhead
+    prim_path: '{ENV_REGEX_NS}/Bulkhead'
+- id: plug_cable
+  registry_name: usbc_insertion_connector_cable
+  params:
+    prim_path: '{ENV_REGEX_NS}/UsbcConnectorCablePlug'
+    connector_prim_path: '{ENV_REGEX_NS}/Plug'
+    attachment: plug
+- id: bulkhead_cable
+  registry_name: usbc_insertion_connector_cable
+  params:
+    prim_path: '{ENV_REGEX_NS}/UsbcConnectorCableBulkhead'
+    connector_prim_path: '{ENV_REGEX_NS}/Bulkhead'
+    attachment: bulkhead
+relations:
+- kind: is_anchor
+  subject: table
+  params: {}
+- kind: 'on'
+  subject: bench
+  reference: table
+  params:
+    clearance_m: 0.0
+- kind: is_anchor
+  subject: bench
+  params: {}
+- kind: 'on'
+  subject: plug
+  reference: bench
+  params:
+    clearance_m: 0.0
+    edge_margin_m: 0.0
+- kind: at_position
+  subject: plug
+  params:
+    x: 0.44
+    y: -0.07
+    relation_loss_weight: 1000.0
+- kind: rotate_around_solution
+  subject: plug
+  params:
+    roll_rad: -1.5707963267948966
+    pitch_rad: -1.5707963267948966
+    yaw_rad: 0.0
+- kind: random_around_solution
+  subject: plug
+  params:
+    x_half_m: 0.018
+    y_half_m: 0.018
+    yaw_half_rad: 0.8726646259971648
+- kind: 'on'
+  subject: cradle_front
+  reference: table
+  params:
+    clearance_m: 0.0
+    edge_margin_m: 0.0
+- kind: is_anchor
+  subject: cradle_front
+  params: {}
+- kind: 'on'
+  subject: cradle_rear
+  reference: table
+  params:
+    clearance_m: 0.0
+    edge_margin_m: 0.0
+- kind: is_anchor
+  subject: cradle_rear
+  params: {}
+- kind: 'on'
+  subject: bulkhead
+  reference: cradle_front
+  params:
+    clearance_m: 0.0
+    edge_margin_m: 0.0
+    overlap: true
+- kind: at_position
+  subject: bulkhead
+  params:
+    x: 0.44
+    y: 0.0148
+    relation_loss_weight: 1000.0
+- kind: rotate_around_solution
+  subject: bulkhead
+  params:
+    roll_rad: 1.5707963267948966
+    pitch_rad: 0.0
+    yaw_rad: 1.5707963267948966
+- kind: random_around_solution
+  subject: bulkhead
+  params:
+    x_half_m: 0.004
+    y_half_m: 0.004
+    yaw_half_rad: 0.05235987755982989
 task:
   composition: atomic
-  description: Insert the USB-C plug into the receptacle.
+  description: insert the USB-C plug into the receptacle
   subtasks:
   - kind: UsbcInsertionTask
     params:
-      plug: usbc_plug
-      receiver: usbc_port
-      receiver_mouth_offset_xyz: [0.0, 0.0, 0.0065]
-      receiver_axis: [0.0, 0.0, -1.0]
-      subject_tip_offset_xyz: [0.0, 0.0, 0.00665]
-      depth_min: 0.0052
-      depth_max: 0.0085
-      lateral_max: 0.0043965896
+      plug: plug
+      receiver: bulkhead
+      receiver_mouth_offset_xyz: [-0.0045, 0.0, 0.0]
+      receiver_axis: [1.0, 0.0, 0.0]
+      subject_tip_offset_xyz: [0.0, 0.0, 0.0133]
+      depth_min: 0.0104
+      lateral_max: 0.0087931792
       speed_max: 0.05
-      consecutive_success_steps: 1
-      episode_length_s: 120.0
+      withdrawal_distance_min: 0.05
+      require_released: true
+      work_hand:
+        robot_name: right_robot
+        gripper_joint_name: left_finger
+        jaw_gap_at_zero_joint_m: 0.0
+        grasp_width_m: 0.01
+        release_clearance_m: 0.0015
+        ee_frame_name: right_ee_frame
+        target_frame_name: tcp
+      episode_length_s: 150.0

@@ -5,6 +5,8 @@
 
 """Validate the ported USB-C task semantics and reset ranges."""
 
+import pytest
+
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
@@ -131,14 +133,179 @@ def test_usbc_insertion_task() -> None:
     assert run_function_with_persistent_simulation_app(_test_usbc_insertion_task)
 
 
+def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
+    import torch
+    from types import SimpleNamespace
+
+    from isaaclab_arena.assets.asset import Asset
+    from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+    from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask
+
+    hand = dict(
+        robot_name="right_robot",
+        gripper_joint_name="left_finger",
+        jaw_gap_at_zero_joint_m=0.0,
+        grasp_width_m=0.01,
+        release_clearance_m=0.0015,
+        ee_frame_name="right_ee_frame",
+        target_frame_name="tcp",
+    )
+    positions = torch.tensor([[0.0, 0.0, 0.13], [0.0, 0.0, 0.33], [0.0, 0.0, 0.33]])
+    frame_positions = torch.tensor([[0.0, 0.0, 0.13]]).expand(3, -1)
+    robot = SimpleNamespace(
+        data=SimpleNamespace(
+            joint_names=["left_finger"],
+            joint_pos=torch.tensor([[0.037524], [0.005], [0.037524]]),
+        )
+    )
+    env = SimpleNamespace(
+        arena_world=SimpleNamespace(
+            get_joint_position=lambda _robot, _joint: robot.data.joint_pos[:, 0],
+            get_frame_position_w=lambda _sensor, _target: frame_positions,
+            get_pose_w=lambda _name: positions,
+        ),
+    )
+    release_params = dict(
+        robot_name=hand["robot_name"],
+        gripper_joint_name=hand["gripper_joint_name"],
+        jaw_gap_at_zero_joint_m=hand["jaw_gap_at_zero_joint_m"],
+        grasp_width_m=hand["grasp_width_m"],
+        release_clearance_m=hand["release_clearance_m"],
+    )
+    params = dict(
+        subject_name="plug",
+        ee_frame_name=hand["ee_frame_name"],
+        target_frame_name=hand["target_frame_name"],
+        distance_threshold_m=0.04,
+    )
+    assert parallel_jaw_gripper_released(env, **release_params).tolist() == [True, False, True]
+    assert end_effector_distance_from_object_exceeds_threshold(env, **params).tolist() == [False, True, True]
+    assert (
+        parallel_jaw_gripper_released(env, **release_params)
+        & end_effector_distance_from_object_exceeds_threshold(env, **params)
+    ).tolist() == [
+        False,
+        False,
+        True,
+    ]
+    for require_released in (False, True):
+        task = UsbcInsertionTask(
+            Asset("plug"),
+            Asset("receiver"),
+            receiver_mouth_offset_xyz=(0.0, 0.0, 0.0),
+            receiver_axis=(0.0, 0.0, 1.0),
+            subject_tip_offset_xyz=(0.0, 0.0, 0.0),
+            depth_min=0.01,
+            lateral_max=0.01,
+            speed_max=0.05,
+            work_hand=hand,
+            withdrawal_distance_min=0.04,
+            require_released=require_released,
+        )
+        hand_predicates = task.get_termination_cfg().success.params["predicates"][3:]
+        assert [term.func for term in hand_predicates] == (
+            [parallel_jaw_gripper_released, end_effector_distance_from_object_exceeds_threshold]
+            if require_released
+            else [end_effector_distance_from_object_exceeds_threshold]
+        )
+        result = torch.stack([term.func(env, **term.params) for term in hand_predicates]).all(dim=0)
+        assert result.tolist() == ([False, False, True] if require_released else [False, True, True])
+    robot.data.joint_pos[1, 0] = 0.006
+    assert parallel_jaw_gripper_released(env, **release_params).tolist() == [True, True, True]
+    assert (
+        parallel_jaw_gripper_released(env, **release_params)
+        & end_effector_distance_from_object_exceeds_threshold(env, **params)
+    ).tolist() == [
+        False,
+        True,
+        True,
+    ]
+    positions[0] = frame_positions[0] + torch.tensor([0.04, 0.0, 0.0])
+    assert not end_effector_distance_from_object_exceeds_threshold(env, **params)[0]
+    positions[0, 0] += 1.0e-4
+    assert end_effector_distance_from_object_exceeds_threshold(env, **params)[0]
+    return True
+
+
+def test_usbc_release_and_withdrawal() -> None:
+    assert run_function_with_persistent_simulation_app(_test_usbc_release_and_withdrawal)
+
+
+def _test_usbc_contact_rig(_simulation_app) -> bool:
+    import numpy as np
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    import newton
+    from isaaclab_newton.physics import NewtonManager
+
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.physics import _configure_contacts
+
+    labels = [
+        "LeftRobot/left_finger",
+        "RightRobot/left_finger",
+        "LeftRobot/link_6",
+        "RightRobot/link_6",
+        "Plug/geometry",
+        "Port/geometry",
+        "Bulkhead/geometry",
+        "Bench/geometry",
+        "background/table/geometry",
+        "UsbcConnectorCablePlug/segment0",
+    ]
+    count = len(labels)
+    collide = int(newton.ShapeFlags.COLLIDE_SHAPES)
+    builder = SimpleNamespace(
+        body_label=labels,
+        joint_label=["LeftRobot/left_finger", "RightRobot/left_finger"],
+        shape_label=labels,
+        shape_body=list(range(count)),
+        shape_source=[object()] * count,
+        shape_flags=[collide, collide, 0, 0, collide, collide, collide, collide, collide, collide],
+        shape_collision_group=[1] * count,
+        _shape_collision_filter_pairs=set(),
+        custom_attributes={
+            name: SimpleNamespace(values=None)
+            for name in (
+                "mujoco:eq_solref",
+                "mujoco:solref",
+                "mujoco:solref_mode",
+                "mujoco:geom_solimp",
+                "mujoco:condim",
+            )
+        },
+    )
+    builder.custom_attributes["mujoco:equality_constraint_joint1"] = SimpleNamespace(values=[0, 1])
+    builder.add_shape_collision_filter_pair = lambda first, second: builder._shape_collision_filter_pairs.add(
+        (first, second)
+    )
+    for name in ("mu", "mu_torsional", "mu_rolling", "ke", "kd"):
+        setattr(builder, f"shape_material_{name}", [0.0] * count)
+    builder.shape_gap = [0.0] * count
+    with patch.object(NewtonManager, "_builder", builder):
+        _configure_contacts()
+    np.testing.assert_allclose(builder.shape_material_mu, [8, 8, 0, 0, 0.35, 0.35, 2.5, 0.4, 0.35, 0])
+    np.testing.assert_allclose(builder.shape_material_mu_torsional[:2], [0.002, 0.002])
+    np.testing.assert_allclose(builder.shape_gap[:2], [0.0002, 0.0002])
+    np.testing.assert_allclose(builder.shape_material_ke[4:7], [62500] * 3)
+    np.testing.assert_allclose(builder.shape_material_kd[4:7], [500] * 3)
+    assert all(builder.shape_flags[index] & collide for index in (2, 3))
+    assert builder.custom_attributes["mujoco:condim"].values == {0: 4, 1: 4, 2: 3, 3: 3}
+    for value in builder.custom_attributes["mujoco:eq_solref"].values.values():
+        np.testing.assert_allclose(tuple(value), [0.004, 1.0])
+    assert 9 not in builder.custom_attributes["mujoco:solref"].values
+    return True
+
+
+def test_usbc_contact_rig() -> None:
+    assert run_function_with_persistent_simulation_app(_test_usbc_contact_rig)
+
+
 def _test_usbc_asset_registration(_simulation_app) -> bool:
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena_environments.isaac_cap import register_components
-
-    registry = AssetRegistry()
-    plug_class = registry.get_asset_by_name("usbc_insertion_plug")
-
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.assets import ASSET_ROOT, USBC_ASSET_CLASSES, UsbcPlug
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.environment import (
         UsbcInsertionEasyEnvironment,
@@ -147,10 +314,12 @@ def _test_usbc_asset_registration(_simulation_app) -> bool:
         UsbcInsertionMediumEnvironmentCfg,
     )
 
+    register_components()
+    register_components()
+    registry = AssetRegistry()
+    plug_class = registry.get_asset_by_name("usbc_insertion_plug")
     assert plug_class is UsbcPlug
-    assert len(USBC_ASSET_CLASSES) == 12
-    register_components()
-    register_components()
+    assert len(USBC_ASSET_CLASSES) == 15
     for asset_class in USBC_ASSET_CLASSES:
         assert registry.get_asset_by_name(asset_class.name) is asset_class
         assert "usbc_insertion" in asset_class.tags
@@ -187,14 +356,14 @@ def _test_usbc_asset_registration(_simulation_app) -> bool:
     easy = UsbcInsertionEasyEnvironment().build(UsbcInsertionEasyEnvironmentCfg())
     medium = UsbcInsertionMediumEnvironment().build(UsbcInsertionMediumEnvironmentCfg())
     asset_types = {type(asset) for env in (easy, medium) for asset in env.scene.assets.values()}
-    assert asset_types == set(USBC_ASSET_CLASSES)
-    assert type(easy.task.plug) is plug_class
-    assert type(medium.task.plug) is precision_class
-    assert easy.task.plug.name == "plug" and easy.task.receiver.name == "bulkhead"
-    assert medium.task.plug.name == "usbc_plug" and medium.task.receiver.name == "usbc_port"
+    assert set(USBC_ASSET_CLASSES).issuperset(asset_types - {type(easy.scene.assets["table"])})
+    assert type(easy.task.plug) is registry.get_asset_by_name("usbc_insertion_easy_plug")
+    assert type(medium.task.plug) is registry.get_asset_by_name("usbc_insertion_medium_plug")
+    assert easy.task.plug.name == "plug" and easy.task.receiver.name == "port"
+    assert medium.task.plug.name == "plug" and medium.task.receiver.name == "bulkhead"
     for scene in (easy.scene, medium.scene):
         assert scene.assets["table"].object_type == ObjectType.BASE
-        assert scene.assets["table"].prim_path == "{ENV_REGEX_NS}/Table"
+        assert scene.assets["background"].prim_path == "{ENV_REGEX_NS}/background"
         shadow_receiver = scene.assets["hdr_shadow_receiver"]
         assert not shadow_receiver.object_cfg.spawn.visible
         assert shadow_receiver.object_cfg.collision_group == -1
@@ -208,81 +377,133 @@ def test_usbc_asset_registration() -> None:
 def _test_usbc_environment_yaml(_simulation_app) -> bool:
     import math
 
-    import pytest
-
-    from isaaclab_arena.assets.background import Background
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
-    from isaaclab_arena.utils.pose import PoseRange
-    from isaaclab_arena_environments.isaac_cap.usbc_insertion.cables import UsbcConnectorCable, reset_connector_cable
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+    from isaaclab_arena.tasks.predicates.spatial import (
+        depth_in_range,
+        end_effector_distance_from_object_exceeds_threshold,
+        velocity_below_threshold,
+        xy_in_proximity,
+    )
+    from isaaclab_arena.utils.physics_backend import PhysicsBackend
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.assets import ASSET_ROOT
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.environment import (
         UsbcInsertionEasyEnvironment,
         UsbcInsertionEasyEnvironmentCfg,
         UsbcInsertionMediumEnvironment,
         UsbcInsertionMediumEnvironmentCfg,
     )
-    from isaaclab_arena_environments.isaac_cap.usbc_insertion.physics import (
-        configure_easy_usbc_physics,
-        configure_medium_usbc_physics,
-    )
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.physics import NewtonUsbcManager
 
-    easy_factory = UsbcInsertionEasyEnvironment()
-    easy = easy_factory.build(UsbcInsertionEasyEnvironmentCfg(use_tiled_cameras=True, use_instanceable_meshes=True))
-    medium_factory = UsbcInsertionMediumEnvironment()
-    medium = medium_factory.build(UsbcInsertionMediumEnvironmentCfg(use_tiled_cameras=True))
-    assert easy.name == easy_factory.name
-    assert medium.name == medium_factory.name
-    assert easy.env_cfg_callback is configure_easy_usbc_physics
-    assert medium.env_cfg_callback is configure_medium_usbc_physics
-    for environment in (easy, medium):
-        table = environment.scene.assets["table"]
-        assert isinstance(table, Background)
-        assert table.reset_nested_physics
-        assert table.get_event_cfg()[1] is None
-        receiver_event = environment.task.receiver.get_event_cfg()[1]
-        assert receiver_event is not None and receiver_event.mode == "reset"
-    easy_events = easy.scene.get_events_cfg()
-    for name, links in (("plug_cable", 24), ("bulkhead_cable", 8)):
-        cable = easy.scene.assets[name]
-        assert isinstance(cable, UsbcConnectorCable)
-        event = getattr(easy_events, name)
-        assert event.func is reset_connector_cable
-        assert event.params == {"prim_path": cable.prim_path, "links": links}
-        assert event.mode == "reset"
-        assert name not in medium.scene.assets
-    assert easy.task.get_events_cfg() is None
-    assert easy.embodiment.scene_config.left_robot.spawn.usd_path.endswith("i2rt_yam_instanceable.usda")
-    assert easy.embodiment.scene_config.right_robot.spawn.usd_path.endswith("i2rt_yam_instanceable.usda")
-    assert medium.embodiment.camera_config.use_tiled_camera
-
-    easy_range = easy.task.plug.get_initial_pose()
-    medium_range = medium.task.plug.get_initial_pose()
-    assert isinstance(easy_range, PoseRange) and isinstance(medium_range, PoseRange)
-    assert easy_range.position_xyz_min == pytest.approx((0.42, -0.09, 0.811))
-    assert easy_range.position_xyz_max == pytest.approx((0.46, -0.05, 0.811))
-    assert easy_range.rpy_min == easy_range.rpy_max == (-math.pi / 2, -math.pi / 2, 0.0)
-    assert medium_range.position_xyz_min == pytest.approx((-0.07, -0.05, 0.7825))
-    assert medium_range.position_xyz_max == pytest.approx((-0.03, -0.03, 0.7825))
-    assert medium_range.rpy_min == (math.pi / 2, 0.0, -math.pi)
-    assert medium_range.rpy_max == (math.pi / 2, 0.0, math.pi)
-    assert easy.task.receiver.get_initial_pose().position_xyz == (0.44, 0.0148, 0.8234)
-    assert medium.task.receiver.get_initial_pose().position_xyz == (-0.05, -0.1, 0.805)
-
-    for factory, env in ((easy_factory, easy), (medium_factory, medium)):
-        assert env.task.plug is env.scene.assets[env.task.plug.name]
-        assert env.task.receiver is env.scene.assets[env.task.receiver.name]
-        light = env.scene.assets["sky_light"]
-        assert light.spawner_cfg.intensity == 1500.0
-        assert tuple(light.spawner_cfg.color) == (0.75, 0.75, 0.75)
-        assert light.spawner_cfg.texture_file
+    for factory, cfg_type, variant in (
+        (UsbcInsertionEasyEnvironment(), UsbcInsertionEasyEnvironmentCfg, "easy"),
+        (UsbcInsertionMediumEnvironment(), UsbcInsertionMediumEnvironmentCfg, "medium"),
+    ):
+        environment = factory.build(cfg_type(enable_cameras=True, use_tiled_cameras=True, use_instanceable_meshes=True))
         spec = ArenaEnvGraphSpec.from_yaml(factory.scene_spec)
-        spec.task.subtasks[0].params["depth_min"] = 0.0055
-        receiver = next(asset for asset in spec.objects if asset.id == env.task.receiver.name)
-        receiver.params["initial_pose"]["position_xyz"][0] += 0.01
-        edited = spec.to_arena_env()
-        assert edited.task.get_termination_cfg().success.params["predicates"][0].params["depth_min"] == 0.0055
-        assert edited.task.receiver.get_initial_pose().position_xyz[0] == pytest.approx(
-            env.task.receiver.get_initial_pose().position_xyz[0] + 0.01
+        assert environment.name == factory.name
+        assert environment.task.task_description == "insert the USB-C plug into the receptacle"
+        assert spec.embodiment.registry_name == "industrial_bimanual_yam"
+        assert ASSET_ROOT.startswith("https://omniverse-content-staging.s3-us-west-2.amazonaws.com/")
+        assert spec.embodiment.params["robot_usd_path"] == f"{ASSET_ROOT}/industrial__i2rt_yam/i2rt_yam_default.usda"
+        assert (
+            spec.embodiment.params["instanceable_robot_usd_path"]
+            == f"{ASSET_ROOT}/industrial__i2rt_yam/i2rt_yam_instanceable.usda"
         )
+        assert spec.default_physics_backend is PhysicsBackend.NEWTON
+        assert spec.env_cfg_override is not None
+        assert not environment.placer_params.allow_best_loss_fallbacks
+        assert environment.placer_params.required_checks == {"on_relation"}
+        assert environment.placer_params.solver_params.clearance_m == 0.0
+        assert environment.placer_params.solver_params.lr == 0.001
+        assert environment.task.plug is environment.scene.assets["plug"]
+        assert environment.task.receiver is environment.scene.assets["port" if variant == "easy" else "bulkhead"]
+        assert environment.scene.assets["background"].usd_path.startswith(f"{ASSET_ROOT}/")
+        assert environment.task.plug.usd_path.startswith(f"{ASSET_ROOT}/")
+        assert environment.task.receiver.usd_path.startswith(f"{ASSET_ROOT}/")
+        assert environment.task.plug.scale == (1.0, 1.0, 1.0)
+        assert environment.task.get_events_cfg() is None
+        predicates = environment.task.get_termination_cfg().success.params["predicates"]
+        assert [term.func for term in predicates] == [
+            depth_in_range,
+            xy_in_proximity,
+            velocity_below_threshold,
+            parallel_jaw_gripper_released,
+            end_effector_distance_from_object_exceeds_threshold,
+        ]
+        assert predicates[0].params["depth_min"] == 0.0104
+        assert predicates[0].params["depth_max"] is None
+        assert predicates[-2].params == {
+            "robot_name": "right_robot",
+            "gripper_joint_name": "left_finger",
+            "jaw_gap_at_zero_joint_m": 0.0,
+            "grasp_width_m": 0.01,
+            "release_clearance_m": 0.0015,
+        }
+        assert predicates[-1].params["subject_name"] == "plug"
+        assert predicates[-1].params["ee_frame_name"] == "right_ee_frame"
+        assert predicates[-1].params["target_frame_name"] == "tcp"
+        assert predicates[-1].params["distance_threshold_m"] == (0.04 if variant == "easy" else 0.05)
+        randomization = {
+            relation.subject: relation.params
+            for relation in spec.relations
+            if relation.kind == "random_around_solution"
+        }
+        assert randomization["plug"]["x_half_m"] == (0.012 if variant == "easy" else 0.018)
+        assert randomization["plug"]["y_half_m"] == randomization["plug"]["x_half_m"]
+        assert randomization["plug"]["yaw_half_rad"] == pytest.approx(math.radians(8 if variant == "easy" else 50))
+        events = environment.scene.get_events_cfg()
+        cable = environment.scene.assets["plug_cable"]
+        assert getattr(events, "plug_cable").params["links"] == 16
+        assert cable.get_event_cfg()[1].mode == "reset"
+        if variant == "easy":
+            assert not {"bulkhead", "cradle_front", "cradle_rear", "bulkhead_cable"} & environment.scene.assets.keys()
+            assert environment.task.receiver.get_initial_pose().position_xyz == (0.44, 0.0233, 0.8234)
+        else:
+            assert events.bulkhead_cable.params["links"] == 8
+            assert randomization["bulkhead"]["x_half_m"] == 0.004
+            assert randomization["bulkhead"]["yaw_half_rad"] == pytest.approx(math.radians(3))
+            supports = [
+                relation for relation in spec.relations if relation.subject == "bulkhead" and relation.kind == "on"
+            ]
+            assert len(supports) == 1 and supports[0].reference == "cradle_front"
+            assert supports[0].params["overlap"] is True
+        cameras = environment.embodiment.camera_config
+        assert cameras.use_tiled_camera
+        assert cameras.top_camera.offset.pos == (0.44, 0.0, 1.2)
+        assert cameras.right_wrist_camera.offset.pos == (-0.0017, 0.079729, 0.066021)
+        assert cameras.right_wrist_camera.update_latest_camera_pose
+        assert cameras.right_wrist_camera.width == 320
+        assert environment.embodiment.get_ee_frame_transformer_names() == ["left_ee_frame", "right_ee_frame"]
+        for side in ("Left", "Right"):
+            frame = getattr(environment.embodiment.scene_config, f"{side.lower()}_ee_frame")
+            assert frame.prim_path == f"{{ENV_REGEX_NS}}/{side}Robot/Geometry/arm"
+            assert len(frame.target_frames) == 1
+            target = frame.target_frames[0]
+            assert (
+                target.prim_path
+                == f"{{ENV_REGEX_NS}}/{side}Robot/Geometry/arm/link_1/link_2/link_3/link_4/link_5/link_6"
+            )
+            assert target.name == "tcp"
+            assert target.offset.pos == (0.0, -0.044, 0.13)
+        env_cfg, _ = ArenaEnvBuilder(environment, ArenaEnvBuilderCfg(num_envs=1)).compose_manager_cfg()
+        assert env_cfg.sim.physics.class_type is NewtonUsbcManager
+        assert env_cfg.sim.dt == 1.0 / 60.0 and env_cfg.decimation == 1
+        assert env_cfg.sim.physics.num_substeps == 16
+        assert env_cfg.sim.physics.collision_decimation == 1
+        assert env_cfg.sim.physics.solver_cfg.integrator == "implicitfast"
+        assert env_cfg.sim.physics.solver_cfg.impratio == 10.0
+        assert not env_cfg.sim.physics.solver_cfg.use_mujoco_contacts
+        assert not env_cfg.sim.physics.use_cuda_graph
+        for robot in (env_cfg.scene.left_robot, env_cfg.scene.right_robot):
+            assert robot.actuators["arm_joints_1_3"].stiffness == 1600.0
+            assert robot.actuators["gripper"].stiffness == 40000.0
+            assert robot.actuators["gripper"].damping == 40.0
+            assert robot.actuators["gripper"].effort_limit_sim == 160.0
+            assert robot.init_state.joint_pos["joint2"] == 1.047
+            assert robot.spawn.usd_path.startswith(f"{ASSET_ROOT}/")
     return True
 
 
@@ -427,23 +648,15 @@ def _test_usbc_insertion_environment(_simulation_app, variant: str, num_envs: in
         assert plug_pose.shape == receiver_pose.shape == (num_envs, 7)
         assert torch.isfinite(plug_pose).all()
         assert torch.isfinite(receiver_pose).all()
-        if variant == "easy":
-            from isaaclab_newton.physics import NewtonManager
+        from isaaclab_newton.physics import NewtonManager
 
-            bounds = ((0.42, 0.46), (-0.09, -0.05), (0.811, 0.811))
-            tilt_cfg = arena_environment.task.get_termination_cfg().success.params["predicates"][2]
-            assert tilt_cfg.func(base_env, **tilt_cfg.params).all()
-            cable_joints = [label for label in NewtonManager.get_model().joint_label if "UsbcConnectorCable" in label]
-            assert len(cable_joints) == 32 * num_envs
-        else:
-            bounds = ((-0.07, -0.03), (-0.05, -0.03), (0.7825, 0.7825))
+        half_range = 0.012 if variant == "easy" else 0.018
         plug_positions = plug_pose[:, :3] - base_env.scene.env_origins
-        for coordinates, (lower, upper) in zip(plug_positions.T, bounds, strict=True):
-            assert torch.all(coordinates >= lower - 1.0e-6)
-            assert torch.all(coordinates <= upper + 1.0e-6)
-
-        if variant == "easy":
-            _check_usbc_cable_reset(base_env, arena_environment)
+        assert torch.all(torch.abs(plug_positions[:, 0] - 0.44) <= half_range + 0.002)
+        assert torch.all(torch.abs(plug_positions[:, 1] + 0.07) <= half_range + 0.002)
+        cable_joints = [label for label in NewtonManager.get_model().joint_label if "UsbcConnectorCable" in label]
+        assert len(cable_joints) == (16 if variant == "easy" else 24) * num_envs
+        _check_usbc_cable_reset(base_env, arena_environment)
 
         receiver = base_env.scene[arena_environment.task.receiver.name]
         moved_pose = receiver_pose.clone()
@@ -451,7 +664,12 @@ def _test_usbc_insertion_environment(_simulation_app, variant: str, num_envs: in
         receiver.write_root_pose_to_sim(moved_pose)
         base_env._reset_idx(torch.arange(num_envs, device=base_env.device))
         restored_pose = base_env.arena_world.get_pose_w(arena_environment.task.receiver.name)
-        assert torch.allclose(restored_pose[:, :3], receiver_pose[:, :3], atol=1.0e-6)
+        if variant == "easy":
+            assert torch.allclose(restored_pose[:, :3], receiver_pose[:, :3], atol=1.0e-6)
+        else:
+            local_positions = restored_pose[:, :3] - base_env.scene.env_origins
+            assert torch.all(torch.abs(local_positions[:, 0] - 0.44) <= 0.006)
+            assert torch.all(torch.abs(local_positions[:, 1] - 0.0148) <= 0.006)
 
         action = torch.zeros(env.action_space.shape, device=base_env.device)
         env.step(action)
