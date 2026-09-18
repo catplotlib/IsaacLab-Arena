@@ -14,6 +14,21 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
+      cache_benchmark:
+        description: Compare a cold NGC cache build against a cold image pull
+        type: boolean
+        default: false
+      source_ref:
+        description: Exact source commit matching the seeded cache
+        type: string
+      cache_ref:
+        description: Pinned NGC cache manifest reference
+        type: string
+      benchmark_target:
+        description: Image target for the cache comparison
+        type: choice
+        options: [dev, dev-curobo]
+        default: dev
       pull_benchmark:
         description: Run only the isolated cold image pull comparison
         type: boolean
@@ -50,7 +65,7 @@ jobs:
 
   pre_commit:
     name: Pre-commit
-    if: ${{ !inputs.pull_benchmark }}
+    if: ${{ !inputs.pull_benchmark && !inputs.cache_benchmark }}
     runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 30
 
@@ -537,3 +552,58 @@ jobs:
         run: |
           docker buildx imagetools create --prefer-index=false \
             --tag "${ARENA_IMAGE}:curobo" "$CANDIDATE_IMAGE"
+
+
+  benchmark_cache_build:
+    name: Compare NGC cache build against image pull
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_benchmark }}
+    runs-on: [self-hosted, gpu-arena]
+    timeout-minutes: 90
+    container:
+      image: ubuntu:24.04
+    steps:
+      - *install_git_step
+      - *cleanup_step
+      - *mark_repo_safe_step
+      - name: Checkout benchmark harness
+        uses: actions/checkout@v4
+      - name: Validate benchmark inputs
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          CACHE_REF: ${{ inputs.cache_ref }}
+          BASELINE_IMAGE: ${{ inputs.baseline_image }}
+        run: |
+          test -n "$SOURCE_REF"
+          test -n "$CACHE_REF"
+          test -n "$BASELINE_IMAGE"
+      - name: Checkout pinned build source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          path: benchmark-source
+          submodules: true
+      - name: Prepare source and record cache inputs
+        working-directory: benchmark-source
+        run: |
+          git lfs update --force
+          git lfs install --local
+          git lfs pull
+          git rev-parse HEAD
+          git submodule status
+          stat -c '%a %n' docker/setup/* pyproject.toml submodules/IsaacLab submodules/IsaacLab/.git
+      - *install_docker_step
+      - *docker_login_ngc_step
+      - name: Measure cold cache build and image pull
+        env:
+          BASELINE_IMAGE: ${{ inputs.baseline_image }}
+          CACHE_REF: ${{ inputs.cache_ref }}
+          BENCHMARK_TARGET: ${{ inputs.benchmark_target }}
+        run: |
+          bash docker/benchmark_cache_build.sh "$BASELINE_IMAGE" "type=registry,ref=$CACHE_REF" benchmark-source cache-comparison
+      - name: Upload comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-versus-pull-${{ github.run_attempt }}
+          path: cache-comparison/
+          if-no-files-found: warn
