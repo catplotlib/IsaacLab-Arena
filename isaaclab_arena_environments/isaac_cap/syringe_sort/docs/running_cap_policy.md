@@ -11,20 +11,21 @@ localhost port `19000`. Policy, perception, and planning code stay in Isaac-cap.
 - Arena's optional `cap` dependencies installed in that container. If missing,
   run `/isaac-sim/python.sh -m pip install -e '.[cap]'` from the mounted repo root,
   as your host user.
-- A configured Isaac-cap checkout at `/home/alex/trunk/Isaac-cap`, including its
+- A configured Isaac-cap checkout, including its
   GaP runtime, tool environments, and VLM credentials. The graph launcher reads
   `~/.config/gap/vlm.env`; keep credentials there, not in Arena.
 - Port `19000` free. Run one environment and one episode per graph process.
 
 The commands below use the local `syringe_packing_v2` graph from Isaac-cap's
-`alex/syringe-tested-baseline` branch. Adjust checkout paths for your machine.
+`alex/syringe-tested-baseline` branch. Replace `/path/to/isaac_arena` and
+`/path/to/Isaac-cap` below with your checkout locations.
 
 ## Terminal 1: start the Arena simulation
 
 Run on the host from the Arena checkout:
 
 ```bash
-cd /home/alex/trunk/isaac_arena
+cd /path/to/isaac_arena
 ARENA_CONTAINER=$(docker ps --filter "volume=$(git rev-parse --show-toplevel)" --format '{{.Names}}' | head -1)
 test -n "$ARENA_CONTAINER" || { echo "Start this checkout's Arena container first"; exit 1; }
 
@@ -52,7 +53,7 @@ with `--viz none`.
 Run on the host, outside the Arena container:
 
 ```bash
-cd /home/alex/trunk/Isaac-cap
+cd /path/to/Isaac-cap
 GAP_PORT=19000 GAP_GRAPH=local/syringe_packing_v2 \
 CAP_GAP_ROBOT_PROFILE=fr3 \
 CAP_GAP_ARM_BASE_POSITION=-0.5,-0.1,0.912 \
