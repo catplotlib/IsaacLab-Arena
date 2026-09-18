@@ -46,11 +46,7 @@ class EmbodimentBase(PlaceableAsset):
     tags: list[str] = ["embodiment"]
     default_arm_mode: ArmMode | None = None
     spawn_cfg_addon: dict[str, dict[str, Any]] = {}
-    """Define how embodiment USD/geometry is spawned and which schemas/properties are set.
-
-    Keys name embodiment scene entries (e.g. robot or left_robot); values override their
-    spawn configs after backend defaults.
-    """
+    """Define how embodiment USD/geometry is spawned and which schemas/properties are set."""
 
     def __init__(
         self,
