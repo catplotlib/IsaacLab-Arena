@@ -4,19 +4,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Isaac Cap USB-C insertion environments."""
-
-from .environment import (
-    UsbcInsertionEasyEnvironment,
-    UsbcInsertionEasyEnvironmentCfg,
-    UsbcInsertionMediumEnvironment,
-    UsbcInsertionMediumEnvironmentCfg,
-)
-from .task import UsbcInsertionTask
-
-__all__ = [
-    "UsbcInsertionEasyEnvironment",
-    "UsbcInsertionEasyEnvironmentCfg",
-    "UsbcInsertionMediumEnvironment",
-    "UsbcInsertionMediumEnvironmentCfg",
-    "UsbcInsertionTask",
-]

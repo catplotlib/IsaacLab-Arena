@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import MISSING
+from dataclasses import MISSING, dataclass
 from typing import Any
 
 import isaaclab.envs.mdp as mdp
@@ -24,9 +24,9 @@ from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_release
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
     end_effector_distance_from_object_exceeds_threshold,
+    lateral_in_proximity,
     tilt_axis_aligned,
     velocity_below_threshold,
-    xy_in_proximity,
 )
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import SuccessMode
@@ -38,6 +38,34 @@ class TerminationsCfg:
 
     time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
     success: TerminationTermCfg = MISSING
+
+
+@dataclass(frozen=True)
+class WorkHandCfg:
+    """Identify the work gripper and its release geometry."""
+
+    robot_name: str
+    gripper_joint_name: str
+    jaw_gap_at_zero_joint_m: float
+    grasp_width_m: float
+    ee_frame_name: str
+    target_frame_name: str | None = None
+    release_clearance_m: float = 1.5e-3
+
+    def __post_init__(self) -> None:
+        """Validate the hand definition when it is constructed."""
+        for name in ("robot_name", "gripper_joint_name", "ee_frame_name"):
+            assert isinstance(getattr(self, name), str) and getattr(self, name), f"Invalid work_hand {name}."
+        assert self.target_frame_name is None or (
+            isinstance(self.target_frame_name, str) and self.target_frame_name
+        ), "Invalid work_hand target_frame_name."
+        for name in ("jaw_gap_at_zero_joint_m", "grasp_width_m", "release_clearance_m"):
+            value = getattr(self, name)
+            assert (
+                isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+            ), f"Invalid work_hand {name}."
+        assert self.grasp_width_m > 0.0, "work_hand grasp_width_m must be positive."
+        assert self.release_clearance_m >= 0.0, "work_hand release_clearance_m must be non-negative."
 
 
 class UsbcInsertionTask(TaskBase):
@@ -58,7 +86,7 @@ class UsbcInsertionTask(TaskBase):
         subject_axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
         tilt_max: float | None = None,
         allow_antiparallel_axes: bool = False,
-        work_hand: Mapping[str, Any] | None = None,
+        work_hand: WorkHandCfg | None = None,
         withdrawal_distance_min: float | None = None,
         require_released: bool = False,
         consecutive_success_steps: int = 1,
@@ -66,6 +94,10 @@ class UsbcInsertionTask(TaskBase):
         task_description: str | None = None,
     ) -> None:
         """Configure geometry and thresholds supplied by one connector variant."""
+        # Nested graph-YAML data arrives as a mapping at this deserialization boundary.
+        if isinstance(work_hand, Mapping):
+            work_hand = WorkHandCfg(**work_hand)
+        assert work_hand is None or isinstance(work_hand, WorkHandCfg), "work_hand must be a WorkHandCfg or mapping."
         for name, vector in (
             ("receiver_mouth_offset_xyz", receiver_mouth_offset_xyz),
             ("receiver_axis", receiver_axis),
@@ -86,23 +118,9 @@ class UsbcInsertionTask(TaskBase):
             withdrawal_distance_min is None
         ), "work_hand and withdrawal_distance_min must be set together."
         if work_hand is not None:
-            assert (
+            assert withdrawal_distance_min is not None and (
                 math.isfinite(withdrawal_distance_min) and withdrawal_distance_min > 0.0
             ), "Withdrawal distance must be positive and finite."
-            for name in ("robot_name", "gripper_joint_name", "ee_frame_name"):
-                assert isinstance(work_hand[name], str) and work_hand[name], f"Invalid work_hand {name}."
-            target_frame_name = work_hand.get("target_frame_name")
-            assert target_frame_name is None or (
-                isinstance(target_frame_name, str) and target_frame_name
-            ), "Invalid work_hand target_frame_name."
-            assert math.isfinite(work_hand["jaw_gap_at_zero_joint_m"]), "Invalid work_hand jaw gap."
-            assert (
-                math.isfinite(work_hand["grasp_width_m"]) and work_hand["grasp_width_m"] > 0.0
-            ), "Invalid work_hand grasp width."
-            assert (
-                math.isfinite(work_hand.get("release_clearance_m", 1.5e-3))
-                and work_hand.get("release_clearance_m", 1.5e-3) >= 0.0
-            ), "Invalid work_hand release clearance."
         assert tilt_max is None or 0.0 <= tilt_max <= math.pi, "tilt_max must be in [0, pi]."
         assert isinstance(consecutive_success_steps, int) and not isinstance(
             consecutive_success_steps, bool
@@ -136,8 +154,8 @@ class UsbcInsertionTask(TaskBase):
                 },
             ),
             TerminationTermCfg(
-                func=xy_in_proximity,
-                params={**mating_params, "tolerance_xy": lateral_max},
+                func=lateral_in_proximity,
+                params={**mating_params, "tolerance_lateral": lateral_max},
             ),
         ]
         if tilt_max is not None:
@@ -169,11 +187,11 @@ class UsbcInsertionTask(TaskBase):
                     TerminationTermCfg(
                         func=parallel_jaw_gripper_released,
                         params={
-                            "robot_name": work_hand["robot_name"],
-                            "gripper_joint_name": work_hand["gripper_joint_name"],
-                            "jaw_gap_at_zero_joint_m": work_hand["jaw_gap_at_zero_joint_m"],
-                            "grasp_width_m": work_hand["grasp_width_m"],
-                            "release_clearance_m": work_hand.get("release_clearance_m", 1.5e-3),
+                            "robot_name": work_hand.robot_name,
+                            "gripper_joint_name": work_hand.gripper_joint_name,
+                            "jaw_gap_at_zero_joint_m": work_hand.jaw_gap_at_zero_joint_m,
+                            "grasp_width_m": work_hand.grasp_width_m,
+                            "release_clearance_m": work_hand.release_clearance_m,
                         },
                     )
                 )
@@ -182,8 +200,8 @@ class UsbcInsertionTask(TaskBase):
                     func=end_effector_distance_from_object_exceeds_threshold,
                     params={
                         "subject_name": plug.name,
-                        "ee_frame_name": work_hand["ee_frame_name"],
-                        "target_frame_name": work_hand.get("target_frame_name"),
+                        "ee_frame_name": work_hand.ee_frame_name,
+                        "target_frame_name": work_hand.target_frame_name,
                         "distance_threshold_m": withdrawal_distance_min,
                     },
                 )

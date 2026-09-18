@@ -42,10 +42,8 @@ _CABLE_COLOR = (0.90, 0.90, 0.90)
 _CABLE_CONTACT_STIFFNESS = 1.0e3
 _CABLE_CONTACT_DAMPING = 300.0
 
-_BULKHEAD_POSITION = (0.44, 0.0148, 0.8234)
-_BULKHEAD_ROTATION = (0.5, 0.5, 0.5, 0.5)
-_BULKHEAD_CABLE_ROOT_POSITION = (0.44, 0.0763, 0.8234)
-_BULKHEAD_CABLE_ROOT_ROTATION = (-0.7071067811865476, 0.0, 0.0, 0.7071067811865476)
+_BULKHEAD_CABLE_ANCHOR_POSITION = (0.0615, 0.0, 0.0)
+_BULKHEAD_CABLE_ANCHOR_ROTATION = (0.7071067811865476, 0.0, 0.7071067811865476, 0.0)
 
 
 def _body_index(builder, prim_path: str) -> int:
@@ -67,6 +65,18 @@ def _spawn_connector_cable(prim_path, cfg, translation=None, orientation=None):
 
     NewtonManager._per_world_builder_hooks.append(partial(_add_connector_cable, cfg=cfg))
     return UsdGeom.Xform.Define(get_current_stage(), prim_path).GetPrim()
+
+
+def _remove_connector_cable_builder_hooks() -> None:
+    """Remove deferred USB-C cable construction hooks during manager teardown."""
+    from isaaclab_newton.physics import NewtonManager
+
+    if hasattr(NewtonManager, "_per_world_builder_hooks"):
+        NewtonManager._per_world_builder_hooks = [
+            hook
+            for hook in NewtonManager._per_world_builder_hooks
+            if not (isinstance(hook, partial) and hook.func is _add_connector_cable)
+        ]
 
 
 @configclass
@@ -231,9 +241,10 @@ def _add_connector_cable(builder, world_index: int, _world_position, _world_quat
         )
         links, length = _PLUG_LINKS, _PLUG_LENGTH
     else:
-        canonical_bulkhead = wp.transform(wp.vec3(*_BULKHEAD_POSITION), wp.quat(*_BULKHEAD_ROTATION))
-        canonical_root = wp.transform(wp.vec3(*_BULKHEAD_CABLE_ROOT_POSITION), wp.quat(*_BULKHEAD_CABLE_ROOT_ROTATION))
-        anchor = wp.transform_multiply(wp.transform_inverse(canonical_bulkhead), canonical_root)
+        anchor = wp.transform(
+            wp.vec3(*_BULKHEAD_CABLE_ANCHOR_POSITION),
+            wp.quat(*_BULKHEAD_CABLE_ANCHOR_ROTATION),
+        )
         links, length = _BULKHEAD_LINKS, _BULKHEAD_CABLE_LENGTH
     _add_cable_chain(
         builder,
@@ -253,8 +264,7 @@ def reset_connector_cable(env, env_ids: Sequence[int] | None, *, prim_path: str,
     from isaaclab_newton.physics import NewtonManager
 
     model = NewtonManager.get_model()
-    if model is None:
-        raise RuntimeError("USB-C cable reset ran before Newton finalized its model.")
+    assert model is not None, "USB-C cable reset ran before Newton finalized its model."
 
     if env_ids is None:
         selected_worlds = set(range(env.num_envs))
@@ -269,8 +279,7 @@ def reset_connector_cable(env, env_ids: Sequence[int] | None, *, prim_path: str,
     )
     joint_indices = [index for index, label in enumerate(model.joint_label) if str(label).startswith(selected_prefixes)]
     expected = links * len(selected_worlds)
-    if len(joint_indices) != expected:
-        raise RuntimeError(f"USB-C reset found {len(joint_indices)} cable joints, expected {expected}.")
+    assert len(joint_indices) == expected, f"USB-C reset found {len(joint_indices)} cable joints, expected {expected}."
 
     q_starts = np.asarray(model.joint_q_start.numpy())
     qd_starts = np.asarray(model.joint_qd_start.numpy())

@@ -100,16 +100,15 @@ def _configure_contacts(_event_payload=None) -> None:
     connectors = []
     for index, raw_label in enumerate(builder.shape_label):
         label = str(raw_label).casefold()
-        if "usbcconnectorcable" in label:
-            continue
-        if any(token in label for token in ("plug", "port", "bulkhead")):
+        path_components = set(label.split("/"))
+        if path_components & {"plug", "port", "bulkhead"}:
             builder.shape_material_ke[index] = 62500.0
             builder.shape_material_kd[index] = 500.0
-            builder.shape_material_mu[index] = 2.5 if "bulkhead" in label else 0.35
+            builder.shape_material_mu[index] = 2.5 if "bulkhead" in path_components else 0.35
             connectors.append(index)
-        elif "bench" in label:
+        elif "bench" in path_components:
             builder.shape_material_mu[index] = 0.4
-        elif label.endswith("table") or "/table/" in label:
+        elif "table" in path_components:
             builder.shape_material_mu[index] = 0.35
     assert len(connectors) >= 2, "USB-C contact rig could not find both connector meshes."
     _set_contact_attributes(builder, connectors)
@@ -128,6 +127,13 @@ class NewtonUsbcManager(NewtonMJWarpManager):
         )
         super().initialize(sim_context)
 
+    @classmethod
+    def _solver_specific_clear(cls) -> None:
+        from .cables import _remove_connector_cable_builder_hooks
+
+        _remove_connector_cable_builder_hooks()
+        super()._solver_specific_clear()
+
 
 def configure_usbc_runtime(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
@@ -138,8 +144,7 @@ def configure_usbc_runtime(
     env_cfg = apply_graph_override(env_cfg)
     env_cfg.sim.physics.class_type = NewtonUsbcManager
     env_cfg.scene.replicate_physics = False
-    for robot_name in ("left_robot", "right_robot"):
-        robot = getattr(env_cfg.scene, robot_name)
+    for robot in (env_cfg.scene.left_robot, env_cfg.scene.right_robot):
         robot.init_state.joint_pos.update(joint2=1.047, joint3=1.047)
         for name, actuator in robot.actuators.items():
             if name.startswith("arm_"):

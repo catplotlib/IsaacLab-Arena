@@ -9,6 +9,8 @@ import pytest
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
+pytestmark = pytest.mark.isaac_cap
+
 
 def _test_usbc_insertion_task(_simulation_app) -> bool:
     import torch
@@ -21,9 +23,9 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
     from isaaclab_arena.tasks.predicates.composite import CompositePredicate
     from isaaclab_arena.tasks.predicates.spatial import (
         depth_in_range,
+        lateral_in_proximity,
         tilt_axis_aligned,
         velocity_below_threshold,
-        xy_in_proximity,
     )
     from isaaclab_arena_environments.isaac_cap import register_components
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask
@@ -51,7 +53,7 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
         "receiver_axis": (1.0, 0.0, 0.0),
     }
     assert depth_in_range(env, **mating, depth_min=0.01, depth_max=0.02).item()
-    assert xy_in_proximity(env, **mating, tolerance_xy=0.001).item()
+    assert lateral_in_proximity(env, **mating, tolerance_lateral=0.001).item()
     assert tilt_axis_aligned(
         env,
         subject_name="plug",
@@ -61,7 +63,7 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
         max_tilt_rad=0.01,
     ).item()
     env.arena_world.poses["plug"][0, 1] = 0.002
-    assert not xy_in_proximity(env, **mating, tolerance_xy=0.001).item()
+    assert not lateral_in_proximity(env, **mating, tolerance_lateral=0.001).item()
 
     easy_task = UsbcInsertionTask(
         Asset("plug"),
@@ -82,7 +84,7 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
     predicates = success_cfg.params["predicates"]
     assert [predicate.func for predicate in predicates] == [
         depth_in_range,
-        xy_in_proximity,
+        lateral_in_proximity,
         tilt_axis_aligned,
         velocity_below_threshold,
     ]
@@ -102,7 +104,7 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
     predicates = medium_task.get_termination_cfg().success.params["predicates"]
     assert [predicate.func for predicate in predicates] == [
         depth_in_range,
-        xy_in_proximity,
+        lateral_in_proximity,
         velocity_below_threshold,
     ]
     assert predicates[0].params["depth_max"] == 0.0085
@@ -140,9 +142,9 @@ def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
     from isaaclab_arena.assets.asset import Asset
     from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
     from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
-    from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask, WorkHandCfg
 
-    hand = dict(
+    hand = WorkHandCfg(
         robot_name="right_robot",
         gripper_joint_name="left_finger",
         jaw_gap_at_zero_joint_m=0.0,
@@ -167,16 +169,16 @@ def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
         ),
     )
     release_params = dict(
-        robot_name=hand["robot_name"],
-        gripper_joint_name=hand["gripper_joint_name"],
-        jaw_gap_at_zero_joint_m=hand["jaw_gap_at_zero_joint_m"],
-        grasp_width_m=hand["grasp_width_m"],
-        release_clearance_m=hand["release_clearance_m"],
+        robot_name=hand.robot_name,
+        gripper_joint_name=hand.gripper_joint_name,
+        jaw_gap_at_zero_joint_m=hand.jaw_gap_at_zero_joint_m,
+        grasp_width_m=hand.grasp_width_m,
+        release_clearance_m=hand.release_clearance_m,
     )
     params = dict(
         subject_name="plug",
-        ee_frame_name=hand["ee_frame_name"],
-        target_frame_name=hand["target_frame_name"],
+        ee_frame_name=hand.ee_frame_name,
+        target_frame_name=hand.target_frame_name,
         distance_threshold_m=0.04,
     )
     assert parallel_jaw_gripper_released(env, **release_params).tolist() == [True, False, True]
@@ -243,16 +245,17 @@ def _test_usbc_contact_rig(_simulation_app) -> bool:
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.physics import _configure_contacts
 
     labels = [
-        "LeftRobot/left_finger",
-        "RightRobot/left_finger",
-        "LeftRobot/link_6",
-        "RightRobot/link_6",
-        "Plug/geometry",
-        "Port/geometry",
-        "Bulkhead/geometry",
-        "Bench/geometry",
-        "background/table/geometry",
-        "UsbcConnectorCablePlug/segment0",
+        "/World/envs/env_0/LeftRobot/left_finger",
+        "/World/envs/env_0/RightRobot/left_finger",
+        "/World/envs/env_0/LeftRobot/link_6",
+        "/World/envs/env_0/RightRobot/link_6",
+        "/World/envs/env_0/RightRobot/wrist_support/geometry",
+        "/World/envs/env_0/Plug/geometry",
+        "/World/envs/env_0/Port/geometry",
+        "/World/envs/env_0/Bulkhead/geometry",
+        "/World/envs/env_0/Bench/geometry",
+        "/World/envs/env_0/background/table/geometry",
+        "/World/envs/env_0/UsbcConnectorCablePlug/segment0",
     ]
     count = len(labels)
     collide = int(newton.ShapeFlags.COLLIDE_SHAPES)
@@ -285,16 +288,17 @@ def _test_usbc_contact_rig(_simulation_app) -> bool:
     builder.shape_gap = [0.0] * count
     with patch.object(NewtonManager, "_builder", builder):
         _configure_contacts()
-    np.testing.assert_allclose(builder.shape_material_mu, [8, 8, 0, 0, 0.35, 0.35, 2.5, 0.4, 0.35, 0])
+    np.testing.assert_allclose(builder.shape_material_mu, [8, 8, 0, 0, 0, 0.35, 0.35, 2.5, 0.4, 0.35, 0])
     np.testing.assert_allclose(builder.shape_material_mu_torsional[:2], [0.002, 0.002])
     np.testing.assert_allclose(builder.shape_gap[:2], [0.0002, 0.0002])
-    np.testing.assert_allclose(builder.shape_material_ke[4:7], [62500] * 3)
-    np.testing.assert_allclose(builder.shape_material_kd[4:7], [500] * 3)
+    np.testing.assert_allclose(builder.shape_material_ke[5:8], [62500] * 3)
+    np.testing.assert_allclose(builder.shape_material_kd[5:8], [500] * 3)
     assert all(builder.shape_flags[index] & collide for index in (2, 3))
     assert builder.custom_attributes["mujoco:condim"].values == {0: 4, 1: 4, 2: 3, 3: 3}
     for value in builder.custom_attributes["mujoco:eq_solref"].values.values():
         np.testing.assert_allclose(tuple(value), [0.004, 1.0])
-    assert 9 not in builder.custom_attributes["mujoco:solref"].values
+    assert 4 not in builder.custom_attributes["mujoco:solref"].values
+    assert 10 not in builder.custom_attributes["mujoco:solref"].values
     return True
 
 
@@ -306,7 +310,7 @@ def _test_usbc_asset_registration(_simulation_app) -> bool:
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena_environments.isaac_cap import register_components
-    from isaaclab_arena_environments.isaac_cap.usbc_insertion.assets import ASSET_ROOT, USBC_ASSET_CLASSES, UsbcPlug
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.assets import ASSET_ROOT, USBC_ASSET_CLASSES
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.environment import (
         UsbcInsertionEasyEnvironment,
         UsbcInsertionEasyEnvironmentCfg,
@@ -317,37 +321,17 @@ def _test_usbc_asset_registration(_simulation_app) -> bool:
     register_components()
     register_components()
     registry = AssetRegistry()
-    plug_class = registry.get_asset_by_name("usbc_insertion_plug")
-    assert plug_class is UsbcPlug
-    assert len(USBC_ASSET_CLASSES) == 15
+    assert len(USBC_ASSET_CLASSES) == 11
     for asset_class in USBC_ASSET_CLASSES:
         assert registry.get_asset_by_name(asset_class.name) is asset_class
         assert "usbc_insertion" in asset_class.tags
         if "light" not in asset_class.tags and "cable" not in asset_class.tags:
             assert asset_class.usd_path.startswith(f"{ASSET_ROOT}/")
 
-    precision_class = registry.get_asset_by_name("usbc_insertion_precision_plug")
-    precision_plug = precision_class(instance_name="precision_plug", prim_path="{ENV_REGEX_NS}/PrecisionPlug")
-    assert precision_plug.name == "precision_plug"
-    assert precision_plug.prim_path == "{ENV_REGEX_NS}/PrecisionPlug"
-    assert precision_plug.scale == (0.5, 0.5, 0.5)
-    assert precision_plug.object_cfg.spawn.mass_props.mass == 0.004
-    assert precision_plug.object_cfg.spawn.physics_material.static_friction == 1.1
-    assert precision_plug.object_cfg.spawn.physics_material.dynamic_friction == 1.1
-    assert precision_plug.reset_pose
-    assert not precision_plug.object_cfg.spawn.rigid_props.kinematic_enabled
+    for unused_name in ("plug", "precision_plug", "port", "fr3_table"):
+        assert not registry.is_registered(f"usbc_insertion_{unused_name}", ensure_loaded=False)
 
-    precision_plug.spawn_cfg_addon["mass_props"].mass = 9.0
-    precision_plug.spawn_cfg_addon["collision_props"][0].contact_gap = 0.5
-    another_plug = precision_class()
-    assert another_plug.spawn_cfg_addon["mass_props"].mass == 0.004
-    assert another_plug.spawn_cfg_addon["collision_props"][0].contact_gap == 1.0e-4
-    full_size_plug = plug_class()
-    assert full_size_plug.scale == (1.0, 1.0, 1.0)
-    assert "mass_props" not in full_size_plug.spawn_cfg_addon
-    assert full_size_plug.spawn_cfg_addon["collision_props"][0].contact_gap == 1.0e-4
-
-    for name in ("port", "bench", "cradle_front", "cradle_rear"):
+    for name in ("easy_port", "bench", "cradle_front", "cradle_rear"):
         fixture = registry.get_asset_by_name(f"usbc_insertion_{name}")()
         assert fixture.object_type == ObjectType.RIGID
         assert fixture.object_cfg.spawn.rigid_props.kinematic_enabled
@@ -377,6 +361,7 @@ def test_usbc_asset_registration() -> None:
 def _test_usbc_environment_yaml(_simulation_app) -> bool:
     import math
 
+    from isaaclab_arena.embodiments.common.arm_mode import ArmMode
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
@@ -384,10 +369,11 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
     from isaaclab_arena.tasks.predicates.spatial import (
         depth_in_range,
         end_effector_distance_from_object_exceeds_threshold,
+        lateral_in_proximity,
         velocity_below_threshold,
-        xy_in_proximity,
     )
     from isaaclab_arena.utils.physics_backend import PhysicsBackend
+    from isaaclab_arena_environments.isaac_cap.embodiments.cable_routing import IndustrialBimanualYamEmbodiment
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.assets import ASSET_ROOT
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.environment import (
         UsbcInsertionEasyEnvironment,
@@ -396,6 +382,16 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
         UsbcInsertionMediumEnvironmentCfg,
     )
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.physics import NewtonUsbcManager
+
+    yam = IndustrialBimanualYamEmbodiment(
+        robot_usd_path=f"{ASSET_ROOT}/industrial__i2rt_yam/i2rt_yam_default.usda",
+        instanceable_robot_usd_path=f"{ASSET_ROOT}/industrial__i2rt_yam/i2rt_yam_instanceable.usda",
+        left_mount_position=(0.2525, 0.31, 0.75),
+        right_mount_position=(0.2525, -0.31, 0.75),
+    )
+    assert yam.get_ee_frame_transformer_names() == []
+    assert yam.scene_config.left_ee_frame is yam.scene_config.right_ee_frame is None
+    assert yam.get_ee_frame_name(ArmMode.DUAL_ARM) == "link_6"
 
     for factory, cfg_type, variant in (
         (UsbcInsertionEasyEnvironment(), UsbcInsertionEasyEnvironmentCfg, "easy"),
@@ -428,7 +424,7 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
         predicates = environment.task.get_termination_cfg().success.params["predicates"]
         assert [term.func for term in predicates] == [
             depth_in_range,
-            xy_in_proximity,
+            lateral_in_proximity,
             velocity_below_threshold,
             parallel_jaw_gripper_released,
             end_effector_distance_from_object_exceeds_threshold,
@@ -509,6 +505,36 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
 
 def test_usbc_environment_yaml() -> None:
     assert run_function_with_persistent_simulation_app(_test_usbc_environment_yaml)
+
+
+def _test_usbc_cable_hook_cleanup(_simulation_app) -> bool:
+    from functools import partial
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from isaaclab_newton.physics import NewtonManager
+
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.cables import (
+        _add_connector_cable,
+        _remove_connector_cable_builder_hooks,
+    )
+
+    def unrelated_hook(*_args):
+        return None
+
+    hooks = [
+        unrelated_hook,
+        partial(_add_connector_cable, cfg=SimpleNamespace(attachment="plug")),
+        partial(_add_connector_cable, cfg=SimpleNamespace(attachment="bulkhead")),
+    ]
+    with patch.object(NewtonManager, "_per_world_builder_hooks", hooks):
+        _remove_connector_cable_builder_hooks()
+        assert NewtonManager._per_world_builder_hooks == [unrelated_hook]
+    return True
+
+
+def test_usbc_cable_hook_cleanup() -> None:
+    assert run_function_with_persistent_simulation_app(_test_usbc_cable_hook_cleanup)
 
 
 def _test_usbc_cable_reset_isolation(_simulation_app) -> bool:

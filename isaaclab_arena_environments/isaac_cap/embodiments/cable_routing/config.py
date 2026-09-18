@@ -102,5 +102,5 @@ class BimanualYamSceneCfg:
 
     left_robot: ArticulationCfg | None = None
     right_robot: ArticulationCfg | None = None
-    left_ee_frame: FrameTransformerCfg = make_yam_ee_frame_cfg("{ENV_REGEX_NS}/LeftRobot", "tcp")
-    right_ee_frame: FrameTransformerCfg = make_yam_ee_frame_cfg("{ENV_REGEX_NS}/RightRobot", "tcp")
+    left_ee_frame: FrameTransformerCfg | None = None
+    right_ee_frame: FrameTransformerCfg | None = None

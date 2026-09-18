@@ -28,7 +28,11 @@ class UsbcInsertionEasyEnvironmentCfg(ArenaEnvironmentCfg):
 
 @dataclass
 class UsbcInsertionMediumEnvironmentCfg(UsbcInsertionEasyEnvironmentCfg):
-    """Configure the YAM movable-bulkhead USB-C task."""
+    """Configure the YAM movable-bulkhead USB-C task.
+
+    This distinct type is required because the environment registry keys each
+    factory by its config type.
+    """
 
 
 def _build_environment(scene_spec: Path, cfg: UsbcInsertionEasyEnvironmentCfg):
@@ -41,6 +45,7 @@ def _build_environment(scene_spec: Path, cfg: UsbcInsertionEasyEnvironmentCfg):
     register_components()
     spec = ArenaEnvGraphSpec.from_yaml(scene_spec)
     spec.embodiment.params.update(
+        enable_ee_frames=True,
         use_tiled_cameras=cfg.use_tiled_cameras,
         use_instanceable_meshes=cfg.use_instanceable_meshes,
     )

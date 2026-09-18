@@ -9,6 +9,8 @@ import pytest
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
+pytestmark = pytest.mark.isaac_cap
+
 
 def _test_usbc_demo_geometry(_simulation_app) -> bool:
     import torch
@@ -19,8 +21,8 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
     from isaaclab_arena.tasks.predicates.spatial import (
         _relative_axial_distances,
         depth_in_range,
+        lateral_in_proximity,
         velocity_below_threshold,
-        xy_in_proximity,
     )
     from isaaclab_arena_environments.isaac_cap.usbc_insertion.usbc_env_behaviour_demo import (
         _MATING_ROTATIONS_XYZW,
@@ -39,11 +41,11 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
         geometry_predicates = [
             predicate
             for predicate in predicates
-            if predicate.func in (depth_in_range, xy_in_proximity, velocity_below_threshold)
+            if predicate.func in (depth_in_range, lateral_in_proximity, velocity_below_threshold)
         ]
         assert [predicate.func for predicate in geometry_predicates] == [
             depth_in_range,
-            xy_in_proximity,
+            lateral_in_proximity,
             velocity_below_threshold,
         ]
         mating = predicates[0].params
@@ -155,7 +157,7 @@ def test_usbc_demo_headless_cli(variant: str) -> None:
     )
     for predicate_name in (
         "depth_in_range",
-        "xy_in_proximity",
+        "lateral_in_proximity",
         "velocity_below_threshold",
         "parallel_jaw_gripper_released",
         "end_effector_distance_from_object_exceeds_threshold",

@@ -170,24 +170,24 @@ def _relative_axial_distances(
     return depth, lateral
 
 
-def xy_in_proximity(
+def lateral_in_proximity(
     env: IsaacLabArenaManagerBasedRLEnv,
     subject_name: str,
     receiver_name: str,
     target_offset_xyz: tuple[float, float, float],
-    tolerance_xy: float,
+    tolerance_lateral: float,
     *,
     subject_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0),
     receiver_axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
 ) -> torch.Tensor:
-    """Check point proximity in the receiver XY plane, or normal to a supplied axis.
+    """Check point proximity perpendicular to a receiver-local axis.
 
     Args:
         env: Environment providing asset poses.
         subject_name: Subject asset name.
         receiver_name: Receiver asset name.
         target_offset_xyz: Target point in the receiver frame.
-        tolerance_xy: Maximum perpendicular distance from the target axis.
+        tolerance_lateral: Maximum perpendicular distance from the target axis.
         subject_offset_xyz: Point in the subject frame; defaults to its origin.
         receiver_axis: Plane normal in the receiver frame; defaults to +Z.
 
@@ -197,7 +197,7 @@ def xy_in_proximity(
     _, lateral = _relative_axial_distances(
         env, subject_name, receiver_name, target_offset_xyz, subject_offset_xyz, receiver_axis
     )
-    return lateral <= tolerance_xy
+    return lateral <= tolerance_lateral
 
 
 def depth_in_range(

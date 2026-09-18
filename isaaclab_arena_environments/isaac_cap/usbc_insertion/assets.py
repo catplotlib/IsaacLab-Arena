@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 
 import isaaclab.sim as sim_utils
-from isaaclab_newton.sim.schemas import NewtonCollisionCfg, NewtonMaterialPropertiesCfg
+from isaaclab_newton.sim.schemas import NewtonCollisionCfg
 
 from isaaclab_arena.assets.background import Background
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
@@ -24,19 +24,6 @@ from isaaclab_arena.utils.pose import Pose, PoseRange
 from .cables import UsbcConnectorCable
 
 ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/usbc_insertion/assets"
-
-FR3_TABLE_USD_PATH = f"{ASSET_ROOT}/industrial__fr3_workcell_table/industrial__fr3_workcell_table.usda"
-YAM_TABLE_USD_PATH = f"{ASSET_ROOT}/industrial__yam_workcell_table/industrial__yam_workcell_table.usda"
-HDR_SHADOW_RECEIVER_USD_PATH = f"{ASSET_ROOT}/industrial__hdr_shadow_receiver/industrial__hdr_shadow_receiver.usda"
-YAM_USBC_BENCH_USD_PATH = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/bench.usda"
-YAM_USBC_CRADLE_FRONT_USD_PATH = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/cradle_front.usda"
-YAM_USBC_CRADLE_REAR_USD_PATH = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/cradle_rear.usda"
-USBC_PLUG_USD_PATH = f"{ASSET_ROOT}/vabar_usbc_insert__plug/task_frame_plug.usda"
-USBC_BULKHEAD_USD_PATH = f"{ASSET_ROOT}/vabar_usbc_insert__bulkhead/vabar_usbc_insert__bulkhead.usda"
-USBC_PORT_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_port/industrial__usbc_port.usda"
-USBC_EASY_PLUG_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_plug/industrial__usbc_easy_plug.usda"
-USBC_MEDIUM_PLUG_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_plug/medium_plug.usda"
-USBC_EASY_PORT_USD_PATH = f"{ASSET_ROOT}/industrial__usbc_easy_port/industrial__usbc_easy_port.usda"
 
 
 class _UsbcAsset(LibraryObject):
@@ -85,38 +72,11 @@ class _UsbcConnector(_UsbcAsset):
 
 
 @register_asset
-class UsbcPlug(_UsbcConnector):
-    """Full-size USB-C plug retained for existing asset consumers."""
-
-    name = "usbc_insertion_plug"
-    usd_path = USBC_PLUG_USD_PATH
-
-
-@register_asset
-class UsbcPrecisionPlug(UsbcPlug):
-    """Half-scale precision plug with its original mass and material."""
-
-    name = "usbc_insertion_precision_plug"
-    scale = (0.5, 0.5, 0.5)
-    spawn_cfg_addon = {
-        **_UsbcConnector.spawn_cfg_addon,
-        "mass_props": sim_utils.MassPropertiesCfg(mass=0.004),
-        "physics_material": NewtonMaterialPropertiesCfg(
-            static_friction=1.1,
-            dynamic_friction=1.1,
-            restitution=0.0,
-            contact_stiffness=62_500.0,
-            contact_damping=500.0,
-        ),
-    }
-
-
-@register_asset
 class UsbcEasyPlug(_UsbcConnector):
     """CAP's scaled plug with the easy task's authored mesh contacts."""
 
     name = "usbc_insertion_easy_plug"
-    usd_path = USBC_EASY_PLUG_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__usbc_easy_plug/industrial__usbc_easy_plug.usda"
     spawn_cfg_addon = {key: value for key, value in _UsbcConnector.spawn_cfg_addon.items() if key != "collision_props"}
 
 
@@ -125,7 +85,7 @@ class UsbcMediumPlug(_UsbcConnector):
     """CAP's medium plug with matched bulkhead contact geometry."""
 
     name = "usbc_insertion_medium_plug"
-    usd_path = USBC_MEDIUM_PLUG_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__usbc_easy_plug/medium_plug.usda"
     spawn_cfg_addon = UsbcEasyPlug.spawn_cfg_addon
 
 
@@ -134,7 +94,7 @@ class UsbcEasyPort(_UsbcFixture):
     """Fixed chamfered receptacle for the easy task."""
 
     name = "usbc_insertion_easy_port"
-    usd_path = USBC_EASY_PORT_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__usbc_easy_port/industrial__usbc_easy_port.usda"
 
 
 @register_asset
@@ -142,16 +102,8 @@ class UsbcBulkhead(_UsbcConnector):
     """Dynamic receiver used by the bimanual USB-C task."""
 
     name = "usbc_insertion_bulkhead"
-    usd_path = USBC_BULKHEAD_USD_PATH
+    usd_path = f"{ASSET_ROOT}/vabar_usbc_insert__bulkhead/vabar_usbc_insert__bulkhead.usda"
     spawn_cfg_addon = UsbcEasyPlug.spawn_cfg_addon
-
-
-@register_asset
-class UsbcPort(_UsbcFixture):
-    """Bolted precision-fit USB-C receiver."""
-
-    name = "usbc_insertion_port"
-    usd_path = USBC_PORT_USD_PATH
 
 
 @register_asset
@@ -159,7 +111,7 @@ class UsbcBench(_UsbcFixture):
     """Bench supporting the plug in both USB-C variants."""
 
     name = "usbc_insertion_bench"
-    usd_path = YAM_USBC_BENCH_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/bench.usda"
 
 
 @register_asset
@@ -167,7 +119,7 @@ class UsbcCradleFront(_UsbcFixture):
     """Front support for the medium USB-C bulkhead."""
 
     name = "usbc_insertion_cradle_front"
-    usd_path = YAM_USBC_CRADLE_FRONT_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/cradle_front.usda"
 
 
 @register_asset
@@ -175,7 +127,7 @@ class UsbcCradleRear(_UsbcFixture):
     """Rear support for the medium USB-C bulkhead."""
 
     name = "usbc_insertion_cradle_rear"
-    usd_path = YAM_USBC_CRADLE_REAR_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__yam_usbc_fixtures/cradle_rear.usda"
 
 
 class _UsbcTable(Background):
@@ -211,19 +163,11 @@ class _UsbcTable(Background):
 
 
 @register_asset
-class UsbcFr3WorkcellTable(_UsbcTable):
-    """FR3 table from the USB-C asset bundle."""
-
-    name = "usbc_insertion_fr3_table"
-    usd_path = FR3_TABLE_USD_PATH
-
-
-@register_asset
 class UsbcYamWorkcellTable(_UsbcTable):
     """YAM table from the USB-C asset bundle."""
 
     name = "usbc_insertion_yam_table"
-    usd_path = YAM_TABLE_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__yam_workcell_table/industrial__yam_workcell_table.usda"
 
 
 @register_asset
@@ -233,7 +177,7 @@ class UsbcHdrShadowReceiver(_UsbcAsset):
     name = "usbc_insertion_hdr_shadow_receiver"
     tags = ["background", "usbc_insertion"]
     object_type = ObjectType.BASE
-    usd_path = HDR_SHADOW_RECEIVER_USD_PATH
+    usd_path = f"{ASSET_ROOT}/industrial__hdr_shadow_receiver/industrial__hdr_shadow_receiver.usda"
     spawn_cfg_addon = {"copy_from_source": False, "visible": False}
     asset_cfg_addon = {"collision_group": -1}
 
@@ -265,14 +209,10 @@ USBC_ASSET_CLASSES = (
     UsbcEasyPlug,
     UsbcMediumPlug,
     UsbcEasyPort,
-    UsbcPlug,
-    UsbcPrecisionPlug,
     UsbcBulkhead,
-    UsbcPort,
     UsbcBench,
     UsbcCradleFront,
     UsbcCradleRear,
-    UsbcFr3WorkcellTable,
     UsbcYamWorkcellTable,
     UsbcHdrShadowReceiver,
     UsbcDomeLight,

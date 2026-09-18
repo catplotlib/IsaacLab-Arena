@@ -17,7 +17,7 @@ from isaaclab_arena.utils.pose import Pose
 
 from .actions import BimanualYamActionsCfg
 from .cameras import BimanualYamCameraCfg
-from .config import END_EFFECTOR_BODY_NAME, BimanualYamSceneCfg, make_yam_articulation_cfg
+from .config import END_EFFECTOR_BODY_NAME, BimanualYamSceneCfg, make_yam_articulation_cfg, make_yam_ee_frame_cfg
 from .observations import BimanualYamObservationsCfg
 
 
@@ -36,6 +36,7 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
         left_mount_position: Sequence[float],
         right_mount_position: Sequence[float],
         enable_cameras: bool = False,
+        enable_ee_frames: bool = False,
         use_tiled_cameras: bool = False,
         use_instanceable_meshes: bool = False,
         camera_config: ArenaCameraCfg | None = None,
@@ -61,6 +62,9 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
             left_robot=make_yam_articulation_cfg("{ENV_REGEX_NS}/LeftRobot", left_position, active_usd_path),
             right_robot=make_yam_articulation_cfg("{ENV_REGEX_NS}/RightRobot", right_position, active_usd_path),
         )
+        if enable_ee_frames:
+            self.scene_config.left_ee_frame = make_yam_ee_frame_cfg("{ENV_REGEX_NS}/LeftRobot", "tcp")
+            self.scene_config.right_ee_frame = make_yam_ee_frame_cfg("{ENV_REGEX_NS}/RightRobot", "tcp")
         self.action_config = BimanualYamActionsCfg()
         self.observation_config = BimanualYamObservationsCfg()
         self.camera_config = None
@@ -94,10 +98,12 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
         return END_EFFECTOR_BODY_NAME
 
     def get_ee_frame_transformer_names(self) -> list[str]:
-        """Return both independently tracked YAM TCP sensors."""
-        return ["left_ee_frame", "right_ee_frame"]
+        """Return the enabled YAM TCP sensor names."""
+        return [name for name in ("left_ee_frame", "right_ee_frame") if getattr(self.scene_config, name) is not None]
 
     def get_ee_frame_name(self, arm_mode: ArmMode) -> str:
+        if arm_mode is ArmMode.DUAL_ARM:
+            return END_EFFECTOR_BODY_NAME
         assert arm_mode in (ArmMode.LEFT, ArmMode.RIGHT), "A dual-arm YAM end-effector frame requires one arm side."
         return f"{arm_mode.value}_ee_frame"
 

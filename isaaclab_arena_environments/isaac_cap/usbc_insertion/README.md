@@ -18,9 +18,10 @@ API. The rear cradle supports the barrel physically; it deliberately has no seco
 whole-body `on` constraint. Placement requires valid support relations without
 best-loss fallbacks.
 
-Both tasks reuse `depth_in_range`, `xy_in_proximity`, and
+Both tasks reuse `depth_in_range`, `lateral_in_proximity`, and
 `velocity_below_threshold` from Arena's shared spatial predicates. They require
-depth ≥10.4 mm, lateral error ≤8.7931792 mm, and plug speed ≤0.05 m/s.
+depth ≥10.4 mm, CAP's calibrated lateral error ≤8.7931792 mm, and plug speed
+≤0.05 m/s.
 Neither current CAP variant adds a tilt gate or maximum depth.
 Arena's shared `parallel_jaw_gripper_released` predicate checks measured jaw
 clearance, and `end_effector_distance_from_object_exceeds_threshold` checks the
@@ -47,11 +48,9 @@ moves with its connector.
 
 ## Assets
 
-Assets remain registered through `@register_asset` under `usbc_insertion_` names.
+Assets are registered through `@register_asset` under `usbc_insertion_` names.
 The active variants use `easy_plug`, `easy_port`, `medium_plug`, `bulkhead`,
 `bench`, `cradle_front`, `cradle_rear`, `yam_table`, lighting, and `connector_cable`.
-Older `plug`, `precision_plug`, `port`, and `fr3_table` registrations remain
-available for compatibility but are not used by these task graphs.
 
 All USDs resolve from Arena's staging S3 bucket under
 `temp_newton_envs/usbc_insertion/assets`, matching the hosted-asset convention used

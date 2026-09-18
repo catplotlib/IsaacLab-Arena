@@ -18,8 +18,8 @@ def _test_spatial_predicate_offsets(_simulation_app) -> bool:
     from isaaclab_arena.tasks.predicates.spatial import (
         _relative_axial_distances,
         depth_in_range,
+        lateral_in_proximity,
         tilt_axis_aligned,
-        xy_in_proximity,
     )
 
     poses = {
@@ -38,7 +38,7 @@ def _test_spatial_predicate_offsets(_simulation_app) -> bool:
     params = {"subject_name": "subject", "receiver_name": "receiver", "target_offset_xyz": (0, 0, 0)}
     assert depth_in_range(env, **params, depth_min=0.25, depth_max=0.5).tolist() == [True, True, False, False]
     assert depth_in_range(env, **params, depth_min=0.25, depth_max=None).tolist() == [True, True, True, False]
-    assert xy_in_proximity(env, **params, tolerance_xy=0.125).tolist() == [True, True, False, True]
+    assert lateral_in_proximity(env, **params, tolerance_lateral=0.125).tolist() == [True, True, False, True]
     assert tilt_axis_aligned(env, "subject", "receiver", 0.01).all()
     assert not tilt_axis_aligned(env, "subject", "receiver", 0.01, subject_axis=(0, 0, -2)).any()
     assert tilt_axis_aligned(env, "subject", "receiver", 0.01, subject_axis=(0, 0, -2), allow_antiparallel=True).all()
@@ -48,7 +48,7 @@ def _test_spatial_predicate_offsets(_simulation_app) -> bool:
     with pytest.raises(AssertionError):
         depth_in_range(env, **params, depth_min=0.5, depth_max=0.25)
     with pytest.raises(AssertionError):
-        xy_in_proximity(env, **params, tolerance_xy=0.125, receiver_axis=(0, 0, 0))
+        lateral_in_proximity(env, **params, tolerance_lateral=0.125, receiver_axis=(0, 0, 0))
 
     angles = torch.tensor([0, 0.4, -0.7, 1.1], dtype=torch.float64)
     q_W_R = quat_from_euler_xyz(angles, -angles, angles * 0.5)
@@ -78,7 +78,7 @@ def _test_spatial_predicate_offsets(_simulation_app) -> bool:
         torch.testing.assert_close(actual_lateral, lateral)
         assert depth_in_range(env, **params, depth_min=0.01, depth_max=0.03).tolist() == [False, True, True, False]
         assert depth_in_range(env, **params, depth_min=0.01, depth_max=None).tolist() == [False, True, True, True]
-        assert xy_in_proximity(env, **params, tolerance_xy=0.004).tolist() == [True, True, False, True]
+        assert lateral_in_proximity(env, **params, tolerance_lateral=0.004).tolist() == [True, True, False, True]
     return True
 
 
@@ -86,31 +86,17 @@ def test_spatial_predicate_offsets() -> None:
     assert run_function_with_persistent_simulation_app(_test_spatial_predicate_offsets)
 
 
-def _test_gear_spatial_predicate_compatibility(_simulation_app) -> bool:
+def _test_default_axis_spatial_predicate_compatibility(_simulation_app) -> bool:
     import math
     import torch
     from types import SimpleNamespace
 
     from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_from_euler_xyz, quat_mul
 
-    from isaaclab_arena.assets.asset import Asset
-    from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import (
-        _make_gear_success_composite_predicate_cfg,
-    )
+    from isaaclab_arena.tasks.predicates.spatial import depth_in_range, lateral_in_proximity, tilt_axis_aligned
 
     target = (0.02, -0.03, 0.01)
-    cfg = _make_gear_success_composite_predicate_cfg(
-        Asset("plate"),
-        Asset("gear"),
-        target,
-        xy_threshold=0.015,
-        z_threshold=0.01,
-        upright_axis_threshold_deg=15.0,
-        linear_velocity_threshold=0.05,
-        angular_velocity_threshold=0.5,
-        support_z_threshold=0.005,
-    )
-    predicates = cfg.params["predicates"][:3]
+    params = {"subject_name": "gear", "receiver_name": "plate", "target_offset_xyz": target}
     for device in ("cpu", "cuda:0"):
         for dtype in (torch.float32, torch.float64):
             relative_position = torch.tensor(
@@ -142,15 +128,16 @@ def _test_gear_spatial_predicate_compatibility(_simulation_app) -> bool:
                 (position_P[:, 2] >= -0.01) & (position_P[:, 2] <= 0.01),
                 torch.sum(quat_apply(q_W_G, axis) * quat_apply(q_W_P, axis), dim=-1) >= math.cos(math.radians(15)),
             ]
-            for predicate, expected_result in zip(predicates, expected, strict=True):
-                assert torch.equal(predicate.func(env, **predicate.params), expected_result), (
-                    predicate.func.__name__,
-                    device,
-                    dtype,
-                )
+            actual = [
+                lateral_in_proximity(env, **params, tolerance_lateral=0.015),
+                depth_in_range(env, **params, depth_min=-0.01, depth_max=0.01),
+                tilt_axis_aligned(env, "gear", "plate", max_tilt_rad=math.radians(15)),
+            ]
+            for actual_result, expected_result in zip(actual, expected, strict=True):
+                assert torch.equal(actual_result, expected_result), (device, dtype)
             assert not expected[2][-1]
     return True
 
 
-def test_gear_spatial_predicate_compatibility() -> None:
-    assert run_function_with_persistent_simulation_app(_test_gear_spatial_predicate_compatibility)
+def test_default_axis_spatial_predicate_compatibility() -> None:
+    assert run_function_with_persistent_simulation_app(_test_default_axis_spatial_predicate_compatibility)

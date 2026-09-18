@@ -95,8 +95,8 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         from isaaclab_arena.tasks.predicates.spatial import (
             depth_in_range,
             end_effector_distance_from_object_exceeds_threshold,
+            lateral_in_proximity,
             velocity_below_threshold,
-            xy_in_proximity,
         )
         from isaaclab_arena_environments.isaac_cap.embodiments.cable_routing.config import (
             GRIPPER_CLOSED_POSITION,
@@ -108,7 +108,7 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         self.predicates = self.base_env.termination_manager.get_term_cfg("success").params["predicates"]
         expected_functions = [
             depth_in_range,
-            xy_in_proximity,
+            lateral_in_proximity,
             velocity_below_threshold,
             parallel_jaw_gripper_released,
             end_effector_distance_from_object_exceeds_threshold,
@@ -120,7 +120,7 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         )
 
         self.mating = self.predicates[0].params
-        self.lateral_tolerance_m = self.predicates[1].params["tolerance_xy"]
+        self.lateral_tolerance_m = self.predicates[1].params["tolerance_lateral"]
         self.speed_threshold_m_s = self.predicates[2].params["linear_velocity_threshold"]
         depth_min = self.mating["depth_min"]
         depth_max = self.mating["depth_max"]
@@ -407,7 +407,7 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         trajectory = (
             ("depth_in_range", [True, False, False, False, False], start_state),
             (
-                "xy_in_proximity",
+                "lateral_in_proximity",
                 [True, True, False, False, False],
                 {**start_state, "lateral_m": 0.0},
             ),
