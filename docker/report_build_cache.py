@@ -19,9 +19,20 @@ def parse_time(value):
 def summarize(stream):
     """Return a Markdown report of cache imports and Dockerfile steps."""
     vertices = {}
+    skipped_records = 0
     for line in stream:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            skipped_records += 1
+            continue
+        if not isinstance(record, dict):
+            skipped_records += 1
+            continue
         # Use BuildKit's JSON field spelling.
-        for vertex in json.loads(line).get("vertexes", []):  # codespell:ignore vertexes
+        for vertex in record.get("vertexes", []):  # codespell:ignore vertexes
             previous = vertices.setdefault(vertex["digest"], {})
             # Cache lookup, download, and extraction can reuse the same digest.
             for field, boundary in (("started", min), ("completed", max)):
@@ -46,6 +57,12 @@ def summarize(stream):
     imports = [v for v in vertices.values() if v["name"].startswith("importing cache manifest from ")]
     steps = [v for v in vertices.values() if re.match(r"\[[^]]+ \d+/\d+\] (RUN|COPY|ADD|WORKDIR)\b", v["name"])]
     lines = ["### Docker cache usage", ""]
+    if skipped_records:
+        lines += [
+            f"Warning: skipped {skipped_records} non-JSON or non-object records; this report may be incomplete.",
+            "See build-cache.jsonl for the original output.",
+            "",
+        ]
     for vertex in imports:
         result = vertex.get("error") or ("imported" if vertex.get("completed") else "incomplete")
         lines.append(f"- `{vertex['name']}`: {result}")
