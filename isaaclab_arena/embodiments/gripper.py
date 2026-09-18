@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import torch
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
@@ -70,16 +71,20 @@ class PandaGripper(ParallelJawGripper):
 
 @dataclass(frozen=True, kw_only=True)
 class RobotiqGripper(ParallelJawGripper):
-    """Robotiq 2F-85 gripper backed by tracked pads or its driver joint."""
+    """Robotiq 2F-85 gripper with independently configurable measurements.
+
+    Joint and frame choices select simulation data sources for the same physical
+    gripper; they do not represent distinct gripper types.
+    """
 
     driver_joint_name: str | None = None
-    """Robotiq driver joint, or None to measure the tracked finger pads."""
+    """Joint used to measure opening, or None to use tracked finger pads."""
 
     body_name: str | None = None
-    """Robotiq base body, or None to use the frame-transformer target."""
+    """Body used to measure position, or None to use the frame-transformer target."""
 
     body_point_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """Gripper point offset expressed in the configured body frame."""
+    """Gripper point offset in the configured body frame; requires body_name."""
 
     frame_transformer_name: str = "ee_frame"
     """Scene key of the Robotiq frame transformer."""
@@ -92,6 +97,16 @@ class RobotiqGripper(ParallelJawGripper):
 
     right_finger_frame_name: str = "tool_rightfinger"
     """Frame-transformer target on the right finger pad."""
+
+    def __post_init__(self) -> None:
+        """Validate the body-relative position measurement settings."""
+        assert len(self.body_point_offset_xyz) == 3, "body_point_offset_xyz must contain three values."
+        assert all(
+            math.isfinite(value) for value in self.body_point_offset_xyz
+        ), "body_point_offset_xyz must contain only finite values."
+        assert self.body_name is not None or all(
+            value == 0.0 for value in self.body_point_offset_xyz
+        ), "body_point_offset_xyz requires body_name when nonzero."
 
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical distance between the two finger pads."""

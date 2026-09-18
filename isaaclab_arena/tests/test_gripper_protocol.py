@@ -84,6 +84,37 @@ def test_robotiq_gripper_measures_tracked_finger_pad_gap() -> None:
     assert run_function_with_persistent_simulation_app(_test_robotiq_gripper_measures_tracked_finger_pad_gap)
 
 
+def _test_robotiq_gripper_measurement_sources_are_independent(_simulation_app) -> bool:
+    import torch
+
+    import pytest
+
+    from isaaclab_arena.embodiments.gripper import RobotiqGripper
+
+    world = _make_world()
+    joint_measured = RobotiqGripper(driver_joint_name="left_driver_joint")
+    body_measured = RobotiqGripper(body_name="robotiq_base")
+
+    assert joint_measured.get_jaw_gap_m(world)[0] > 0.084
+    torch.testing.assert_close(
+        joint_measured.get_position_w(world),
+        torch.tensor([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]),
+    )
+    torch.testing.assert_close(body_measured.get_jaw_gap_m(world), torch.tensor([0.04, 0.10]))
+    torch.testing.assert_close(
+        body_measured.get_position_w(world),
+        torch.tensor([[0.2, 0.1, 0.3], [0.4, 0.2, 0.5]]),
+    )
+
+    with pytest.raises(AssertionError, match="requires body_name"):
+        RobotiqGripper(body_point_offset_xyz=(0.1, 0.0, 0.0))
+    return True
+
+
+def test_robotiq_gripper_measurement_sources_are_independent() -> None:
+    assert run_function_with_persistent_simulation_app(_test_robotiq_gripper_measurement_sources_are_independent)
+
+
 def _test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details(_simulation_app) -> bool:
     import torch
 
