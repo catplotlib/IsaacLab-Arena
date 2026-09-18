@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
+_ROBOTIQ_2F85_LINKAGE_AMPLITUDE_M = 0.1143
+_ROBOTIQ_2F85_PHASE_OFFSET_RAD = 0.715
+_ROBOTIQ_2F85_GAP_OFFSET_M = 0.01
+
+
 class Gripper(Protocol):
     """Gripper state exposed to embodiment-agnostic tasks."""
 
@@ -112,9 +117,11 @@ class RobotiqGripper(ParallelJawGripper):
         """Return the physical distance between the two finger pads."""
         if self.driver_joint_name is not None:
             driver_position = world.get_joint_position("robot", self.driver_joint_name)
-            # Robotiq's published 2F-85 linkage relation maps its driver angle to
-            # the total inner-finger opening: 85 mm at zero and 0 mm near 0.8 rad.
-            jaw_gap_m = 0.1143 * torch.sin(0.715 - driver_position) + 0.01
+            # The 2F-85 linkage maps its driver angle to an 85 mm maximum inner-finger opening.
+            jaw_gap_m = (
+                _ROBOTIQ_2F85_LINKAGE_AMPLITUDE_M * torch.sin(_ROBOTIQ_2F85_PHASE_OFFSET_RAD - driver_position)
+                + _ROBOTIQ_2F85_GAP_OFFSET_M
+            )
             return torch.clamp(jaw_gap_m, min=0.0, max=0.085)
         left = world.get_frame_position_w(self.frame_transformer_name, self.left_finger_frame_name)
         right = world.get_frame_position_w(self.frame_transformer_name, self.right_finger_frame_name)

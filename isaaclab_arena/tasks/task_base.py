@@ -76,8 +76,8 @@ class TaskBase(ABC):
     def get_task_description(self) -> str | None:
         return self.task_description
 
-    def bind_embodiment(self, embodiment: EmbodimentBase) -> None:
-        """Bind embodiment-owned interfaces needed to configure this task.
+    def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Configure this task with interfaces owned by the selected embodiment.
 
         Tasks and embodiments are constructed independently. The environment builder calls this hook after
         selecting both; otherwise, embodiment-dependent predicates would retain unset dependencies or require

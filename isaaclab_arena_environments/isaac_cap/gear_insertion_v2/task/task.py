@@ -110,8 +110,8 @@ class GearMeshTask(TaskBase):
             },
         )
 
-    def bind_embodiment(self, embodiment: EmbodimentBase) -> None:
-        """Bind the embodiment's gripper to release checks."""
+    def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Configure release checks to use the embodiment's gripper."""
         self._success_cfg.params["gripper"] = embodiment.get_gripper()
 
     def set_gear_teeth(self, gear_teeth: int) -> None:

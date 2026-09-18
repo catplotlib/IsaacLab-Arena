@@ -308,7 +308,7 @@ def test_gear_success_requires_jaw_release_and_samples_position_once() -> None:
     )
 
 
-def _test_gear_task_binds_release_checks_to_the_embodiment_gripper(_simulation_app) -> bool:
+def _test_gear_task_configures_release_checks_for_the_embodiment_gripper(_simulation_app) -> bool:
     from types import SimpleNamespace
 
     import pytest
@@ -327,7 +327,7 @@ def _test_gear_task_binds_release_checks_to_the_embodiment_gripper(_simulation_a
     assert "gripper" not in params
 
     embodiment = IndustrialFr3Robotiq2f85Embodiment()
-    task.bind_embodiment(embodiment)
+    task.configure_for_embodiment(embodiment)
 
     assert params["gripper"] is embodiment.gripper
     assert "robot_asset_cfg" not in params
@@ -345,8 +345,10 @@ def _test_gear_task_binds_release_checks_to_the_embodiment_gripper(_simulation_a
     return True
 
 
-def test_gear_task_binds_release_checks_to_the_embodiment_gripper() -> None:
-    assert run_function_with_persistent_simulation_app(_test_gear_task_binds_release_checks_to_the_embodiment_gripper)
+def test_gear_task_configures_release_checks_for_the_embodiment_gripper() -> None:
+    assert run_function_with_persistent_simulation_app(
+        _test_gear_task_configures_release_checks_for_the_embodiment_gripper
+    )
 
 
 def _test_gear_task_derives_default_grasp_width_from_teeth(_simulation_app) -> bool:

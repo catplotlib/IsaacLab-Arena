@@ -162,10 +162,10 @@ class CompositeTaskBase(TaskBase):
         for subtask in self.subtasks:
             subtask.apply_reachability_constraints()
 
-    def bind_embodiment(self, embodiment: EmbodimentBase) -> None:
-        """Bind the same embodiment to every child task."""
+    def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Configure every child task for the same embodiment."""
         for subtask in self.subtasks:
-            subtask.bind_embodiment(embodiment)
+            subtask.configure_for_embodiment(embodiment)
 
     @staticmethod
     def _add_suffix_configclass_transform(fields: list[tuple], suffix: str) -> list[tuple]:
