@@ -91,10 +91,10 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         """Resolve the five predicates and state writers used by the trajectory."""
         import torch
 
-        from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+        from isaaclab_arena.tasks.predicates.gripper import gripper_released
         from isaaclab_arena.tasks.predicates.spatial import (
             depth_in_range,
-            end_effector_distance_from_object_exceeds_threshold,
+            gripper_distance_from_object_exceeds_threshold,
             lateral_in_proximity,
             velocity_below_threshold,
         )
@@ -105,13 +105,13 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
 
         self.torch = torch
         self.task = self.arena_environment.task
-        self.predicates = self.base_env.termination_manager.get_term_cfg("success").params["predicates"]
+        self.predicates = self.task.get_termination_cfg().success[0].predicate_sequence[0].params["predicates"]
         expected_functions = [
             depth_in_range,
             lateral_in_proximity,
             velocity_below_threshold,
-            parallel_jaw_gripper_released,
-            end_effector_distance_from_object_exceeds_threshold,
+            gripper_released,
+            gripper_distance_from_object_exceeds_threshold,
         ]
         actual_functions = [predicate.func for predicate in self.predicates]
         assert actual_functions == expected_functions, (
@@ -139,20 +139,22 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
         self.lateral_axis_R /= torch.linalg.vector_norm(self.lateral_axis_R)
 
         release_params = self.predicates[3].params
-        self.work_robot = self.base_env.scene[release_params["robot_name"]]
-        gripper_joint_ids, gripper_joint_names = self.work_robot.find_joints(release_params["gripper_joint_name"])
+        self.gripper = release_params["gripper"]
+        self.work_robot = self.base_env.scene[self.gripper.articulation_name]
+        gripper_joint_ids, gripper_joint_names = self.work_robot.find_joints(self.gripper.driver_joint_name)
         assert len(gripper_joint_ids) == 1, f"Expected one work-hand gripper joint, got {gripper_joint_names}."
         self.gripper_joint_ids = gripper_joint_ids
         self.gripper_open_position = GRIPPER_OPEN_POSITION
         self.gripper_closed_position = GRIPPER_CLOSED_POSITION
 
         withdrawal_params = self.predicates[4].params
+        assert withdrawal_params["gripper"] is self.gripper, "Release and withdrawal must use the same gripper."
         self.withdrawal_distance_m = withdrawal_params["distance_threshold_m"]
-        self.ee_sensor = self.base_env.scene[withdrawal_params["ee_frame_name"]]
+        self.ee_sensor = self.base_env.scene[self.gripper.frame_transformer_name]
         self.ee_sensor_data = self.ee_sensor.data
-        self.ee_target_index = self.ee_sensor_data.target_frame_names.index(withdrawal_params["target_frame_name"])
+        self.ee_target_index = self.ee_sensor_data.target_frame_names.index(self.gripper.target_frame_name)
         target_frame_cfg = next(
-            frame for frame in self.ee_sensor.cfg.target_frames if frame.name == withdrawal_params["target_frame_name"]
+            frame for frame in self.ee_sensor.cfg.target_frames if frame.name == self.gripper.target_frame_name
         )
         ee_body_name = target_frame_cfg.prim_path.rsplit("/", maxsplit=1)[-1]
         ee_body_ids, ee_body_names = self.work_robot.find_bodies(ee_body_name)
@@ -273,8 +275,7 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
 
     def _tcp_position(self):
         """Return the work-hand TCP position used by the withdrawal predicate."""
-        params = self.predicates[4].params
-        return self.base_env.arena_world.get_frame_position_w(params["ee_frame_name"], params["target_frame_name"])
+        return self.gripper.get_position_w(self.base_env.arena_world)
 
     def _predicate_results(self) -> list[bool]:
         """Evaluate every child predicate without advancing task termination."""
@@ -417,12 +418,12 @@ class UsbcEnvBehaviourDemo(EnvBehaviourDemo):
                 {**start_state, "lateral_m": 0.0, "speed_m_s": 0.0},
             ),
             (
-                "parallel_jaw_gripper_released",
+                "gripper_released",
                 [True, True, True, True, False],
                 {**start_state, "lateral_m": 0.0, "speed_m_s": 0.0, "gripper_released": True},
             ),
             (
-                "end_effector_distance_from_object_exceeds_threshold",
+                "gripper_distance_from_object_exceeds_threshold",
                 [True, True, True, True, True],
                 {
                     "T_W_R": home_receiver_pose,

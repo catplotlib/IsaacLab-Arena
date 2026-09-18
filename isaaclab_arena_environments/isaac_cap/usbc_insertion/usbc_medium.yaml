@@ -177,17 +177,10 @@ task:
       receiver_axis: [1.0, 0.0, 0.0]
       subject_tip_offset_xyz: [0.0, 0.0, 0.0133]
       depth_min: 0.0104
-      # Success radius calibrated in the source CAP task.
       lateral_max: 0.0087931792
       speed_max: 0.05
+      grasp_width_m: 0.01
+      release_clearance_m: 0.0015
       withdrawal_distance_min: 0.05
       require_released: true
-      work_hand:
-        robot_name: right_robot
-        gripper_joint_name: left_finger
-        jaw_gap_at_zero_joint_m: 0.0
-        grasp_width_m: 0.01
-        release_clearance_m: 0.0015
-        ee_frame_name: right_ee_frame
-        target_frame_name: tcp
       episode_length_s: 150.0

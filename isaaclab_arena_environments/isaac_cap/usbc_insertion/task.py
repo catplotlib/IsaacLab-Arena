@@ -8,64 +8,29 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from dataclasses import MISSING, dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import isaaclab.envs.mdp as mdp
 from isaaclab.managers import TerminationTermCfg
-from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.predicates.composite import CompositePredicate
-from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+from isaaclab_arena.tasks.predicates.gripper import gripper_released
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
-    end_effector_distance_from_object_exceeds_threshold,
+    gripper_distance_from_object_exceeds_threshold,
     lateral_in_proximity,
     tilt_axis_aligned,
     velocity_below_threshold,
 )
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.terminations import SuccessMode
 
-
-@configclass
-class TerminationsCfg:
-    """Timeout and seated-connector success terms."""
-
-    time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    success: TerminationTermCfg = MISSING
-
-
-@dataclass(frozen=True)
-class WorkHandCfg:
-    """Identify the work gripper and its release geometry."""
-
-    robot_name: str
-    gripper_joint_name: str
-    jaw_gap_at_zero_joint_m: float
-    grasp_width_m: float
-    ee_frame_name: str
-    target_frame_name: str | None = None
-    release_clearance_m: float = 1.5e-3
-
-    def __post_init__(self) -> None:
-        """Validate the hand definition when it is constructed."""
-        for name in ("robot_name", "gripper_joint_name", "ee_frame_name"):
-            assert isinstance(getattr(self, name), str) and getattr(self, name), f"Invalid work_hand {name}."
-        assert self.target_frame_name is None or (
-            isinstance(self.target_frame_name, str) and self.target_frame_name
-        ), "Invalid work_hand target_frame_name."
-        for name in ("jaw_gap_at_zero_joint_m", "grasp_width_m", "release_clearance_m"):
-            value = getattr(self, name)
-            assert (
-                isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-            ), f"Invalid work_hand {name}."
-        assert self.grasp_width_m > 0.0, "work_hand grasp_width_m must be positive."
-        assert self.release_clearance_m >= 0.0, "work_hand release_clearance_m must be non-negative."
+if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 
 
 class UsbcInsertionTask(TaskBase):
@@ -86,7 +51,8 @@ class UsbcInsertionTask(TaskBase):
         subject_axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
         tilt_max: float | None = None,
         allow_antiparallel_axes: bool = False,
-        work_hand: WorkHandCfg | None = None,
+        grasp_width_m: float | None = None,
+        release_clearance_m: float = 1.5e-3,
         withdrawal_distance_min: float | None = None,
         require_released: bool = False,
         consecutive_success_steps: int = 1,
@@ -94,10 +60,6 @@ class UsbcInsertionTask(TaskBase):
         task_description: str | None = None,
     ) -> None:
         """Configure geometry and thresholds supplied by one connector variant."""
-        # Nested graph-YAML data arrives as a mapping at this deserialization boundary.
-        if isinstance(work_hand, Mapping):
-            work_hand = WorkHandCfg(**work_hand)
-        assert work_hand is None or isinstance(work_hand, WorkHandCfg), "work_hand must be a WorkHandCfg or mapping."
         for name, vector in (
             ("receiver_mouth_offset_xyz", receiver_mouth_offset_xyz),
             ("receiver_axis", receiver_axis),
@@ -113,14 +75,16 @@ class UsbcInsertionTask(TaskBase):
         assert depth_max is None or depth_max >= depth_min, "depth_max must not be less than depth_min."
         assert lateral_max > 0.0 and math.isfinite(lateral_max), "lateral_max must be positive and finite."
         assert speed_max > 0.0 and math.isfinite(speed_max), "speed_max must be positive and finite."
-        assert not require_released or work_hand is not None, "Release checking requires work_hand."
-        assert (work_hand is None) == (
-            withdrawal_distance_min is None
-        ), "work_hand and withdrawal_distance_min must be set together."
-        if work_hand is not None:
-            assert withdrawal_distance_min is not None and (
-                math.isfinite(withdrawal_distance_min) and withdrawal_distance_min > 0.0
-            ), "Withdrawal distance must be positive and finite."
+        assert grasp_width_m is None or (
+            math.isfinite(grasp_width_m) and grasp_width_m > 0.0
+        ), "grasp_width_m must be positive and finite."
+        assert (
+            math.isfinite(release_clearance_m) and release_clearance_m >= 0.0
+        ), "release_clearance_m must be non-negative and finite."
+        assert not require_released or grasp_width_m is not None, "Release checking requires grasp_width_m."
+        assert withdrawal_distance_min is None or (
+            math.isfinite(withdrawal_distance_min) and withdrawal_distance_min > 0.0
+        ), "withdrawal_distance_min must be positive and finite."
         assert tilt_max is None or 0.0 <= tilt_max <= math.pi, "tilt_max must be in [0, pi]."
         assert isinstance(consecutive_success_steps, int) and not isinstance(
             consecutive_success_steps, bool
@@ -181,46 +145,59 @@ class UsbcInsertionTask(TaskBase):
                 },
             )
         )
-        if work_hand is not None:
-            if require_released:
-                predicates.append(
-                    TerminationTermCfg(
-                        func=parallel_jaw_gripper_released,
-                        params={
-                            "robot_name": work_hand.robot_name,
-                            "gripper_joint_name": work_hand.gripper_joint_name,
-                            "jaw_gap_at_zero_joint_m": work_hand.jaw_gap_at_zero_joint_m,
-                            "grasp_width_m": work_hand.grasp_width_m,
-                            "release_clearance_m": work_hand.release_clearance_m,
-                        },
-                    )
-                )
-            predicates.append(
-                TerminationTermCfg(
-                    func=end_effector_distance_from_object_exceeds_threshold,
-                    params={
-                        "subject_name": plug.name,
-                        "ee_frame_name": work_hand.ee_frame_name,
-                        "target_frame_name": work_hand.target_frame_name,
-                        "distance_threshold_m": withdrawal_distance_min,
-                    },
-                )
-            )
-        self.termination_cfg = TerminationsCfg(
-            success=TerminationTermCfg(
-                func=CompositePredicate,
+        if require_released:
+            release_cfg = TerminationTermCfg(
+                func=gripper_released,
                 params={
-                    "predicates": predicates,
-                    "mode": SuccessMode.ALL,
-                    "consecutive_steps": consecutive_success_steps,
+                    "grasp_width_m": grasp_width_m,
+                    "release_clearance_m": release_clearance_m,
                 },
             )
+            predicates.append(release_cfg)
+        if withdrawal_distance_min is not None:
+            withdrawal_cfg = TerminationTermCfg(
+                func=gripper_distance_from_object_exceeds_threshold,
+                params={
+                    "subject_name": plug.name,
+                    "distance_threshold_m": withdrawal_distance_min,
+                },
+            )
+            predicates.append(withdrawal_cfg)
+        self._success_cfg = TerminationTermCfg(
+            func=CompositePredicate,
+            params={
+                "predicates": predicates,
+                "mode": SuccessMode.ALL,
+                "consecutive_steps": consecutive_success_steps,
+            },
         )
+        self._gripper_predicates = [
+            predicate
+            for predicate in self._success_cfg.params["predicates"]
+            if predicate.func in (gripper_released, gripper_distance_from_object_exceeds_threshold)
+        ]
+        self.termination_cfg = TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[
+                ProgressObjective(
+                    name="usbc_insertion",
+                    predicate_sequence=[self._success_cfg],
+                )
+            ],
+        )
+
+    def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Bind gripper-dependent predicates to the selected embodiment."""
+        if not self._gripper_predicates:
+            return
+        gripper = embodiment.get_gripper()
+        for predicate in self._gripper_predicates:
+            predicate.params["gripper"] = gripper
 
     def get_scene_cfg(self) -> Any:
         return None
 
-    def get_termination_cfg(self) -> Any:
+    def get_termination_cfg(self) -> TaskTerminationCfg:
         return self.termination_cfg
 
     def get_events_cfg(self) -> Any:

@@ -23,11 +23,7 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
     )
-    from isaaclab_arena.tasks.predicates.spatial import (
-        depth_in_range,
-        lateral_in_proximity,
-        tilt_axis_aligned,
-    )
+    from isaaclab_arena.tasks.predicates.spatial import depth_in_range, lateral_in_proximity, tilt_axis_aligned
     from isaaclab_arena.tasks.terminations import SuccessMode
 
     class _PlayingSimulation:

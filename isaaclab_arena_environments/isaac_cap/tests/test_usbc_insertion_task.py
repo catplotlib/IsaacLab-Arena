@@ -78,7 +78,11 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
         allow_antiparallel_axes=True,
         episode_length_s=150.0,
     )
-    success_cfg = easy_task.get_termination_cfg().success
+    termination_cfg = easy_task.get_termination_cfg()
+    assert termination_cfg.timeout_s == 150.0
+    assert len(termination_cfg.success) == 1
+    assert termination_cfg.success[0].name == "usbc_insertion"
+    success_cfg = termination_cfg.success[0].predicate_sequence[0]
     assert success_cfg.func is CompositePredicate
     assert success_cfg.params["consecutive_steps"] == 1
     predicates = success_cfg.params["predicates"]
@@ -101,7 +105,7 @@ def _test_usbc_insertion_task(_simulation_app) -> bool:
         lateral_max=0.0043965896,
         speed_max=0.05,
     )
-    predicates = medium_task.get_termination_cfg().success.params["predicates"]
+    predicates = medium_task.get_termination_cfg().success[0].predicate_sequence[0].params["predicates"]
     assert [predicate.func for predicate in predicates] == [
         depth_in_range,
         lateral_in_proximity,
@@ -140,19 +144,12 @@ def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
     from types import SimpleNamespace
 
     from isaaclab_arena.assets.asset import Asset
-    from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
-    from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
-    from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask, WorkHandCfg
+    from isaaclab_arena.tasks.predicates.gripper import gripper_released
+    from isaaclab_arena.tasks.predicates.spatial import gripper_distance_from_object_exceeds_threshold
+    from isaaclab_arena_environments.isaac_cap.embodiments.cable_routing.gripper import YamGripper
+    from isaaclab_arena_environments.isaac_cap.usbc_insertion.task import UsbcInsertionTask
 
-    hand = WorkHandCfg(
-        robot_name="right_robot",
-        gripper_joint_name="left_finger",
-        jaw_gap_at_zero_joint_m=0.0,
-        grasp_width_m=0.01,
-        release_clearance_m=0.0015,
-        ee_frame_name="right_ee_frame",
-        target_frame_name="tcp",
-    )
+    gripper = YamGripper()
     positions = torch.tensor([[0.0, 0.0, 0.13], [0.0, 0.0, 0.33], [0.0, 0.0, 0.33]])
     frame_positions = torch.tensor([[0.0, 0.0, 0.13]]).expand(3, -1)
     robot = SimpleNamespace(
@@ -169,23 +166,20 @@ def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
         ),
     )
     release_params = dict(
-        robot_name=hand.robot_name,
-        gripper_joint_name=hand.gripper_joint_name,
-        jaw_gap_at_zero_joint_m=hand.jaw_gap_at_zero_joint_m,
-        grasp_width_m=hand.grasp_width_m,
-        release_clearance_m=hand.release_clearance_m,
+        gripper=gripper,
+        grasp_width_m=0.01,
+        release_clearance_m=0.0015,
     )
     params = dict(
         subject_name="plug",
-        ee_frame_name=hand.ee_frame_name,
-        target_frame_name=hand.target_frame_name,
+        gripper=gripper,
         distance_threshold_m=0.04,
     )
-    assert parallel_jaw_gripper_released(env, **release_params).tolist() == [True, False, True]
-    assert end_effector_distance_from_object_exceeds_threshold(env, **params).tolist() == [False, True, True]
+    assert gripper.get_jaw_gap_m(env.arena_world).tolist() == pytest.approx([0.075048, 0.01, 0.075048])
+    assert gripper_released(env, **release_params).tolist() == [True, False, True]
+    assert gripper_distance_from_object_exceeds_threshold(env, **params).tolist() == [False, True, True]
     assert (
-        parallel_jaw_gripper_released(env, **release_params)
-        & end_effector_distance_from_object_exceeds_threshold(env, **params)
+        gripper_released(env, **release_params) & gripper_distance_from_object_exceeds_threshold(env, **params)
     ).tolist() == [
         False,
         False,
@@ -201,32 +195,35 @@ def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:
             depth_min=0.01,
             lateral_max=0.01,
             speed_max=0.05,
-            work_hand=hand,
+            grasp_width_m=0.01,
+            release_clearance_m=0.0015,
             withdrawal_distance_min=0.04,
             require_released=require_released,
         )
-        hand_predicates = task.get_termination_cfg().success.params["predicates"][3:]
+        hand_predicates = task.get_termination_cfg().success[0].predicate_sequence[0].params["predicates"][3:]
         assert [term.func for term in hand_predicates] == (
-            [parallel_jaw_gripper_released, end_effector_distance_from_object_exceeds_threshold]
+            [gripper_released, gripper_distance_from_object_exceeds_threshold]
             if require_released
-            else [end_effector_distance_from_object_exceeds_threshold]
+            else [gripper_distance_from_object_exceeds_threshold]
         )
+        assert all("gripper" not in term.params for term in hand_predicates)
+        task.configure_for_embodiment(SimpleNamespace(get_gripper=lambda: gripper))
+        assert all(term.params["gripper"] is gripper for term in hand_predicates)
         result = torch.stack([term.func(env, **term.params) for term in hand_predicates]).all(dim=0)
         assert result.tolist() == ([False, False, True] if require_released else [False, True, True])
     robot.data.joint_pos[1, 0] = 0.006
-    assert parallel_jaw_gripper_released(env, **release_params).tolist() == [True, True, True]
+    assert gripper_released(env, **release_params).tolist() == [True, True, True]
     assert (
-        parallel_jaw_gripper_released(env, **release_params)
-        & end_effector_distance_from_object_exceeds_threshold(env, **params)
+        gripper_released(env, **release_params) & gripper_distance_from_object_exceeds_threshold(env, **params)
     ).tolist() == [
         False,
         True,
         True,
     ]
     positions[0] = frame_positions[0] + torch.tensor([0.04, 0.0, 0.0])
-    assert not end_effector_distance_from_object_exceeds_threshold(env, **params)[0]
+    assert not gripper_distance_from_object_exceeds_threshold(env, **params)[0]
     positions[0, 0] += 1.0e-4
-    assert end_effector_distance_from_object_exceeds_threshold(env, **params)[0]
+    assert gripper_distance_from_object_exceeds_threshold(env, **params)[0]
     return True
 
 
@@ -365,10 +362,10 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-    from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+    from isaaclab_arena.tasks.predicates.gripper import gripper_released
     from isaaclab_arena.tasks.predicates.spatial import (
         depth_in_range,
-        end_effector_distance_from_object_exceeds_threshold,
+        gripper_distance_from_object_exceeds_threshold,
         lateral_in_proximity,
         velocity_below_threshold,
     )
@@ -392,6 +389,11 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
     assert yam.get_ee_frame_transformer_names() == []
     assert yam.scene_config.left_ee_frame is yam.scene_config.right_ee_frame is None
     assert yam.get_ee_frame_name(ArmMode.DUAL_ARM) == "link_6"
+    assert yam.get_gripper() is yam.gripper
+    assert yam.gripper.articulation_name == "right_robot"
+    assert yam.gripper.driver_joint_name == "left_finger"
+    assert yam.gripper.frame_transformer_name == "right_ee_frame"
+    assert yam.gripper.target_frame_name == "tcp"
 
     for factory, cfg_type, variant in (
         (UsbcInsertionEasyEnvironment(), UsbcInsertionEasyEnvironmentCfg, "easy"),
@@ -421,26 +423,28 @@ def _test_usbc_environment_yaml(_simulation_app) -> bool:
         assert environment.task.receiver.usd_path.startswith(f"{ASSET_ROOT}/")
         assert environment.task.plug.scale == (1.0, 1.0, 1.0)
         assert environment.task.get_events_cfg() is None
-        predicates = environment.task.get_termination_cfg().success.params["predicates"]
+        success_objective = environment.task.get_termination_cfg().success[0]
+        assert success_objective.name == "usbc_insertion"
+        predicates = success_objective.predicate_sequence[0].params["predicates"]
         assert [term.func for term in predicates] == [
             depth_in_range,
             lateral_in_proximity,
             velocity_below_threshold,
-            parallel_jaw_gripper_released,
-            end_effector_distance_from_object_exceeds_threshold,
+            gripper_released,
+            gripper_distance_from_object_exceeds_threshold,
         ]
         assert predicates[0].params["depth_min"] == 0.0104
         assert predicates[0].params["depth_max"] is None
+        assert "gripper" not in predicates[-2].params
+        assert "gripper" not in predicates[-1].params
+        environment.task.configure_for_embodiment(environment.embodiment)
         assert predicates[-2].params == {
-            "robot_name": "right_robot",
-            "gripper_joint_name": "left_finger",
-            "jaw_gap_at_zero_joint_m": 0.0,
             "grasp_width_m": 0.01,
             "release_clearance_m": 0.0015,
+            "gripper": environment.embodiment.gripper,
         }
         assert predicates[-1].params["subject_name"] == "plug"
-        assert predicates[-1].params["ee_frame_name"] == "right_ee_frame"
-        assert predicates[-1].params["target_frame_name"] == "tcp"
+        assert predicates[-1].params["gripper"] is environment.embodiment.gripper
         assert predicates[-1].params["distance_threshold_m"] == (0.04 if variant == "easy" else 0.05)
         randomization = {
             relation.subject: relation.params

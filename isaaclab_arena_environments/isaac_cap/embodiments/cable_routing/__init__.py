@@ -46,6 +46,8 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
         When cameras are enabled, copy ``camera_config`` if supplied; otherwise,
         place the default cable-routing rig relative to the robot midpoint.
         """
+        from .gripper import YamGripper
+
         left_position = tuple(float(value) for value in left_mount_position)
         right_position = tuple(float(value) for value in right_mount_position)
         assert len(left_position) == len(right_position) == 3, "YAM mount positions must contain three values."
@@ -58,6 +60,7 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
             concatenate_observation_terms=True,
             arm_mode=ArmMode.DUAL_ARM,
         )
+        self.gripper = YamGripper()
         self.scene_config = BimanualYamSceneCfg(
             left_robot=make_yam_articulation_cfg("{ENV_REGEX_NS}/LeftRobot", left_position, active_usd_path),
             right_robot=make_yam_articulation_cfg("{ENV_REGEX_NS}/RightRobot", right_position, active_usd_path),

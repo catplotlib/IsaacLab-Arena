@@ -37,7 +37,7 @@ def _test_usbc_demo_geometry(_simulation_app) -> bool:
     for variant in ("easy", "medium"):
         task = _build_demo_environment(variant).task
         assert task.plug.scale == (1.0, 1.0, 1.0)
-        predicates = task.get_termination_cfg().success.params["predicates"]
+        predicates = task.get_termination_cfg().success[0].predicate_sequence[0].params["predicates"]
         geometry_predicates = [
             predicate
             for predicate in predicates
@@ -159,8 +159,8 @@ def test_usbc_demo_headless_cli(variant: str) -> None:
         "depth_in_range",
         "lateral_in_proximity",
         "velocity_below_threshold",
-        "parallel_jaw_gripper_released",
-        "end_effector_distance_from_object_exceeds_threshold",
+        "gripper_released",
+        "gripper_distance_from_object_exceeds_threshold",
     ):
         assert predicate_name in result.stdout, result.stdout
     assert "success reset observed" in result.stdout, result.stdout
