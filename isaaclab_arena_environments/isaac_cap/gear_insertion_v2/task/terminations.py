@@ -30,7 +30,6 @@ class gear_mesh_success(ManagerTermBase):
         self.board = env.scene[cfg.params["board_asset_cfg"].name]
         self.gears = tuple(env.scene[asset_cfg.name] for asset_cfg in cfg.params["gear_asset_cfgs"])
         self.gear = self.gears[0]
-        assert isinstance(cfg.params["gripper"], Gripper), "Gear mesh requires a supported gripper."
         assert callable(cfg.params["release_condition"]), "Gear mesh requires a gripper release condition."
         self.pinion_joint = self.board.data.joint_names.index("pinion_joint")
         self.button_joint = self.board.data.joint_names.index("button_joint")

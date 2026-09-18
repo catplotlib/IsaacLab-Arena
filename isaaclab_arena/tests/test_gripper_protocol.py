@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
-from isaaclab_arena.embodiments.gripper import Gripper, PandaGripper, ParallelJawGripper, RobotiqGripper
+from isaaclab_arena.embodiments.gripper import PandaGripper, RobotiqGripper
 from isaaclab_arena.environments.arena_world import ArenaWorld
 from isaaclab_arena.tasks.predicates.gripper import gripper_released
 from isaaclab_arena.tasks.predicates.spatial import gripper_distance_from_object_exceeds_threshold
@@ -52,9 +52,6 @@ def test_panda_gripper_implements_parallel_jaw_interface() -> None:
     world = _make_world()
     gripper = PandaGripper()
 
-    assert issubclass(PandaGripper, ParallelJawGripper)
-    assert isinstance(gripper, Gripper)
-    assert isinstance(gripper, ParallelJawGripper)
     torch.testing.assert_close(gripper.get_jaw_gap_m(world), torch.tensor([0.03, 0.08]))
     torch.testing.assert_close(gripper.get_opening_width_m(world), torch.tensor([0.03, 0.08]))
     torch.testing.assert_close(gripper.get_position_w(world), torch.tensor([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]))
@@ -64,8 +61,6 @@ def test_robotiq_gripper_measures_tracked_finger_pad_gap() -> None:
     world = _make_world()
     gripper = RobotiqGripper()
 
-    assert issubclass(RobotiqGripper, ParallelJawGripper)
-    assert isinstance(gripper, ParallelJawGripper)
     torch.testing.assert_close(gripper.get_jaw_gap_m(world), torch.tensor([0.04, 0.10]))
     torch.testing.assert_close(gripper.get_position_w(world), torch.tensor([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]))
 
@@ -120,8 +115,6 @@ def test_release_predicate_supports_multi_finger_hands() -> None:
     env = SimpleNamespace(arena_world=_make_world())
     hand = ThreeFingerHand()
 
-    assert isinstance(hand, Gripper)
-    assert not isinstance(hand, ParallelJawGripper)
     released = gripper_released(env, hand, grasp_width_m=0.035, release_clearance_m=0.004)
     assert released.tolist() == [False, True]
 

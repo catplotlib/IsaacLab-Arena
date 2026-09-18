@@ -158,33 +158,6 @@ class ArenaWorld:
         ), f"Body '{body_name}' returned pose shape {tuple(T_W_B.shape)}; expected ({self._scene.num_envs}, 7)."
         return T_W_B
 
-    def get_body_point_position_w(
-        self,
-        scene_key: str,
-        body_name: str,
-        offset_in_body_frame: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    ) -> torch.Tensor:
-        """Return an articulation body-fixed point in world coordinates.
-
-        Args:
-            scene_key: Articulation scene entity name.
-            body_name: Exact rigid-body name within the articulation.
-            offset_in_body_frame: Point offset expressed in the body frame.
-
-        Returns:
-            Tensor of shape (num_envs, 3).
-        """
-        T_W_B = self.get_body_pose_w(scene_key, body_name)
-        body_position_w = T_W_B[:, :3]
-        body_orientation_w = T_W_B[:, 3:]
-        offset = body_position_w.new_tensor(offset_in_body_frame).expand_as(body_position_w)
-        position_w = body_position_w + quat_apply(body_orientation_w, offset)
-        assert position_w.shape == (self._scene.num_envs, 3), (
-            f"Body '{body_name}' returned position shape {tuple(position_w.shape)}; "
-            f"expected ({self._scene.num_envs}, 3)."
-        )
-        return position_w
-
     def get_frame_position_w(self, scene_key: str, target_frame_name: str | None = None) -> torch.Tensor:
         """Return a frame transformer's target position in world coordinates.
 

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import torch
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
+
+from isaaclab.utils.math import combine_frame_transforms
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
-@runtime_checkable
 class Gripper(Protocol):
     """Gripper state exposed to embodiment-agnostic tasks."""
 
@@ -28,7 +29,6 @@ class Gripper(Protocol):
         ...
 
 
-@runtime_checkable
 class ParallelJawGripper(Gripper, Protocol):
     """Gripper whose grasp state is represented by a physical jaw gap."""
 
@@ -45,9 +45,6 @@ class ParallelJawGripper(Gripper, Protocol):
 class PandaGripper(ParallelJawGripper):
     """Franka Panda parallel-jaw gripper."""
 
-    asset_name: str = "robot"
-    """Scene key of the Franka articulation."""
-
     left_finger_joint_name: str = "panda_finger_joint1"
     """Joint measuring the left finger's distance from the centerline."""
 
@@ -62,8 +59,8 @@ class PandaGripper(ParallelJawGripper):
 
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the sum of the two prismatic finger positions."""
-        left = world.get_joint_position(self.asset_name, self.left_finger_joint_name)
-        right = world.get_joint_position(self.asset_name, self.right_finger_joint_name)
+        left = world.get_joint_position("robot", self.left_finger_joint_name)
+        right = world.get_joint_position("robot", self.right_finger_joint_name)
         return left + right
 
     def get_position_w(self, world: ArenaWorld) -> torch.Tensor:
@@ -74,9 +71,6 @@ class PandaGripper(ParallelJawGripper):
 @dataclass(frozen=True, kw_only=True)
 class RobotiqGripper(ParallelJawGripper):
     """Robotiq 2F-85 gripper backed by tracked pads or its driver joint."""
-
-    asset_name: str = "robot"
-    """Scene key of the robot articulation."""
 
     driver_joint_name: str | None = None
     """Robotiq driver joint, or None to measure the tracked finger pads."""
@@ -102,7 +96,7 @@ class RobotiqGripper(ParallelJawGripper):
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical distance between the two finger pads."""
         if self.driver_joint_name is not None:
-            driver_position = world.get_joint_position(self.asset_name, self.driver_joint_name)
+            driver_position = world.get_joint_position("robot", self.driver_joint_name)
             # Robotiq's published 2F-85 linkage relation maps its driver angle to
             # the total inner-finger opening: 85 mm at zero and 0 mm near 0.8 rad.
             jaw_gap_m = 0.1143 * torch.sin(0.715 - driver_position) + 0.01
@@ -114,7 +108,10 @@ class RobotiqGripper(ParallelJawGripper):
     def get_position_w(self, world: ArenaWorld) -> torch.Tensor:
         """Return the configured Robotiq grasp-frame position."""
         if self.body_name is not None:
-            return world.get_body_point_position_w(self.asset_name, self.body_name, self.body_point_offset_xyz)
+            T_W_B = world.get_body_pose_w("robot", self.body_name)
+            t_B_G = T_W_B.new_tensor(self.body_point_offset_xyz).expand_as(T_W_B[:, :3])
+            t_W_G, _ = combine_frame_transforms(T_W_B[:, :3], T_W_B[:, 3:], t_B_G)
+            return t_W_G
         return world.get_frame_position_w(self.frame_transformer_name, self.target_frame_name)
 
 

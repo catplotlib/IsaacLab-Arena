@@ -53,7 +53,6 @@ class _IndustrialFr3Robotiq2f85Base(EmbodimentBase):
             arm_mode,
         )
         self.gripper = RobotiqGripper(
-            asset_name="robot",
             driver_joint_name=GRIPPER_JOINT_NAME,
             body_name=END_EFFECTOR_BODY_NAME,
             body_point_offset_xyz=END_EFFECTOR_POINT_OFFSET_XYZ,
