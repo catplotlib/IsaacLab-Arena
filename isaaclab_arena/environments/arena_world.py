@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 
 from isaaclab.scene import InteractiveScene
-from isaaclab.utils.math import quat_apply
+from isaaclab.utils.math import quat_apply, transform_points
 
 import isaaclab_arena.environments.arena_world_scene_access as scene_access
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
@@ -306,8 +306,7 @@ class ArenaWorld:
         if corners_F.shape[0] == 1 and self._scene.num_envs > 1:
             corners_F = corners_F.expand(self._scene.num_envs, -1, -1)
         T_W_F = self.get_pose_w(scene_key)
-        q_W_F = T_W_F[:, None, 3:].expand(-1, corners_F.shape[1], -1)
-        vertices_W = quat_apply(q_W_F, corners_F) + T_W_F[:, None, :3]
+        vertices_W = transform_points(corners_F, pos=T_W_F[:, :3], quat=T_W_F[:, 3:])
         return AxisAlignedBoundingBox(min_point=vertices_W.amin(dim=1), max_point=vertices_W.amax(dim=1))
 
     def get_aabb_in_local_frame(self, scene_key: str) -> AxisAlignedBoundingBox:

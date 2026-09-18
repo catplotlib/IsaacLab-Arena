@@ -20,7 +20,7 @@ def _test_apple_in_microwave(_simulation_app):
     from isaaclab_arena.policy.zero_action_policy import ZeroActionPolicy, ZeroActionPolicyCfg
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.object_in_task import ObjectInTask
-    from isaaclab_arena.tasks.predicates.spatial import object_in_target_aabb
+    from isaaclab_arena.tasks.predicates.spatial import object_in_target_aabb, object_in_target_contact
     from isaaclab_arena.utils.pose import Pose
 
     registry = AssetRegistry()
@@ -63,16 +63,25 @@ def _test_apple_in_microwave(_simulation_app):
             assert object_in_target_aabb(base, apple.name, microwave.name).all()
             initial_height = T_W_A[:, 2].clone()
             fell = False
+            made_contact = False
             for step in range(500):
                 obs, _, terminated, truncated, _ = env.step(policy.get_action(env, obs))
                 assert not truncated.any(), "Apple drop timed out"
                 success = base.termination_manager.get_term("success")
                 if terminated.any():
                     assert success.all(), "Apple episode terminated without task success"
+                    assert made_contact, "Success requires contact with the microwave"
                     assert fell, "Apple should fall under gravity before success"
                     assert step >= 49, "Success must require 50 consecutive settled steps"
                     assert (base.episode_length_buf == 0).all(), "Success should reset the episode"
                     return True
+                contact = object_in_target_contact(
+                    base, arena_env.task.contact_sensor_cfg, arena_env.task.contact_force_threshold
+                )
+                if step == 0:
+                    assert not contact.any(), "The apple should initially be airborne inside the microwave"
+                    assert not success.any(), "Containment without contact must not count as success"
+                made_contact |= bool(contact.all())
                 fell |= bool((base.arena_world.get_pose_w(apple.name)[:, 2] < initial_height - 0.01).all())
             assert False, "Apple did not settle inside the microwave and trigger success"
     finally:

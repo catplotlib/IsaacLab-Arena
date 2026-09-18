@@ -31,6 +31,12 @@ def _test_aabb_containment(_simulation_app):
     )
     env = SimpleNamespace(arena_world=world)
     assert object_in_target_aabb(env, "object", "target").tolist() == [True, False, True, False]
+    assert object_in_target_aabb(env, "object", "target", minimum_contained_fraction=0.9).tolist() == [
+        True,
+        True,
+        True,
+        False,
+    ]
     # Shared translations preserve containment; moving the target changes it.
     geometry["object"] = objects + 10
     geometry["target"] = target + 10
@@ -117,3 +123,27 @@ def _test_world_aabb(_simulation_app):
 
 def test_world_aabb():
     assert run_function_with_persistent_simulation_app(_test_world_aabb)
+
+
+def _test_target_contact(_simulation_app):
+    import torch
+    from types import SimpleNamespace
+
+    from isaaclab.managers import SceneEntityCfg
+
+    from isaaclab_arena.tasks.predicates.spatial import object_in_target_contact
+
+    # No target contact, side contact, and opposing contacts on separate target bodies.
+    forces = torch.tensor([
+        [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]],
+        [[[0.1, 0.0, 0.0], [0.0, 0.0, 0.0]]],
+        [[[0.0, 0.0, 0.1], [0.0, 0.0, -0.1]]],
+    ])
+    sensor = SimpleNamespace(data=SimpleNamespace(force_matrix_w=SimpleNamespace(torch=forces)))
+    env = SimpleNamespace(scene={"contact": sensor})
+    assert object_in_target_contact(env, SceneEntityCfg("contact"), 0.01).tolist() == [False, True, True]
+    return True
+
+
+def test_target_contact():
+    assert run_function_with_persistent_simulation_app(_test_target_contact)

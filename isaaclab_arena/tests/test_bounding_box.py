@@ -224,3 +224,17 @@ def test_points_within():
         boxes.points_within(torch.zeros(3, 5, 3))
     with pytest.raises(AssertionError, match="Expected points"):
         boxes.points_within(torch.zeros(5, 2))
+
+
+def test_volume_fraction_within():
+    """Containment measures object volume, including partial overlap and degenerate boxes."""
+    target = AxisAlignedBoundingBox((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+    objects = AxisAlignedBoundingBox(
+        min_point=torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.5, 0.5, 0.5], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+        max_point=torch.tensor([[1.0, 1.0, 1.0], [1.5, 1.0, 1.0], [1.5, 1.5, 1.5], [2.0, 1.0, 1.0], [0.0, 1.0, 1.0]]),
+    )
+    torch.testing.assert_close(objects.volume_fraction_within(target), torch.tensor([1.0, 0.5, 0.125, 0.0, 0.0]))
+    torch.testing.assert_close(target.volume_fraction_within(objects), torch.tensor([1.0, 0.5, 0.125, 0.0, 0.0]))
+    large = AxisAlignedBoundingBox((0.0, 0.0, 0.0), (2.0, 2.0, 2.0))
+    torch.testing.assert_close(large.volume_fraction_within(target), torch.tensor([0.125]))
+    torch.testing.assert_close(target.volume_fraction_within(large), torch.tensor([1.0]))
