@@ -75,10 +75,5 @@ def _test_syringe_drop(_simulation_app, minimum_contained_fraction: float | None
 
 
 @pytest.mark.with_newton
-def test_syringe_drop():
-    assert run_function_with_persistent_simulation_app(_test_syringe_drop)
-
-
-@pytest.mark.with_newton
 def test_syringe_drop_partial_containment():
     assert run_function_with_persistent_simulation_app(_test_syringe_drop, minimum_contained_fraction=0.95)

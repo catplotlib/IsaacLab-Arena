@@ -426,7 +426,7 @@ def object_in_target_aabb(
     return object_aabb_W.volume_fraction_within(target_aabb_W) >= minimum_contained_fraction
 
 
-def object_in_target_contact(
+def object_in_contact_with_target(
     env: IsaacLabArenaManagerBasedRLEnv,
     contact_sensor_cfg: SceneEntityCfg,
     force_threshold: float,

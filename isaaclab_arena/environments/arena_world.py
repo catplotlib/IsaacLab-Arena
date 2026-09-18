@@ -298,7 +298,6 @@ class ArenaWorld:
     def get_aabb_w(self, scene_key: str) -> AxisAlignedBoundingBox:
         """Return current rigid-object or scene-extra bounds in world frame W.
 
-        Transform cached local bounds using the current pose on every call.
         The local cache assumes descendants remain fixed relative to frame F.
         """
 
