@@ -596,6 +596,11 @@ See the <a class="reference external" href="https://github.com/isaac-sim/IsaacLa
 </div>
 <section id="adding-assets">
 <h2>Adding assets<a class="headerlink" href="#adding-assets" title="Link to this heading">#</a></h2>
+<p>For immediate access to new uploads, use <code class="docutils literal notranslate"><span class="pre">ARENA_STAGING_NUCLEUS_DIR</span></code> from
+<code class="docutils literal notranslate"><span class="pre">isaaclab_arena.assets.nucleus</span></code>. It points to the internal Nucleus location
+<code class="docutils literal notranslate"><span class="pre">omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab</span></code> and requires internal access.
+Append <code class="docutils literal notranslate"><span class="pre">/Arena/assets/...</span></code> to build an asset path. <code class="docutils literal notranslate"><span class="pre">ARENA_NUCLEUS_DIR</span></code> uses the
+public S3 mirror, where uploads become available after synchronization.</p>
 <p>To add your own assets to Isaac Lab Arena’s <em>staging</em> S3 bucket, you can follow the following steps:</p>
 <ol class="arabic">
 <li><p>Upload your assets to the Nucleus Server (<code class="docutils literal notranslate"><span class="pre">omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab/Arena</span></code>). Depend on the type of your assets, you can upload them to the following directories:</p>
