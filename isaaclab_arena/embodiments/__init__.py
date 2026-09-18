@@ -5,6 +5,7 @@
 
 from .agibot.agibot import *
 from .droid.droid import *
+from .end_effector import *
 from .franka.franka import *
 from .g1.g1 import *
 from .galbot.galbot import *

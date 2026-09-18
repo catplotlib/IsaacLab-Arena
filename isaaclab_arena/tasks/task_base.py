@@ -3,8 +3,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from isaaclab.envs.common import ViewerCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg
@@ -16,6 +18,9 @@ from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.relations.relations import RequiresReachability
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.task_transition import TaskTransition
+
+if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 
 
 class TaskBase(ABC):
@@ -70,6 +75,10 @@ class TaskBase(ABC):
 
     def get_task_description(self) -> str | None:
         return self.task_description
+
+    def bind_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Bind embodiment-owned interfaces needed to configure this task."""
+        pass
 
     def apply_reachability_constraints(self) -> None:
         """Stamp RequiresReachability on the objects the robot must be able to reach for this task."""

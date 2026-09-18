@@ -15,6 +15,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors.contact_sensor.contact_sensor import ContactSensor
 from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
+from isaaclab_arena.embodiments.end_effector import EndEffector
 from isaaclab_arena.tasks.predicates.object_settling import get_object_initial_rest_state
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
@@ -25,18 +26,16 @@ if TYPE_CHECKING:
 def end_effector_distance_from_object_exceeds_threshold(
     env: IsaacLabArenaManagerBasedRLEnv,
     subject_name: str,
-    ee_frame_name: str,
+    end_effector: EndEffector,
     distance_threshold_m: float,
-    target_frame_name: str | None = None,
 ) -> torch.Tensor:
-    """Check that an end-effector frame is farther than a threshold from an object.
+    """Check that an end effector is farther than a threshold from an object.
 
     Args:
         env: Environment supplying object and frame positions through ArenaWorld.
         subject_name: Object asset whose origin defines the distance.
-        ee_frame_name: Embodiment-owned frame-transformer sensor name.
+        end_effector: Embodiment-owned end-effector implementation.
         distance_threshold_m: Strict minimum distance, in meters.
-        target_frame_name: Target name within the sensor, or None for its first target.
 
     Returns:
         Boolean tensor with one result per environment.
@@ -44,7 +43,7 @@ def end_effector_distance_from_object_exceeds_threshold(
     assert (
         math.isfinite(distance_threshold_m) and distance_threshold_m >= 0.0
     ), "Distance threshold must be non-negative and finite."
-    end_effector_position_W = env.arena_world.get_frame_position_w(ee_frame_name, target_frame_name)
+    end_effector_position_W = end_effector.get_position_w(env.arena_world)
     subject_position_W = env.arena_world.get_pose_w(subject_name)[:, :3]
     return torch.linalg.vector_norm(subject_position_W - end_effector_position_W, dim=-1) > distance_threshold_m
 

@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import math
 import torch
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils import math as math_utils
+
+from isaaclab_arena.embodiments.end_effector import ParallelJawGripper
+from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
 
 
 def _torch(value):
@@ -27,10 +30,10 @@ class gear_mesh_success(ManagerTermBase):
         self.board = env.scene[cfg.params["board_asset_cfg"].name]
         self.gears = tuple(env.scene[asset_cfg.name] for asset_cfg in cfg.params["gear_asset_cfgs"])
         self.gear = self.gears[0]
-        self.robot = env.scene[cfg.params["robot_asset_cfg"].name]
+        assert isinstance(cfg.params["gripper"], ParallelJawGripper), "Gear mesh requires a parallel-jaw gripper."
+        assert callable(cfg.params["release_condition"]), "Gear mesh requires a gripper release condition."
         self.pinion_joint = self.board.data.joint_names.index("pinion_joint")
         self.button_joint = self.board.data.joint_names.index("button_joint")
-        self.tcp_body = self.robot.data.body_names.index(cfg.params["tcp_body_name"])
         self.latched = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         self.seated_seen = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         self.started_after_seating = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
@@ -60,9 +63,8 @@ class gear_mesh_success(ManagerTermBase):
         env,
         board_asset_cfg: SceneEntityCfg,
         gear_asset_cfgs: Sequence[SceneEntityCfg],
-        robot_asset_cfg: SceneEntityCfg,
-        tcp_body_name: str,
-        tcp_offset_xyz: Sequence[float],
+        gripper: ParallelJawGripper,
+        release_condition: Callable,
         target_offsets_xyz: Sequence[Sequence[float]] | Sequence[Sequence[Sequence[float]]],
         button_latch_m: float = 0.005,
         drive_speed_rad_s: float = 4.0,
@@ -77,9 +79,6 @@ class gear_mesh_success(ManagerTermBase):
     ) -> torch.Tensor:
         del (
             board_asset_cfg,
-            gear_asset_cfgs,
-            robot_asset_cfg,
-            tcp_body_name,
             hold_time_s,
             spin_window_s,
         )
@@ -151,14 +150,22 @@ class gear_mesh_success(ManagerTermBase):
         selected_spin = torch.gather(windowed_spin, 1, safe_chosen)
         gates = spin_fraction * drive_speed_rad_s * 14.0 / station_teeth
         turning = assigned & (torch.abs(selected_spin) >= gates)
-        tcp_body_pos = _torch(self.robot.data.body_pos_w)[:, self.tcp_body]
-        tcp_body_quat = _torch(self.robot.data.body_quat_w)[:, self.tcp_body]
-        tcp_offset = torch.as_tensor(tcp_offset_xyz, device=env.device, dtype=tcp_body_pos.dtype)
-        tcp_pos = tcp_body_pos + math_utils.quat_apply(tcp_body_quat, tcp_offset.expand_as(tcp_body_pos))
-        released_by_gear = torch.linalg.vector_norm(gear_pos - tcp_pos[:, None, :], dim=-1) >= release_distance_m
-        selected_released = torch.gather(released_by_gear, 1, safe_chosen)
+        gripper_clears_gears = release_condition(env)
+        gripper_away_by_gear = torch.stack(
+            [
+                end_effector_distance_from_object_exceeds_threshold(
+                    env,
+                    subject_name=asset_cfg.name,
+                    end_effector=gripper,
+                    distance_threshold_m=release_distance_m,
+                )
+                for asset_cfg in gear_asset_cfgs
+            ],
+            dim=1,
+        )
+        selected_gripper_away = torch.gather(gripper_away_by_gear, 1, safe_chosen)
         all_seated = assigned.all(dim=1)
-        all_valid = (assigned & turning & selected_released).all(dim=1)
+        all_valid = gripper_clears_gears & (assigned & turning & selected_gripper_away).all(dim=1)
         self.seated_seen |= all_seated
         self.started_after_seating |= newly_latched & self.seated_seen
         candidate = self.started_after_seating & all_valid

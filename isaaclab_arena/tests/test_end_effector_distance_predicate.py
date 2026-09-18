@@ -14,6 +14,7 @@ def _test_end_effector_distance_from_object_exceeds_threshold(_simulation_app) -
 
     import pytest
 
+    from isaaclab_arena.embodiments.end_effector import PandaGripper
     from isaaclab_arena.environments.arena_world import ArenaWorld
     from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
 
@@ -41,19 +42,18 @@ def _test_end_effector_distance_from_object_exceeds_threshold(_simulation_app) -
                 },
             )
             env = SimpleNamespace(arena_world=ArenaWorld(scene))
-            params = dict(subject_name="object", ee_frame_name="ee_frame", distance_threshold_m=0.25)
-            result = end_effector_distance_from_object_exceeds_threshold(env, **params, target_frame_name="tool")
+            end_effector = PandaGripper(target_frame_name="tool")
+            params = dict(subject_name="object", end_effector=end_effector, distance_threshold_m=0.25)
+            result = end_effector_distance_from_object_exceeds_threshold(env, **params)
             assert result.tolist() == [False, False, True]
             assert result.device == poses.device and result.dtype == torch.bool
-            assert end_effector_distance_from_object_exceeds_threshold(env, **params).all()
 
             # Consume the updated sensor output, including any embodiment-owned tool offset.
             frame_positions[:, 1, 0] = 0.25
-            assert not end_effector_distance_from_object_exceeds_threshold(
-                env, **params, target_frame_name="tool"
-            ).any()
+            assert not end_effector_distance_from_object_exceeds_threshold(env, **params).any()
             with pytest.raises(AssertionError, match="target frame"):
-                end_effector_distance_from_object_exceeds_threshold(env, **params, target_frame_name="missing")
+                missing = PandaGripper(target_frame_name="missing")
+                end_effector_distance_from_object_exceeds_threshold(env, **{**params, "end_effector": missing})
             with pytest.raises(AssertionError, match="non-negative"):
                 end_effector_distance_from_object_exceeds_threshold(env, **{**params, "distance_threshold_m": -0.1})
     return True
