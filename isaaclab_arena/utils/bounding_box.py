@@ -170,7 +170,7 @@ class AxisAlignedBoundingBox:
         """Check point containment, including points on the boundary.
 
         Args:
-            points: Coordinates in the same frame and on the same device as the bounds.
+            points: Points in the same frame as the AABB.
                 Shape (P, 3) shares points across boxes; (B, P, 3) supplies batched points.
                 B must match the number of boxes, or either batch size must be one.
 

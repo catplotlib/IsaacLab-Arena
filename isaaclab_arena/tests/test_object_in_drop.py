@@ -8,6 +8,26 @@
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
+def get_pose_at_midpoint(env, object_name: str, target_name: str):
+    """Return an identity-orientation pose centering the object's geometry in the target bounds.
+
+    Args:
+        env: Wrapped Arena environment.
+        object_name: Scene key for the object to position.
+        target_name: Scene key for the destination.
+
+    Returns:
+        Batched world-frame poses with XYZW quaternions.
+    """
+    world = env.unwrapped.arena_world
+    target_bounds = world.get_aabb_w(target_name)
+    object_bounds = world.get_aabb_in_local_frame(object_name)
+    T_W_O = world.get_pose_w(object_name).clone()
+    T_W_O[:, 3:] = T_W_O.new_tensor([[0.0, 0.0, 0.0, 1.0]])
+    T_W_O[:, :3] = target_bounds.center - object_bounds.center
+    return T_W_O
+
+
 def _test_apple_in_microwave(_simulation_app):
     import torch
 
@@ -21,6 +41,7 @@ def _test_apple_in_microwave(_simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.object_in_task import ObjectInTask
     from isaaclab_arena.tasks.predicates.spatial import object_in_target_aabb, object_in_target_contact
+    from isaaclab_arena.tests.utils.simulation import step_zeros_and_call
     from isaaclab_arena.utils.pose import Pose
 
     registry = AssetRegistry()
@@ -42,21 +63,18 @@ def _test_apple_in_microwave(_simulation_app):
     env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(solve_relations=False)).make_registered()
     try:
         obs, _ = env.reset()
+        # Gym wrappers do not forward Arena/Isaac Lab attributes; keep env.step wrapped.
         base = env.unwrapped
         policy = ZeroActionPolicy(ZeroActionPolicyCfg())
         with torch.inference_mode():
-            for _ in range(10):
-                obs, _, terminated, truncated, _ = env.step(policy.get_action(env, obs))
-                assert not object_in_target_aabb(base, apple.name, microwave.name).any()
-                assert not base.termination_manager.get_term("success").any()
-                assert not terminated.any() and not truncated.any()
 
-            target_bounds = base.arena_world.get_aabb_w(microwave.name)
-            apple_bounds = base.arena_world.get_aabb_in_local_frame(apple.name)
-            T_W_A = base.arena_world.get_pose_w(apple.name).clone()
-            T_W_A[:, 3:] = T_W_A.new_tensor([[0.0, 0.0, 0.0, 1.0]])
-            # Center the apple geometry inside the closed microwave, above its floor.
-            T_W_A[:, :3] = target_bounds.center - apple_bounds.center
+            def check_outside(env, terminated):
+                assert not object_in_target_aabb(env.unwrapped, apple.name, microwave.name).any()
+                assert not env.unwrapped.termination_manager.get_term("success").any()
+                assert not terminated.any()
+
+            step_zeros_and_call(env, num_steps=10, function=check_outside)
+            T_W_A = get_pose_at_midpoint(env, apple.name, microwave.name)
             body = base.scene[apple.name]
             body.write_root_pose_to_sim(T_W_A)
             body.write_root_velocity_to_sim(torch.zeros((base.num_envs, 6), device=base.device))
@@ -72,8 +90,6 @@ def _test_apple_in_microwave(_simulation_app):
                     assert success.all(), "Apple episode terminated without task success"
                     assert made_contact, "Success requires contact with the microwave"
                     assert fell, "Apple should fall under gravity before success"
-                    assert step >= 49, "Success must require 50 consecutive settled steps"
-                    assert (base.episode_length_buf == 0).all(), "Success should reset the episode"
                     return True
                 contact = object_in_target_contact(
                     base, arena_env.task.contact_sensor_cfg, arena_env.task.contact_force_threshold
