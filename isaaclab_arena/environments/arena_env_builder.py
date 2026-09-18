@@ -42,7 +42,7 @@ from isaaclab_arena.recording.common_terms import CoreEpisodeRecorderTermCfg, Va
 from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg
 from isaaclab_arena.recording.progress_terms import ProgressEpisodeRecorderTermCfg
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-from isaaclab_arena.relations.placement_events import PLACEMENT_RESET_EVENT_NAME
+from isaaclab_arena.relations.placement_events import CACHED_PLACEMENT_RESET_EVENT_NAME, PLACEMENT_RESET_EVENT_NAME
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
 from isaaclab_arena.tasks.no_task import NoTask
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
@@ -53,7 +53,7 @@ from isaaclab_arena.utils.isaaclab_utils.simulation_app import reapply_viewer_cf
 from isaaclab_arena.utils.isaaclab_utils.warp_patch import install_empty_cpu_warp_to_torch_patch
 from isaaclab_arena.utils.multiprocess import get_local_rank
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
-from isaaclab_arena.utils.pose import PosePerEnv
+from isaaclab_arena.utils.pose import Pose, PosePerEnv
 from isaaclab_arena.variations import variations_hydra, variations_printing
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
@@ -132,19 +132,18 @@ class ArenaEnvBuilder:
         """Seed cached root poses and register synchronized complete-layout resets."""
         layouts = self.arena_env.placement_layouts
         assert layouts is not None
-        placement_assets = list(self.arena_env.scene.assets.values())
-        if self.arena_env.embodiment is not None:
-            placement_assets.append(self.arena_env.embodiment)
+        placement_assets = self.arena_env.get_placement_assets()
         layouts.validate_assets(placement_assets)
         assets = {asset.get_scene_key(): asset for asset in placement_assets}
         for name in layouts.poses:
             asset = assets[name]
-            assert (
-                not asset.has_pose_reset_event()
-            ), f"Cached asset '{name}' has an explicit pose-reset event; cached layouts must own its pose reset"
+            assert not asset.has_pose_reset_event() or isinstance(
+                asset.get_initial_pose(), Pose
+            ), f"Cached asset '{name}' has a non-fixed pose-reset policy"
         scene_poses: dict[str, list[list[float]]] = {}
         for name, poses in layouts.poses.items():
             asset = assets[name]
+            asset.clear_pose_reset_event()
             asset.set_initial_pose(
                 PosePerEnv([poses[i % layouts.num_layouts] for i in range(self.cfg.num_envs)]), create_reset_event=False
             )
@@ -330,7 +329,9 @@ class ArenaEnvBuilder:
         if self._placement_event_cfg is not None:
             # The pooled event name is reserved for terms carrying a placement_pool handle.
             event_name = (
-                "cached_placement_reset" if self.arena_env.placement_layouts is not None else PLACEMENT_RESET_EVENT_NAME
+                CACHED_PLACEMENT_RESET_EVENT_NAME
+                if self.arena_env.placement_layouts is not None
+                else PLACEMENT_RESET_EVENT_NAME
             )
             PlacementEventCfg = make_configclass(
                 "PlacementEventCfg", [(event_name, EventTermCfg, self._placement_event_cfg)]

@@ -36,7 +36,8 @@ Positions are environment-local, in metres; quaternions use xyzw order.
 ``position_xyz`` is required; omitted ``rotation_xyzw`` defaults to identity,
 as in ``Pose.from_dict``.
 An explicit pose is applied at construction and restored on reset. Do not
-combine it with relation placement or cached replay for the same movable asset.
+combine it with relation placement for the same movable asset. Cached replay
+replaces fixed initial poses and takes ownership of their pose resets.
 
 Companion placement files
 -------------------------
@@ -52,8 +53,9 @@ Cached replay bypasses relation solving. Each resetting environment advances
 through complete cached layouts independently. Python environments can instead
 set ``IsaacLabArenaEnvironment.placement_layouts`` to a ``PlacementLayouts``
 instance keyed by runtime scene keys. Every non-anchor asset with spatial
-relations must be covered; object sets and conflicting pose-reset events are
-rejected.
+relations must be covered. Object sets and randomized or per-environment
+pose-reset policies are rejected. Asset coverage is checked by the environment
+builder before scene construction.
 
 A graph reconstructed from a dictionary has no source directory. For relative
 companion paths, load it with ``from_yaml()``; otherwise use an absolute path or

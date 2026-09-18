@@ -246,6 +246,8 @@ environments. There is no shared queue or exhaustion, and environments may
 reuse the same layout concurrently. Reusing a cache bypasses
 relation solving; it does not run physics settling. All non-anchor objects
 with spatial relations must be included, and object sets are unsupported.
+Cached layouts replace fixed initial poses and their asset-owned reset events.
+Randomized and per-environment pose-reset policies are rejected.
 Assets must expose writable physics roots. Disable pose-changing variations
 and callbacks when exact replay is required.
 

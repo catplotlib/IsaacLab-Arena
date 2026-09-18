@@ -23,6 +23,7 @@ from isaaclab_arena.environment_spec.arena_env_graph_task_conversion_utils impor
 from isaaclab_arena.environment_spec.arena_env_graph_types import ObjectReferenceSpec, SpatialRelationSpec
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_asset import PlaceableAsset
+from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.utils.pose import Pose
@@ -41,7 +42,6 @@ _AFFORDANCE_REFERENCE_CLASSES: dict[str, type[ObjectReference]] = {
 if TYPE_CHECKING:
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 
 
 def parse_asset_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -115,7 +115,6 @@ def _load_placement_layouts(
     path: str | Path | None,
 ) -> PlacementLayouts | None:
     """Load companion poses and translate graph node IDs to runtime scene names."""
-    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 
     path = path if path is not None else graph_spec.placement_layouts_path
     if path is None:
@@ -126,9 +125,7 @@ def _load_placement_layouts(
     assert not unknown, f"Unknown cached graph objects: {unknown}"
     runtime_poses = {assets_by_node_id[key].get_scene_key(): poses for key, poses in layouts.poses.items()}
     assert len(runtime_poses) == len(layouts.poses), "Cached graph nodes must have distinct scene keys"
-    layouts = PlacementLayouts(runtime_poses)
-    layouts.validate_assets(list(assets_by_node_id.values()))
-    return layouts
+    return PlacementLayouts(runtime_poses)
 
 
 def build_checks_for_placer_params(graph_spec: ArenaEnvGraphSpec) -> ObjectPlacerParams:

@@ -286,6 +286,8 @@ def _test_companion_layout_paths_and_graph_ids(simulation_app):
     import tempfile
     import yaml
 
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.relations.placement_layouts import PlacementLayouts
     from isaaclab_arena.utils.pose import Pose
 
@@ -316,7 +318,9 @@ def _test_companion_layout_paths_and_graph_ids(simulation_app):
             invalid_path = directory / f"{message.split()[0]}.yaml"
             PlacementLayouts(invalid).write_yaml(invalid_path)
             with pytest.raises(AssertionError, match=message):
-                spec.to_arena_env(placement_layouts=invalid_path)
+                ArenaEnvBuilder(
+                    spec.to_arena_env(placement_layouts=invalid_path), ArenaEnvBuilderCfg()
+                ).compose_manager_cfg()
     return True
 
 
@@ -363,7 +367,7 @@ def _test_python_environment_loads_companion_layouts(simulation_app):
             PlacementLayouts(invalid).write_yaml(invalid_path)
             args.placement_layouts = str(invalid_path)
             with pytest.raises(AssertionError, match=message):
-                get_arena_builder_from_cli(args)
+                get_arena_builder_from_cli(args).compose_manager_cfg()
     return True
 
 

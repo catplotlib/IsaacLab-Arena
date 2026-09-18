@@ -227,12 +227,7 @@ def get_arena_builder_from_cli(
     if env_spec is None and args_cli.placement_layouts is not None:
         from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 
-        layouts = PlacementLayouts.from_yaml(args_cli.placement_layouts)
-        assets = list(arena_env.scene.assets.values())
-        if arena_env.embodiment is not None:
-            assets.append(arena_env.embodiment)
-        layouts.validate_assets(assets)
-        arena_env.placement_layouts = layouts
+        arena_env.placement_layouts = PlacementLayouts.from_yaml(args_cli.placement_layouts)
     builder_cfg = arena_env_builder_cfg_from_argparse(args_cli)
     return ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides)
 

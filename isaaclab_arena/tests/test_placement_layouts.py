@@ -6,6 +6,8 @@
 
 """Companion layout schema and correlated reset selection."""
 
+import yaml
+
 import pytest
 
 from isaaclab_arena.relations.placement_layouts import PlacementLayouts
@@ -13,8 +15,6 @@ from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 
 @pytest.mark.parametrize("duplicate", ["object", "pose_field"])
 def test_layout_yaml_rejects_duplicate_keys(tmp_path, duplicate):
-    import yaml
-
     pose = "- position_xyz: [1, 0, 0]\n  rotation_xyzw: [0, 0, 0, 1]\n"
     data = "cup:\n" + pose
     if duplicate == "object":
@@ -32,8 +32,6 @@ def test_layout_yaml_rejects_duplicate_keys(tmp_path, duplicate):
     [None, {"position_xyz": [0, 0, 0], "rotation_xyzw": [0, 0, 0, 1], "extra": 1}],
 )
 def test_layout_yaml_rejects_missing_or_extra_pose_fields(tmp_path, value):
-    import yaml
-
     path = tmp_path / "poses.yaml"
     path.write_text(yaml.safe_dump({"cup": [value]}))
     with pytest.raises(AssertionError, match="object 'cup', layout 0"):
@@ -41,8 +39,6 @@ def test_layout_yaml_rejects_missing_or_extra_pose_fields(tmp_path, value):
 
 
 def test_layout_yaml_rejects_empty_or_incomplete_layouts(tmp_path):
-    import yaml
-
     pose = {"position_xyz": [0, 0, 0], "rotation_xyzw": [0, 0, 0, 1]}
     path = tmp_path / "poses.yaml"
     for layouts in ({}, {"cup": []}, {"cup": [pose], "bowl": [pose, pose]}):

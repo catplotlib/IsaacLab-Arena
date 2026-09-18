@@ -146,6 +146,10 @@ class PlaceableAsset(Asset, ABC):
         """Return whether the asset owns a root-pose reset event."""
         return self._pose_event_cfg is not None
 
+    def clear_pose_reset_event(self) -> None:
+        """Remove the asset-owned root-pose reset event."""
+        self._pose_event_cfg = None
+
     @abstractmethod
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
         """Return root-relative axis-aligned bounds."""

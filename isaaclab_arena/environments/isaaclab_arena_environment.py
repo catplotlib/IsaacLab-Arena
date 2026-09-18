@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from isaaclab_arena.relations.placement_asset import PlaceableAsset
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 if TYPE_CHECKING:
@@ -79,3 +80,10 @@ class IsaacLabArenaEnvironment:
         self.placer_params = placer_params
         self.default_physics_backend = PhysicsBackend(default_physics_backend)
         self.placement_layouts = placement_layouts
+
+    def get_placement_assets(self) -> list[PlaceableAsset]:
+        """Return placeable scene assets and the embodiment."""
+        assets = [asset for asset in self.scene.assets.values() if isinstance(asset, PlaceableAsset)]
+        if self.embodiment is not None:
+            assets.append(self.embodiment)
+        return assets

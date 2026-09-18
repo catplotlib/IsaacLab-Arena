@@ -23,6 +23,7 @@ IDENTITY_ROTATION_XYZW = (0.0, 0.0, 0.0, 1.0)
 
 # Name of the reset event term that owns the pooled object placer.
 PLACEMENT_RESET_EVENT_NAME = "placement_reset"
+CACHED_PLACEMENT_RESET_EVENT_NAME = "cached_placement_reset"
 
 
 class PlacementPoolHandle:

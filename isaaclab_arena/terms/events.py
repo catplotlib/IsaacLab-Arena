@@ -429,7 +429,10 @@ class ResetPlacementLayouts(ManagerTermBase):
 
     def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
-        self._poses = {name: torch.tensor(poses, device=env.device) for name, poses in cfg.params["poses"].items()}
+        self._poses = {
+            name: torch.tensor(poses, device=env.device, dtype=torch.float32)
+            for name, poses in cfg.params["poses"].items()
+        }
         """Object-to-pose tensors, each shaped (L, 7); L is the number of layouts."""
         assert self._poses, "Cached reset requires at least one object"
         shapes = {tuple(poses.shape) for poses in self._poses.values()}

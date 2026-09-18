@@ -18,6 +18,9 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
     import yaml
     from unittest.mock import patch
 
+    from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import (
+        build_arena_env_with_assets_from_graph_spec,
+    )
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
@@ -29,6 +32,17 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
     from isaaclab_arena.scripts.generate_clutter_scene import generate_scene
 
     data = yaml.safe_load(SOURCE.read_text())
+    _, assets = build_arena_env_with_assets_from_graph_spec(ArenaEnvGraphSpec.from_yaml(SOURCE))
+    support = assets["table"].get_world_bounding_box()
+    cube = assets["cube_3"].get_bounding_box()
+    passive_position = [
+        float(support.max_point[0, 0]) - 0.1,
+        float(support.max_point[0, 1]) - 0.1,
+        float(support.max_point[0, 2] - cube.min_point[0, 2]),
+    ]
+    data["objects"][3]["params"] = {"initial_pose": {"position_xyz": passive_position}}
+    data["relations"] = [relation for relation in data["relations"] if relation["subject"] != "cube_3"]
+    data["relations"].append({"kind": "is_anchor", "subject": "cube_3"})
     data["placement_validators"] = {
         "enabled_checks": ["no_overlap", "on_relation"],
         "required_checks": ["no_overlap", "on_relation"],
@@ -57,6 +71,7 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
         assert generate_scene(args) == path
     assert source.read_bytes() == original
     cache = PlacementLayouts.from_yaml(path)
+    assert "cube_3" in cache.poses
     assert cache.num_layouts == 4
     assert cache.poses["cube_0"][0] != cache.poses["cube_0"][1]
     spec = ArenaEnvGraphSpec.from_yaml(source)
@@ -67,6 +82,7 @@ def _test_companion_cache_round_trip(simulation_app, tmp_path):
         ),
     ):
         arena_env = spec.to_arena_env(placement_layouts=path)
+        assert arena_env.scene.assets["cube_3"].has_pose_reset_event()
         env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=3)).make_registered()
         try:
             assert env.unwrapped.sim.get_physics_dt() == pytest.approx(0.01)
@@ -179,14 +195,14 @@ def test_python_cache_rejects_invalid_object_names(cached_names, expected_error)
 
 def _test_python_cache_rejects_conflicting_resets(simulation_app, randomize, expected_error):
     from isaaclab_arena.relations.relations import RandomAroundSolution
-    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena.utils.pose import PoseRange
 
     arena_env = _make_cached_env()
     cube = arena_env.scene.assets["cube_0"]
     if randomize:
         cube.add_relation(RandomAroundSolution())
     else:
-        cube.set_initial_pose(Pose())
+        cube.set_initial_pose(PoseRange(position_xyz_max=(1.0, 1.0, 1.0)))
     _assert_cache_rejected(arena_env, expected_error)
     return True
 
@@ -195,10 +211,49 @@ def _test_python_cache_rejects_conflicting_resets(simulation_app, randomize, exp
     "randomize, expected_error",
     [
         pytest.param(True, "cannot randomize", id="random-reset"),
-        pytest.param(False, "explicit pose-reset", id="fixed-reset"),
+        pytest.param(False, "non-fixed pose-reset", id="pose-range-reset"),
     ],
 )
 def test_python_cache_rejects_conflicting_resets(randomize, expected_error):
     assert run_function_with_persistent_simulation_app(
         _test_python_cache_rejects_conflicting_resets, randomize=randomize, expected_error=expected_error
     )
+
+
+def _test_python_integer_layouts_reset_objects_and_robot(simulation_app):
+    import torch
+
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.utils.pose import Pose
+
+    arena_env = _make_cached_env()
+    poses = {f"cube_{i}": [Pose((i, 0, 2), (0, 0, 0, 1)), Pose((i, 1, 2), (0, 0, 0, 1))] for i in range(4)}
+    poses["robot"] = [Pose((-1, 0, 0), (0, 0, 0, 1)), Pose((-1, 1, 0), (0, 0, 0, 1))]
+    arena_env.placement_layouts = PlacementLayouts(poses)
+    assert arena_env.embodiment.has_pose_reset_event()
+    env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=2)).make_registered()
+    try:
+        assert not arena_env.embodiment.has_pose_reset_event()
+        for iteration in range(3):
+            env.reset()
+            for name, layouts in poses.items():
+                expected = torch.tensor(
+                    [
+                        layouts[(iteration + i) % 2].position_xyz + layouts[(iteration + i) % 2].rotation_xyzw
+                        for i in range(2)
+                    ],
+                    dtype=torch.float32,
+                    device=env.unwrapped.device,
+                )
+                torch.testing.assert_close(env.unwrapped.arena_world.get_pose_e(name), expected, atol=2e-5, rtol=0)
+                velocity = env.unwrapped.scene[name].data.root_vel_w.torch
+                torch.testing.assert_close(velocity, torch.zeros_like(velocity), atol=0, rtol=0)
+    finally:
+        env.close()
+    return True
+
+
+def test_python_integer_layouts_reset_objects_and_robot():
+    assert run_function_with_persistent_simulation_app(_test_python_integer_layouts_reset_objects_and_robot)
