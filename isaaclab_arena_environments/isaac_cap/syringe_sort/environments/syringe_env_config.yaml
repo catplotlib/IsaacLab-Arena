@@ -33,7 +33,5 @@ env_cfg_override:
         impratio: 20.0
         cone: elliptic
         use_mujoco_contacts: true
-        # Preserve Isaac Lab defaults used by the previous task-owned solver,
-        # rather than Arena's Newton preset values (15000 and 2).
         ccd_iterations: 35
         update_data_interval: 1
