@@ -20,7 +20,8 @@ def summarize(stream):
     """Return a Markdown report of cache imports and Dockerfile steps."""
     vertices = {}
     for line in stream:
-        for vertex in json.loads(line).get("vertexes", []):
+        # Use BuildKit's JSON field spelling.
+        for vertex in json.loads(line).get("vertexes", []):  # codespell:ignore vertexes
             previous = vertices.setdefault(vertex["digest"], {})
             # Cache lookup, download, and extraction can reuse the same digest.
             for field, boundary in (("started", min), ("completed", max)):
