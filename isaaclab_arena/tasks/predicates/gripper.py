@@ -7,40 +7,31 @@
 
 from __future__ import annotations
 
-import math
 import torch
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from isaaclab_arena.embodiments.end_effector import ParallelJawGripper
+from isaaclab_arena.embodiments.end_effector import EndEffector
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env import IsaacLabArenaManagerBasedRLEnv
 
 
-def parallel_jaw_gripper_released(
+def end_effector_released(
     env: IsaacLabArenaManagerBasedRLEnv,
-    gripper: ParallelJawGripper,
-    grasp_width_m: float,
-    release_clearance_m: float = 1.5e-3,
+    end_effector: EndEffector,
+    **release_params: Any,
 ) -> torch.Tensor:
-    """Check that the measured jaw gap clears the object's grasp width.
+    """Check whether an end effector satisfies its release condition.
 
-    This checks current clearance, not whether a grasp happened earlier. An open
-    gripper can pass before grasping; an opening command alone cannot make it pass.
+    The end-effector implementation interprets the release parameters, allowing
+    parallel jaws, dexterous hands, and vacuum tools to use different semantics.
 
     Args:
-        env: Environment supplying measured joint positions through ArenaWorld.
-        gripper: Embodiment-owned parallel-jaw gripper implementation.
-        grasp_width_m: Object width at the grasp, in meters.
-        release_clearance_m: Required extra gap beyond the object width, in meters.
-            The comparison is strict, so exactly this clearance does not pass.
+        env: Environment supplying live scene state through ArenaWorld.
+        end_effector: Embodiment-owned end-effector implementation.
+        release_params: Parameters interpreted by the concrete end effector.
 
     Returns:
         Boolean tensor with one result per environment.
     """
-    assert math.isfinite(grasp_width_m) and grasp_width_m > 0.0, "Grasp width must be positive and finite."
-    assert (
-        math.isfinite(release_clearance_m) and release_clearance_m >= 0.0
-    ), "Release clearance must be non-negative and finite."
-    jaw_gap_m = gripper.get_jaw_gap_m(env.arena_world)
-    return jaw_gap_m > grasp_width_m + release_clearance_m
+    return end_effector.is_released(env.arena_world, **release_params)

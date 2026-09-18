@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
+import math
 import torch
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
@@ -23,6 +24,10 @@ class EndEffector(Protocol):
         """Return the end-effector position in world frame with shape ``(num_envs, 3)``."""
         ...
 
+    def is_released(self, world: ArenaWorld, **release_params: Any) -> torch.Tensor:
+        """Return whether the end effector satisfies its configured release condition."""
+        ...
+
 
 @runtime_checkable
 class ParallelJawGripper(EndEffector, Protocol):
@@ -31,6 +36,17 @@ class ParallelJawGripper(EndEffector, Protocol):
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical jaw gap in meters with shape ``(num_envs,)``."""
         ...
+
+    def is_released(self, world: ArenaWorld, **release_params: Any) -> torch.Tensor:
+        """Check whether the jaw gap clears the configured grasp width."""
+        grasp_width_m = release_params.get("grasp_width_m")
+        release_clearance_m = release_params.get("release_clearance_m", 1.5e-3)
+        assert grasp_width_m is not None, "Parallel-jaw release requires grasp_width_m."
+        assert math.isfinite(grasp_width_m) and grasp_width_m > 0.0, "Grasp width must be positive and finite."
+        assert (
+            math.isfinite(release_clearance_m) and release_clearance_m >= 0.0
+        ), "Release clearance must be non-negative and finite."
+        return self.get_jaw_gap_m(world) > grasp_width_m + release_clearance_m
 
 
 @dataclass(frozen=True, kw_only=True)

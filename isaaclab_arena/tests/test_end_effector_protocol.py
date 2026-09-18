@@ -13,7 +13,7 @@ import pytest
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 from isaaclab_arena.embodiments.end_effector import EndEffector, PandaGripper, ParallelJawGripper, RobotiqGripper
 from isaaclab_arena.environments.arena_world import ArenaWorld
-from isaaclab_arena.tasks.predicates.gripper import parallel_jaw_gripper_released
+from isaaclab_arena.tasks.predicates.gripper import end_effector_released
 from isaaclab_arena.tasks.predicates.spatial import end_effector_distance_from_object_exceeds_threshold
 
 
@@ -101,7 +101,7 @@ def test_embodiment_requires_a_supported_end_effector() -> None:
 def test_gripper_predicates_are_implementation_agnostic() -> None:
     env = SimpleNamespace(arena_world=_make_world())
 
-    clears = parallel_jaw_gripper_released(env, PandaGripper(), grasp_width_m=0.035, release_clearance_m=0.004)
+    clears = end_effector_released(env, PandaGripper(), grasp_width_m=0.035, release_clearance_m=0.004)
     away = end_effector_distance_from_object_exceeds_threshold(
         env, subject_name="object", end_effector=RobotiqGripper(), distance_threshold_m=0.2
     )
@@ -112,9 +112,9 @@ def test_gripper_predicates_are_implementation_agnostic() -> None:
 def test_gripper_predicates_validate_distances() -> None:
     env = SimpleNamespace(arena_world=_make_world())
     with pytest.raises(AssertionError, match="Grasp width"):
-        parallel_jaw_gripper_released(env, PandaGripper(), grasp_width_m=0.0, release_clearance_m=0.001)
+        end_effector_released(env, PandaGripper(), grasp_width_m=0.0, release_clearance_m=0.001)
     with pytest.raises(AssertionError, match="clearance"):
-        parallel_jaw_gripper_released(env, PandaGripper(), grasp_width_m=0.01, release_clearance_m=-0.001)
+        end_effector_released(env, PandaGripper(), grasp_width_m=0.01, release_clearance_m=-0.001)
     with pytest.raises(AssertionError, match="Distance"):
         end_effector_distance_from_object_exceeds_threshold(
             env, subject_name="object", end_effector=PandaGripper(), distance_threshold_m=-0.1
