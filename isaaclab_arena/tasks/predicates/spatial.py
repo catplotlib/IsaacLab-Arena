@@ -400,3 +400,20 @@ def object_on_destination(
     object_mean_linear_velocity_w = arena_world.get_mean_linear_velocity_w(object_cfg.name)
     object_moves_slowly = object_is_moving_slowly(object_mean_linear_velocity_w, velocity_threshold)
     return object_center_over_destination & destination_provides_upward_support & object_moves_slowly
+
+
+def object_in_target_aabb(env: IsaacLabArenaManagerBasedRLEnv, object_name: str, target_name: str) -> torch.Tensor:
+    """Check that all object vertices lie within the target world-frame AABB.
+
+    Args:
+        env: Environment supplying live geometry through ArenaWorld.
+        object_name: Deposited object's scene key.
+        target_name: Container object's scene key.
+
+    Returns:
+        One Boolean result per environment, including coincident boundaries.
+        Rigid bounds enclose the transformed local geometry bounds.
+    """
+    object_vertices_W = env.arena_world.get_vertices_w(object_name)
+    target_aabb_W = env.arena_world.get_aabb_w(target_name)
+    return target_aabb_W.points_within(object_vertices_W).all(dim=-1)

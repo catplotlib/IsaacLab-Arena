@@ -288,18 +288,27 @@ class ArenaWorld:
             vertices_w = self.get_nodal_positions_w(scene_key)
         else:
             # TODO(qianl, 2026-09-08): Return actual vertices once the rigid mesh cache is added.
-            vertices_pos_F = self.get_aabb_in_local_frame(scene_key).get_corners_at()
-            if vertices_pos_F.shape[0] == 1 and scene.num_envs > 1:
-                vertices_pos_F = vertices_pos_F.expand(scene.num_envs, -1, -1)
-            T_W_F = self.get_pose_w(scene_key)
-            t_W_F, q_W_F = T_W_F[:, :3], T_W_F[:, 3:]
-            q_W_F = q_W_F[:, None, :].expand(-1, vertices_pos_F.shape[1], -1)
-            vertices_w = quat_apply(q_W_F, vertices_pos_F) + t_W_F[:, None, :]
+            vertices_w = self.get_aabb_w(scene_key).get_corners_at()
         assert vertices_w.shape[0] == scene.num_envs and vertices_w.shape[2] == 3, (
             f"Scene entity '{scene_key}' returned vertices shape {tuple(vertices_w.shape)}; "
             f"expected ({scene.num_envs}, num_vertices, 3)."
         )
         return vertices_w
+
+    def get_aabb_w(self, scene_key: str) -> AxisAlignedBoundingBox:
+        """Return current rigid-object or scene-extra bounds in world frame W.
+
+        Transform cached local bounds using the current pose on every call.
+        The local cache assumes descendants remain fixed relative to frame F.
+        """
+
+        corners_F = self.get_aabb_in_local_frame(scene_key).get_corners_at()
+        if corners_F.shape[0] == 1 and self._scene.num_envs > 1:
+            corners_F = corners_F.expand(self._scene.num_envs, -1, -1)
+        T_W_F = self.get_pose_w(scene_key)
+        q_W_F = T_W_F[:, None, 3:].expand(-1, corners_F.shape[1], -1)
+        vertices_W = quat_apply(q_W_F, corners_F) + T_W_F[:, None, :3]
+        return AxisAlignedBoundingBox(min_point=vertices_W.amin(dim=1), max_point=vertices_W.amax(dim=1))
 
     def get_aabb_in_local_frame(self, scene_key: str) -> AxisAlignedBoundingBox:
         """Return cached rigid-object or scene-extra geometry bounds in local frame F.
