@@ -9,8 +9,8 @@ not yet expose.
 Policy code stays in Isaac-cap.
 
 Assets load directly from
-`{ARENA_STAGING_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets`.
-This internal Nucleus location is available immediately after upload, before the S3 mirror syncs.
+`{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets`.
+These assets are available through the public staging S3 mirror.
 No local asset preparation or separate robot asset is required.
 
 External-right camera views after one second of settling (placement seed 43 for both and cluttered):
