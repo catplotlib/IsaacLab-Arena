@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Stateless spatial predicates and geometric checks."""
+"""Spatial predicates and geometric checks."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors.contact_sensor.contact_sensor import ContactSensor
 from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
+from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 from isaaclab_arena.tasks.predicates.object_settling import get_object_initial_rest_state
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
@@ -448,3 +449,29 @@ def object_in_contact_with_target(
     assert force_matrix is not None, "Destination contact requires a filtered contact sensor."
     forces_W = force_matrix.torch
     return (torch.linalg.vector_norm(forces_W, dim=-1) >= force_threshold).flatten(start_dim=1).any(dim=-1)
+
+
+# TODO(alexmillane, 2028.09.18) [stateful-predicates-missing-feature]: Move this to a stateful predicate
+# when those become available.
+class ObjectSettledInTarget(ConsecutivePredicate):
+    """Require containment, target contact, and low velocity throughout a settling window."""
+
+    def __call__(
+        self,
+        env,
+        object_name: str,
+        target_name: str,
+        contact_sensor_cfg: SceneEntityCfg,
+        minimum_contained_fraction: float,
+        contact_force_threshold: float,
+        linear_velocity_threshold: float,
+        angular_velocity_threshold: float,
+        consecutive_steps: int,
+        active_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # Construction consumes this manager parameter.
+        del consecutive_steps
+        contained = object_in_target_aabb(env, object_name, target_name, minimum_contained_fraction)
+        touching = object_in_contact_with_target(env, contact_sensor_cfg, contact_force_threshold)
+        settled = velocity_below_threshold(env, object_name, linear_velocity_threshold, angular_velocity_threshold)
+        return self._update_consecutive_and_get_completion_mask(contained & touching & settled, active_mask)
