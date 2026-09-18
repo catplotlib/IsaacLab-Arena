@@ -573,15 +573,13 @@
                   
   <section id="predicates-and-subtask-progress-tracking">
 <h1>Predicates and Subtask Progress Tracking<a class="headerlink" href="#predicates-and-subtask-progress-tracking" title="Link to this heading">#</a></h1>
-<p>A task’s success termination tells you if the task was completed. However, this doesn’t give
-any insight into intermediate goals or stages of the task.
-Subtask progress tracking allows for finer-grained tracking of a task’s progress.</p>
-<p>Arena subtask tracking represents intermediate milestones as <strong>predicates</strong> and organizes them into scored
-<code class="docutils literal notranslate"><span class="pre">ProgressObjective</span></code> objects. The environment builder discovers these objectives from the task,
-evaluates them during every environment step, resets them per environment, and exposes their state
-and transition history for evaluation and visualization.</p>
-<p>Progress tracking does not replace task success and does not terminate an episode. A policy can
-receive partial progress even when the task ultimately fails.</p>
+<p>Arena defines task success through <code class="docutils literal notranslate"><span class="pre">ProgressObjective</span></code> objects. These objectives organize
+Boolean predicates into required milestones, such as settling, lifting, and placing an object.
+Their scores also describe partial progress when an episode ends before the task is complete.</p>
+<p>Every task returns a <code class="docutils literal notranslate"><span class="pre">TaskTerminationCfg</span></code> from <code class="docutils literal notranslate"><span class="pre">get_termination_cfg()</span></code>. This configuration
+declares its <code class="docutils literal notranslate"><span class="pre">success</span></code> objectives, named <code class="docutils literal notranslate"><span class="pre">failures</span></code>, and <code class="docutils literal notranslate"><span class="pre">timeout_s</span></code> in one place. The
+environment builder creates one success termination that advances the objectives and reports
+success when all required objectives are complete.</p>
 <section id="predicates">
 <h2>Predicates<a class="headerlink" href="#predicates" title="Link to this heading">#</a></h2>
 <p>A predicate represents a boolean condition in a task, such as an object settling,
@@ -627,56 +625,62 @@ A custom predicate must:</p>
 </section>
 <section id="defining-a-progress-objective">
 <h2>Defining a progress objective<a class="headerlink" href="#defining-a-progress-objective" title="Link to this heading">#</a></h2>
-<p>Subtask tracking can be added to tasks via opt in by overriding <code class="docutils literal notranslate"><span class="pre">TaskBase.get_progress_objectives()</span></code>.
-A <code class="docutils literal notranslate"><span class="pre">ProgressObjective</span></code> is a named collection of predicates that the task wishes to track.
-A <code class="docutils literal notranslate"><span class="pre">predicate_groups</span></code> contains ordered predicate chains. For each chain, the tracker evaluates only the currently active
-predicate, ignores later predicates until their turn, and advances by at most one predicate per
-group and environment step.</p>
-<p>For example, the built-in pick-and-place task tracks a single progress objective with
-a single three-predicate chain: settle, lift, then place.</p>
+<p>Add <code class="docutils literal notranslate"><span class="pre">ProgressObjective</span></code> entries to <code class="docutils literal notranslate"><span class="pre">TaskTerminationCfg.success</span></code>. Provide exactly one of
+<code class="docutils literal notranslate"><span class="pre">predicate_sequence</span></code> for a list of predicates or <code class="docutils literal notranslate"><span class="pre">predicate_sequences</span></code> for a dictionary of named lists.</p>
+<p><code class="docutils literal notranslate"><span class="pre">PickAndPlaceTask</span></code> requires the object to settle, be lifted, and be placed, in that order:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneEntityCfg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab.envs</span><span class="w"> </span><span class="kn">import</span> <span class="n">mdp</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneEntityCfg</span><span class="p">,</span> <span class="n">TerminationTermCfg</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.progress_tracking.progress_objective</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProgressObjective</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.predicates.object_settling</span><span class="w"> </span><span class="kn">import</span> <span class="n">objects_settled</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.predicates.spatial</span><span class="w"> </span><span class="kn">import</span> <span class="n">object_is_above_height</span><span class="p">,</span> <span class="n">object_on_destination</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.task_termination_cfg</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskTerminationCfg</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">get_progress_objectives</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">ProgressObjective</span><span class="p">]:</span>
-    <span class="k">return</span> <span class="p">[</span>
-        <span class="n">ProgressObjective</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="s2">"pick_and_place"</span><span class="p">,</span>
-            <span class="n">predicate_groups</span><span class="o">=</span><span class="p">[</span>
-                <span class="n">partial</span><span class="p">(</span><span class="n">objects_settled</span><span class="p">,</span> <span class="n">object_names</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">]),</span>
-                <span class="n">partial</span><span class="p">(</span>
-                    <span class="n">object_is_above_height</span><span class="p">,</span>
-                    <span class="n">object_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-                    <span class="n">use_settled_state</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                <span class="p">),</span>
-                <span class="n">partial</span><span class="p">(</span>
-                    <span class="n">object_on_destination</span><span class="p">,</span>
-                    <span class="n">object_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
-                    <span class="n">destination_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination_location</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
-                    <span class="n">contact_sensor_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">contact_sensor_name</span><span class="p">),</span>
-                    <span class="n">force_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">force_threshold</span><span class="p">,</span>
-                    <span class="n">velocity_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">velocity_threshold</span><span class="p">,</span>
-                    <span class="n">support_cone_half_angle_rad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">support_cone_half_angle_rad</span><span class="p">,</span>
-                <span class="p">),</span>
-            <span class="p">],</span>
-        <span class="p">)</span>
-    <span class="p">]</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_termination_cfg</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TaskTerminationCfg</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">TaskTerminationCfg</span><span class="p">(</span>
+        <span class="n">success</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">ProgressObjective</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">=</span><span class="s2">"pick_and_place"</span><span class="p">,</span>
+                <span class="n">predicate_sequence</span><span class="o">=</span><span class="p">[</span>
+                    <span class="n">partial</span><span class="p">(</span><span class="n">objects_settled</span><span class="p">,</span> <span class="n">object_names</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">]),</span>
+                    <span class="n">partial</span><span class="p">(</span>
+                        <span class="n">object_is_above_height</span><span class="p">,</span>
+                        <span class="n">object_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                        <span class="n">use_settled_state</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="p">),</span>
+                    <span class="n">partial</span><span class="p">(</span>
+                        <span class="n">object_on_destination</span><span class="p">,</span>
+                        <span class="n">object_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">destination_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination_location</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">contact_sensor_cfg</span><span class="o">=</span><span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">contact_sensor_name</span><span class="p">),</span>
+                        <span class="n">force_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">force_threshold</span><span class="p">,</span>
+                        <span class="n">velocity_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">velocity_threshold</span><span class="p">,</span>
+                        <span class="n">support_cone_half_angle_rad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">support_cone_half_angle_rad</span><span class="p">,</span>
+                    <span class="p">),</span>
+                <span class="p">],</span>
+            <span class="p">),</span>
+        <span class="p">],</span>
+        <span class="n">failures</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">"object_dropped"</span><span class="p">:</span> <span class="n">TerminationTermCfg</span><span class="p">(</span>
+                <span class="n">func</span><span class="o">=</span><span class="n">mdp</span><span class="o">.</span><span class="n">root_height_below_minimum</span><span class="p">,</span>
+                <span class="n">params</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">"minimum_height"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">background_scene</span><span class="o">.</span><span class="n">object_min_z</span><span class="p">,</span>
+                    <span class="s2">"asset_cfg"</span><span class="p">:</span> <span class="n">SceneEntityCfg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="p">},</span>
+            <span class="p">),</span>
+        <span class="p">},</span>
+        <span class="n">timeout_s</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">episode_length_s</span><span class="p">,</span>
+    <span class="p">)</span>
 </pre></div>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The progress tracker calls each predicate with only <code class="docutils literal notranslate"><span class="pre">env</span></code>. When a predicate accepts additional
-arguments, use <code class="docutils literal notranslate"><span class="pre">functools.partial</span></code> in the progress objective to bind their task-specific values.</p>
-</div>
-<p>Use a dictionary to specify <code class="docutils literal notranslate"><span class="pre">predicate_groups</span></code> when a progress objective has multiple independent predicate chains. Predicates
-within each group remain sequential while groups advance independently:</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">functools.partial</span></code> to pass task-specific arguments to a predicate.</p>
+<p>Use a dictionary to track several sequences independently. This example requires any two
+objects to be lifted and placed:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">objective</span> <span class="o">=</span> <span class="n">ProgressObjective</span><span class="p">(</span>
     <span class="n">name</span><span class="o">=</span><span class="s2">"pack_objects"</span><span class="p">,</span>
-    <span class="n">predicate_groups</span><span class="o">=</span><span class="p">{</span>
+    <span class="n">predicate_sequences</span><span class="o">=</span><span class="p">{</span>
         <span class="s2">"can"</span><span class="p">:</span> <span class="p">[</span><span class="n">can_lifted</span><span class="p">,</span> <span class="n">can_placed</span><span class="p">],</span>
         <span class="s2">"bottle"</span><span class="p">:</span> <span class="p">[</span><span class="n">bottle_lifted</span><span class="p">,</span> <span class="n">bottle_placed</span><span class="p">],</span>
         <span class="s2">"box"</span><span class="p">:</span> <span class="p">[</span><span class="n">box_lifted</span><span class="p">,</span> <span class="n">box_placed</span><span class="p">],</span>
@@ -686,26 +690,36 @@ within each group remain sequential while groups advance independently:</p>
 <span class="p">)</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">logical</span></code> controls how completed groups make the objective complete:</p>
+<p><code class="docutils literal notranslate"><span class="pre">logical</span></code> and <code class="docutils literal notranslate"><span class="pre">K</span></code> control how completed predicate sequences make the objective complete:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">all</span></code> — every group must complete. This is the default.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">any</span></code> — one group must complete.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">choose</span></code> — at least <code class="docutils literal notranslate"><span class="pre">K</span></code> groups must complete.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">all</span></code> — every sequence must complete. This is the default.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">any</span></code> — one sequence must complete.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">choose</span></code> — at least <code class="docutils literal notranslate"><span class="pre">K</span></code> sequences must complete.</p></li>
 </ul>
+<p>Completed stages are remembered until the environment resets. Separate chains therefore describe
+milestones that may complete at different times. If several conditions must hold simultaneously,
+combine them into one predicate. For example, checking that all gears are seated together requires
+one combined condition; remembering each gear’s earlier placement would allow a gear to be removed
+before the task completes.</p>
 </section>
 <section id="subtask-progress-tracking-in-composite-and-sequential-tasks">
 <h2>Subtask progress tracking in composite and sequential tasks<a class="headerlink" href="#subtask-progress-tracking-in-composite-and-sequential-tasks" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">CompositeTaskBase</span></code> collects the progress objectives from every child and namespaces their names
-as <code class="docutils literal notranslate"><span class="pre">subtask_&lt;index&gt;/&lt;objective_name&gt;</span></code>. It also records the child index on each objective.
-Standalone tasks retain their original objective names, such as <code class="docutils literal notranslate"><span class="pre">pick_and_place</span></code>. The
-<code class="docutils literal notranslate"><span class="pre">subtask_&lt;index&gt;/</span></code> prefix is added only when the task is part of a composite task.</p>
-<p>For an order-independent composite task, every child’s progress objectives are active. For a
-<code class="docutils literal notranslate"><span class="pre">SequentialTaskBase</span></code>, Arena gates each objective per environment using that environment’s current
-subtask index. A later child’s predicates cannot advance before that child becomes active, even if
-their physical conditions already happen to be true.</p>
-<p>This progress gating follows composite-task ordering, but remains separate from the composite
-task’s success state. See <a class="reference internal" href="concept_composite_tasks_design.html"><span class="doc">Composite and Sequential Tasks</span></a> for composition and success
-semantics.</p>
+<p><code class="docutils literal notranslate"><span class="pre">CompositeTaskBase</span></code> collects subtask objectives in a flat <code class="docutils literal notranslate"><span class="pre">TaskTerminationCfg.success</span></code> list.
+It prefixes their names with <code class="docutils literal notranslate"><span class="pre">subtask_&lt;index&gt;/</span></code> and sets <code class="docutils literal notranslate"><span class="pre">parent_subtask_idx</span></code> to identify
+which subtask each objective belongs to. Standalone tasks retain their original objective names,
+such as <code class="docutils literal notranslate"><span class="pre">pick_and_place</span></code>. Nested composite or sequential tasks are not supported.</p>
+<p>For an order-independent composite task, every subtask’s progress objectives are active.
+With <code class="docutils literal notranslate"><span class="pre">CompositeTaskBase(...,</span> <span class="pre">subtasks_are_sequential=True)</span></code>, <code class="docutils literal notranslate"><span class="pre">ProgressTracker</span></code>
+activates each subtask only after all objectives of the preceding subtask complete in that
+environment. The next subtask starts on the following environment step. A later subtask’s predicates
+cannot advance before that subtask becomes active, even if their physical conditions already happen
+to be true.</p>
+<p><code class="docutils literal notranslate"><span class="pre">ProgressTracker</span></code> determines task success and reports the same objective completion history.
+Completed milestones remain recorded. <code class="docutils literal notranslate"><span class="pre">TaskTerminationCfg.desired_subtask_success_state</span></code>
+preserves the composition’s optional final-condition checks. Reports contain the flat objectives
+and their weighted overall progress; subtask metrics read <code class="docutils literal notranslate"><span class="pre">ProgressTracker.get_subtask_completion()</span></code>.
+There are no additional parent-objective reports. See
+<a class="reference internal" href="concept_composite_tasks_design.html"><span class="doc">Composite and Sequential Tasks</span></a> for composition and success semantics.</p>
 <figure class="align-center" id="id1">
 <a class="reference internal image-reference" href="../../../_images/composite_vs_sequential_progress_tracking.png"><img alt="Comparison of predicate tracking activation in composite and sequential tasks" src="../../../_images/composite_vs_sequential_progress_tracking.png" style="width: 100%;" />
 </a>
@@ -717,15 +731,14 @@ tracking on each subtask’s predicates only after the preceding subtask succeed
 </section>
 <section id="reading-subtask-progress-tracking-at-runtime">
 <h2>Reading subtask progress tracking at runtime<a class="headerlink" href="#reading-subtask-progress-tracking-at-runtime" title="Link to this heading">#</a></h2>
-<p>When a task provides progress objectives, Arena will track and record the progress of the task according to the
-supplied progress objectives. The current per-environment state and the episode’s accumulated predicate
-transitions are available through <code class="docutils literal notranslate"><span class="pre">env.extras</span></code>:</p>
+<p><code class="docutils literal notranslate"><span class="pre">ProgressTrackingRecorder</span></code> puts progress results in the environment’s <code class="docutils literal notranslate"><span class="pre">extras</span></code> dictionary.
+Read each environment’s state and completed-predicate events as follows:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">progress</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">unwrapped</span><span class="o">.</span><span class="n">extras</span><span class="p">[</span><span class="s2">"progress_tracking"</span><span class="p">]</span>
 
 <span class="n">state</span> <span class="o">=</span> <span class="n">progress</span><span class="p">[</span><span class="s2">"states"</span><span class="p">][</span><span class="n">env_id</span><span class="p">]</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">overall_score</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">all_complete</span><span class="p">)</span>
 
-<span class="n">objective</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">progress_objectives</span><span class="p">[</span><span class="s2">"subtask_0/pick_and_place"</span><span class="p">]</span>
+<span class="n">objective</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">progress_objectives</span><span class="p">[</span><span class="s2">"pick_and_place"</span><span class="p">]</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">objective</span><span class="o">.</span><span class="n">score</span><span class="p">,</span> <span class="n">objective</span><span class="o">.</span><span class="n">is_complete</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">objective</span><span class="o">.</span><span class="n">active_predicates</span><span class="p">)</span>
 
@@ -733,21 +746,18 @@ transitions are available through <code class="docutils literal notranslate"><sp
     <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">step</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">progress_objective</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">group</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">predicate_name</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Each <code class="docutils literal notranslate"><span class="pre">ProgressObjectiveState</span></code> reports its score, completion state, completed and total group
-counts, and the currently active predicate in each group. Each <code class="docutils literal notranslate"><span class="pre">PredicateEvent</span></code> records when a
-predicate advanced, which objective and group it belongs to, and how much score it contributed.
-State and event history are isolated per parallel environment and cleared only for environments
-that reset.</p>
+<p>After an automatic reset, <code class="docutils literal notranslate"><span class="pre">env.extras[&quot;progress_tracking&quot;]</span></code> still shows the finished episode
+until the next step.</p>
 <p>Arena’s episode recorder also serializes the final progress state and predicate events into the
 episode’s JSONL record when an output path is configured. Tasks without progress objectives have
-no progress-tracking configuration and produce no progress fields.</p>
+no success termination or progress-tracking configuration and produce no progress fields.</p>
 <p>For example, one entry of the JSONL record may look like:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">"progress"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"overall_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.67</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"all_complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"objectives"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"subtask_0/pick_and_place"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"pick_and_place"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.67</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"is_complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"completed_groups"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
@@ -760,7 +770,7 @@ no progress-tracking configuration and produce no progress fields.</p>
 <span class="w">    </span><span class="nt">"events"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"step"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">"objective"</span><span class="p">:</span><span class="w"> </span><span class="s2">"subtask_0/pick_and_place"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"objective"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pick_and_place"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"group"</span><span class="p">:</span><span class="w"> </span><span class="s2">"default_group"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"predicate_index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"predicate_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"objects_settled"</span><span class="p">,</span>
@@ -768,7 +778,7 @@ no progress-tracking configuration and produce no progress fields.</p>
 <span class="w">      </span><span class="p">},</span>
 <span class="w">      </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"step"</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">"objective"</span><span class="p">:</span><span class="w"> </span><span class="s2">"subtask_0/pick_and_place"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"objective"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pick_and_place"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"group"</span><span class="p">:</span><span class="w"> </span><span class="s2">"default_group"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"predicate_index"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"predicate_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"object_is_above_height(object_name='can', use_settled_state=True)"</span><span class="p">,</span>
@@ -779,11 +789,8 @@ no progress-tracking configuration and produce no progress fields.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>In this example, the object has settled and then been lifted, completing two of the three predicates
-and producing a progress score of <code class="docutils literal notranslate"><span class="pre">0.67</span></code>. The objective is not complete however because the final predicate
-(<code class="docutils literal notranslate"><span class="pre">object_on_destination</span></code>) has not been satisfied. The events record when each completed predicate advanced
-the task and how much it contributed to the score. Here, there have been two events recorded so far, one for when
-the <code class="docutils literal notranslate"><span class="pre">objects_settled</span></code> predicate was satisfied and one for when the <code class="docutils literal notranslate"><span class="pre">object_is_above_height</span></code> predicate was satisfied.</p>
+<p>The object has settled and been lifted: two of three predicates are complete, giving a score of <code class="docutils literal notranslate"><span class="pre">0.67</span></code>.
+Placement is still required. The two events record when settling and lifting completed.</p>
 </section>
 </section>
 
