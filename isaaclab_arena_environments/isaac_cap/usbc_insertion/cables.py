@@ -5,9 +5,10 @@
 
 """Procedural cable loads attached to the USB-C connectors.
 
-Arena's general ``Cable`` asset is a standalone, unwelded VBD articulation. These
-CAP cables instead run in MJWarp and joint their first link directly to a dynamic
-plug or bulkhead, so they require this connector-attached implementation.
+Why not use Isaac Lab's ``CableObject``? It requires a standalone, unwelded cable
+articulation stepped by the VBD solver. This task instead runs in MJWarp and must
+joint the first cable link directly to the dynamic plug or bulkhead so cable loads
+act on the connector. That attached topology requires this custom implementation.
 """
 
 from __future__ import annotations
