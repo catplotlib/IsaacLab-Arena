@@ -1,4 +1,3 @@
-test source modification
 ## Isaac Lab-Arena Contribution Rules
 
 This document describes the rules for contributing to Isaac Lab-Arena
