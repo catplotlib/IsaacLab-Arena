@@ -465,7 +465,6 @@ jobs:
     name: Publish tested NGC image (post-merge)
     runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 15
-    # Preserve the existing release gate; subprocess tests remain optional.
     needs: [build_and_push_image, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     container:
