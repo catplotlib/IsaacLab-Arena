@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import torch
 
 import isaaclab.sim as sim_utils
@@ -119,3 +120,20 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
             convention="ros",
         ),
     )
+
+    def use_overhead_profile(self, profile: str) -> None:
+        """Select a task-calibrated overhead view; retain the other three cameras."""
+        if profile != "tool_sorting":
+            raise ValueError(f"Unknown FR3 overhead profile: {profile!r}")
+        camera = self.top_camera
+        camera.width, camera.height = 1280, 960
+        camera.offset.pos = (0.3, 0.0, 2.5)
+        camera.offset.rot = (math.sqrt(0.5), math.sqrt(0.5), 0.0, 0.0)
+        camera.offset.convention = "ros"
+        camera.spawn = sim_utils.PinholeCameraCfg(
+            focal_length=2.1,
+            focus_distance=28.0,
+            horizontal_aperture=5.376,
+            vertical_aperture=3.024,
+            clipping_range=(0.01, 5.0),
+        )

@@ -8,6 +8,8 @@
 Remove this directory together with ``isaaclab_arena_environments/isaac_cap``.
 """
 
+from pathlib import Path
+
 import pytest
 
 from isaaclab_arena.tests.utils.constants import TestConstants
@@ -17,6 +19,10 @@ pytestmark = [pytest.mark.isaac_cap, pytest.mark.with_subprocess]
 
 _CABLE_DEMO_SCRIPT = f"{TestConstants.arena_environments_dir}/isaac_cap/cable_routing/cable_env_behaviour_demo.py"
 _GEAR_DEMO_SCRIPT = f"{TestConstants.arena_environments_dir}/isaac_cap/gear_insertion/gear_env_behaviour_demo.py"
+_TOOL_SORT_DEMO_SCRIPT = (
+    f"{TestConstants.arena_environments_dir}/isaac_cap/tool_sorting/tool_sorting_env_behaviour_demo.py"
+)
+_LOCAL_TOOL_SORT_ASSETS = Path(TestConstants.repo_root) / "__assets" / "cap_envs" / "tool_sorting" / "assets"
 
 
 @pytest.mark.parametrize("variant", ("easy", "medium"))
@@ -65,4 +71,32 @@ def test_gear_insertion_behaviour_demo(variant: str) -> None:
 
     assert result is not None
     expected = "[gear-validation] cycle 1: success reset observed in all 2 environments"
+    assert expected in result.stdout, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("level", ("1", "2", "3"))
+def test_tool_sorting_behaviour_demo(level: str) -> None:
+    """Run one headless demo cycle and verify that success resets every environment."""
+    if not _LOCAL_TOOL_SORT_ASSETS.is_dir():
+        pytest.skip("locally staged tool-sort assets are not available")
+
+    result = run_subprocess(
+        [
+            TestConstants.python_path,
+            _TOOL_SORT_DEMO_SCRIPT,
+            level,
+            "--cycles",
+            "1",
+            "--pause-steps",
+            "25",
+            "--no-real-time",
+            "--visualizer",
+            "none",
+        ],
+        capture_output=True,
+        timeout_sec=900,
+    )
+
+    assert result is not None
+    expected = "[tool-sort-validation] cycle 1: success reset observed in all 2 environments"
     assert expected in result.stdout, result.stdout + result.stderr
