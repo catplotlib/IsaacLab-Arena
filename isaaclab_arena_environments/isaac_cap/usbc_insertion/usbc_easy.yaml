@@ -118,7 +118,7 @@ task:
       receiver_axis: [0.0, 1.0, 0.0]
       subject_tip_offset_xyz: [0.0, 0.0, 0.0133]
       depth_min: 0.0104
-      # Success radius calibrated in the source CAP task.
+      # CAP's source task calibrates the success radius to 8.7931792 mm.
       lateral_max: 0.0087931792
       speed_max: 0.05
       grasp_width_m: 0.01

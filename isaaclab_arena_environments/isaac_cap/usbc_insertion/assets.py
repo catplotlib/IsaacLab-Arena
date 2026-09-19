@@ -190,7 +190,12 @@ class UsbcDomeLight(DomeLight):
     tags = ["light", "usbc_insertion"]
 
     def __init__(
-        self, *, hdr_name: str, intensity: float = 1500.0, color: Sequence[float] = (0.75, 0.75, 0.75), **kwargs
+        self,
+        *,
+        hdr_name: str = "empty_warehouse_robolab",
+        intensity: float = 1500.0,
+        color: Sequence[float] = (0.75, 0.75, 0.75),
+        **kwargs,
     ) -> None:
         """Configure an HDR-backed light with YAML-friendly parameters.
 
