@@ -3,13 +3,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Locally staged assets for the CAP easy tool-sorting environments."""
+"""Nucleus-hosted assets for the CAP easy tool-sorting environments."""
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 import isaaclab.sim as sim_utils
@@ -20,16 +18,8 @@ from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.utils.pose import Pose
 
-LOCAL_TOOL_SORT_ASSET_ROOT = Path(__file__).resolve().parents[3] / "__assets" / "cap_envs" / "tool_sorting" / "assets"
-"""Ignored local asset tree used until the assets are uploaded."""
-
-PUBLISHED_TOOL_SORT_ASSET_ROOT = (
-    f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
-)
-"""Final public asset location after the local tree is uploaded and mirrored."""
-
-TOOL_SORT_ASSET_ROOT = os.environ.get("ARENA_TOOL_SORT_ASSET_ROOT", str(LOCAL_TOOL_SORT_ASSET_ROOT))
-"""Active asset root; override to test the Nucleus upload before changing the default."""
+TOOL_SORT_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
+"""Published Nucleus asset tree."""
 
 TOOL_NAMES = (
     "vabar_tool_sort__adjustable_wrench",
