@@ -137,3 +137,100 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
             vertical_aperture=3.024,
             clipping_range=(0.01, 5.0),
         )
+
+
+def _zed_pinhole(horizontal_fov: float, vertical_fov: float):
+    """Return the calibrated ZED pinhole model used by gear insertion v2."""
+    focal_length = 5.0
+    return sim_utils.PinholeCameraCfg(
+        distortion=sim_utils.OpenCvPinholeDistortionCfg(
+            fx=CAMERA_WIDTH / (2 * math.tan(math.radians(horizontal_fov / 2))),
+            fy=CAMERA_HEIGHT / (2 * math.tan(math.radians(vertical_fov / 2))),
+            cx=CAMERA_WIDTH / 2,
+            cy=CAMERA_HEIGHT / 2,
+            image_size=(CAMERA_WIDTH, CAMERA_HEIGHT),
+            apply_lens_distortion=False,
+        ),
+        focal_length=focal_length,
+        focus_distance=28.0,
+        horizontal_aperture=2 * focal_length * math.tan(math.radians(horizontal_fov / 2)),
+        vertical_aperture=2 * focal_length * math.tan(math.radians(vertical_fov / 2)),
+    )
+
+
+@configclass
+class IndustrialFr3RobotiqGearV2CameraCfg(ArenaCameraCfg):
+    """Camera calibration retained by the gear-insertion-v2 embodiment."""
+
+    _top_eye = (0.1, 0.015, 1.75)
+    _left_eye = (1.3213, 0.0826, 1.5159)
+    _left_target = (-0.1495, 0.0711, 1.0465)
+
+    exterior_left_camera: CameraCfg = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/exterior_left_camera",
+        height=CAMERA_HEIGHT,
+        width=CAMERA_WIDTH,
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(110.0, 70.0),
+        offset=CameraCfg.OffsetCfg(
+            pos=_left_eye,
+            rot=_ros_optical_quaternion(_left_eye, _left_target),
+            convention="ros",
+        ),
+    )
+    exterior_right_camera: CameraCfg = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/exterior_right_camera",
+        height=CAMERA_HEIGHT,
+        width=CAMERA_WIDTH,
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(110.0, 70.0),
+        offset=CameraCfg.OffsetCfg(
+            pos=_EXTERNAL_EYE_2,
+            rot=_ros_optical_quaternion(_EXTERNAL_EYE_2, _EXTERNAL_TARGET),
+            convention="ros",
+        ),
+    )
+    wrist_camera: CameraCfg = CameraCfg(
+        prim_path=_WRIST_PRIM,
+        update_latest_camera_pose=True,
+        height=CAMERA_HEIGHT,
+        width=CAMERA_WIDTH,
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(102.0, 57.0),
+        offset=CameraCfg.OffsetCfg(
+            pos=_WRIST_EYE,
+            rot=_ros_optical_quaternion(_WRIST_EYE, _WRIST_TARGET),
+            convention="ros",
+        ),
+    )
+    top_camera: CameraCfg = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/top_camera",
+        update_period=0.0,
+        update_latest_camera_pose=True,
+        height=CAMERA_HEIGHT,
+        width=CAMERA_WIDTH,
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(110.0, 70.0),
+        offset=CameraCfg.OffsetCfg(
+            pos=_top_eye,
+            rot=(math.sqrt(0.5), -math.sqrt(0.5), 0.0, 0.0),
+            convention="ros",
+        ),
+    )
+
+    def use_overhead_profile(self, profile: str) -> None:
+        """Select the calibrated overhead view used by gear insertion v2."""
+        if profile != "gear":
+            raise ValueError(f"Unknown gear-v2 overhead profile: {profile!r}")
+        width, height = 1280, 960
+        fov_y = 50.0
+        camera = self.top_camera
+        camera.width, camera.height = width, height
+        camera.offset.pos = (0.0490017409436448, 0.01556502252117765, 1.33)
+        camera.offset.rot = (1.0, 0.0, 0.0, 0.0)
+        camera.spawn = sim_utils.PinholeCameraCfg(
+            focal_length=3.024 / (2 * math.tan(math.radians(fov_y / 2))),
+            horizontal_aperture=3.024 * width / height,
+            vertical_aperture=3.024,
+            clipping_range=(0.01, 4.0),
+        )

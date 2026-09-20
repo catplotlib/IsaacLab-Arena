@@ -15,9 +15,9 @@ from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 from isaaclab_arena.embodiments.gripper import RobotiqGripper
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.variations.camera_extrinsics_variation import CameraExtrinsicsVariation
+from isaaclab_arena_environments.isaac_cap.embodiments.insertion_task.cameras import IndustrialFr3RobotiqGearV2CameraCfg
 
 from .actions import IndustrialFr3RobotiqActionsCfg, IndustrialFr3RobotiqDifferentialIKActionsCfg
-from .cameras import IndustrialFr3RobotiqCameraCfg
 from .config import (
     _ROBOT_ON_CART_INSTANCEABLE_USD_PATH,
     _ROBOT_ON_CART_USD_PATH,
@@ -61,7 +61,7 @@ class _IndustrialFr3Robotiq2f85Base(EmbodimentBase):
         self.action_config = self.action_config_type()
         self.observation_config = IndustrialFr3RobotiqObservationsCfg()
         self.observation_config.policy.concatenate_terms = concatenate_observation_terms
-        self.camera_config = IndustrialFr3RobotiqCameraCfg()
+        self.camera_config = IndustrialFr3RobotiqGearV2CameraCfg()
         self.set_use_tiled_cameras(use_tiled_cameras)
         self.set_use_instanceable_meshes(use_instanceable_meshes)
         self.event_config = IndustrialFr3RobotiqEventCfg()

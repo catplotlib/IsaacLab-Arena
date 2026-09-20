@@ -8,8 +8,6 @@
 Remove this directory together with ``isaaclab_arena_environments/isaac_cap``.
 """
 
-from pathlib import Path
-
 import pytest
 
 from isaaclab_arena.tests.utils.constants import TestConstants
@@ -22,7 +20,6 @@ _GEAR_DEMO_SCRIPT = f"{TestConstants.arena_environments_dir}/isaac_cap/gear_inse
 _TOOL_SORT_DEMO_SCRIPT = (
     f"{TestConstants.arena_environments_dir}/isaac_cap/tool_sorting/tool_sorting_env_behaviour_demo.py"
 )
-_LOCAL_TOOL_SORT_ASSETS = Path(TestConstants.repo_root) / "__assets" / "cap_envs" / "tool_sorting" / "assets"
 
 
 @pytest.mark.parametrize("variant", ("easy", "medium"))
@@ -77,9 +74,6 @@ def test_gear_insertion_behaviour_demo(variant: str) -> None:
 @pytest.mark.parametrize("level", ("1", "2", "3"))
 def test_tool_sorting_behaviour_demo(level: str) -> None:
     """Run one headless demo cycle and verify that success resets every environment."""
-    if not _LOCAL_TOOL_SORT_ASSETS.is_dir():
-        pytest.skip("locally staged tool-sort assets are not available")
-
     result = run_subprocess(
         [
             TestConstants.python_path,

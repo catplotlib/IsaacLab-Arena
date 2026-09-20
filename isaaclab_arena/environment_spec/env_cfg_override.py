@@ -307,11 +307,7 @@ def _field_annotation(owner: type, field_name: str) -> Any:
         if annotation is None:
             continue
         if isinstance(annotation, str):
-            module_globals = dict(vars(sys.modules[cls.__module__]))
-            if "InteractiveSceneCfg" not in module_globals:
-                from isaaclab.scene import InteractiveSceneCfg
-
-                module_globals["InteractiveSceneCfg"] = InteractiveSceneCfg
+            module_globals = vars(sys.modules[cls.__module__])
             holder = type("_FieldAnnotation", (), {"__annotations__": {"value": annotation}})
             return get_type_hints(holder, globalns=module_globals, localns=vars(cls))["value"]
         return annotation

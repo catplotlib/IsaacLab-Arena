@@ -7,108 +7,143 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import isaaclab.sim as sim_utils
 
-from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
+from isaaclab_arena.assets.nucleus import ARENA_STAGING_NUCLEUS_DIR
 from isaaclab_arena.assets.object import Object
+from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.utils.pose import Pose
 
-TOOL_SORT_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
-"""Published Nucleus asset tree."""
-
-TOOL_NAMES = (
-    "vabar_tool_sort__adjustable_wrench",
-    "vabar_tool_sort__battery",
-    "vabar_tool_sort__breadboard",
-    "vabar_tool_sort__combination_pliers",
-    "vabar_tool_sort__cutting_pliers",
-    "vabar_tool_sort__flashlight",
-    "vabar_tool_sort__insulating_tape",
-    "vabar_tool_sort__multimeter",
-    "vabar_tool_sort__safety_glasses",
-    "vabar_tool_sort__slotted_screwdriver",
-    "vabar_tool_sort__tape_measure",
-    "vabar_tool_sort__wire_spool",
+TOOL_SORT_ASSET_ROOT = (
+    f"{ARENA_STAGING_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
 )
-"""Registry names required by the three easy levels."""
+"""Internal Nucleus asset tree used before the public mirror syncs."""
 
 _BIN_APPEARANCES = frozenset({"default", "bench", "electrical", "wiring"})
 
 
-def _normalize_pose(initial_pose: Pose | Mapping[str, Sequence[float]] | None) -> Pose | None:
-    """Normalize graph pose mappings to Arena poses."""
-    if initial_pose is None or isinstance(initial_pose, Pose):
-        return initial_pose
-    return Pose(
-        position_xyz=tuple(float(value) for value in initial_pose["position_xyz"]),
-        rotation_xyzw=tuple(float(value) for value in initial_pose["rotation_xyzw"]),
-    )
+def _tool_usd_path(name: str) -> str:
+    return f"{TOOL_SORT_ASSET_ROOT}/{name}/{name}.usda"
 
 
-def _make_tool_factory(registry_name: str):
-    """Create one rigid tool factory for ``registry_name``."""
+class IndustrialToolSortObject(LibraryObject):
+    """Base class for rigid tools in the CAP sorting scenes."""
 
-    def factory(
-        instance_name: str | None = None,
-        initial_pose: Pose | Mapping[str, Sequence[float]] | None = None,
-        **_ignored: Any,
-    ) -> Object:
-        name = instance_name or registry_name
-        tool = Object(
-            name=name,
-            prim_path=f"{{ENV_REGEX_NS}}/{name}",
+    tags = ["object", "graspable", "industrial", "tool_sort"]
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.disable_reset_pose()
+
+
+class IndustrialToolSortAdjustableWrench(IndustrialToolSortObject):
+    name = "vabar_tool_sort__adjustable_wrench"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortBattery(IndustrialToolSortObject):
+    name = "vabar_tool_sort__battery"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortBreadboard(IndustrialToolSortObject):
+    name = "vabar_tool_sort__breadboard"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortCombinationPliers(IndustrialToolSortObject):
+    name = "vabar_tool_sort__combination_pliers"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortCuttingPliers(IndustrialToolSortObject):
+    name = "vabar_tool_sort__cutting_pliers"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortFlashlight(IndustrialToolSortObject):
+    name = "vabar_tool_sort__flashlight"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortInsulatingTape(IndustrialToolSortObject):
+    name = "vabar_tool_sort__insulating_tape"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortMultimeter(IndustrialToolSortObject):
+    name = "vabar_tool_sort__multimeter"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortSafetyGlasses(IndustrialToolSortObject):
+    name = "vabar_tool_sort__safety_glasses"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortSlottedScrewdriver(IndustrialToolSortObject):
+    name = "vabar_tool_sort__slotted_screwdriver"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortTapeMeasure(IndustrialToolSortObject):
+    name = "vabar_tool_sort__tape_measure"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortWireSpool(IndustrialToolSortObject):
+    name = "vabar_tool_sort__wire_spool"
+    usd_path = _tool_usd_path(name)
+
+
+class IndustrialToolSortBin(Object):
+    """Kinematic source or compartmented destination bin."""
+
+    name = "industrial__tool_sort_bin"
+    tags = ["object", "container", "industrial", "tool_sort"]
+    object_type = ObjectType.RIGID
+
+    def __init__(
+        self,
+        instance_name: str = "tool_sort_bin",
+        side: Literal["source", "destination"] = "destination",
+        appearance: Literal["default", "bench", "electrical", "wiring"] = "default",
+        initial_pose: Pose | None = None,
+    ) -> None:
+        assert side in {"source", "destination"}, f"Invalid tool-sort bin side: {side!r}"
+        assert appearance in _BIN_APPEARANCES, f"Invalid tool-sort bin appearance: {appearance!r}"
+        leaf = "bin1.usda" if side == "source" else f"bin2_{appearance}.usda"
+        super().__init__(
+            name=instance_name,
+            prim_path=f"{{ENV_REGEX_NS}}/{instance_name}",
             object_type=ObjectType.RIGID,
-            usd_path=f"{TOOL_SORT_ASSET_ROOT}/{registry_name}/{registry_name}.usda",
-            initial_pose=_normalize_pose(initial_pose),
-            tags=["object", "graspable", "industrial", "tool_sort"],
+            usd_path=f"{TOOL_SORT_ASSET_ROOT}/{self.name}/{leaf}",
+            initial_pose=initial_pose,
+            spawn_cfg_addon={
+                "rigid_props": sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            },
+            tags=self.tags,
         )
-        tool.disable_reset_pose()
-        return tool
-
-    factory.__name__ = f"make_{registry_name}"
-    factory.name = registry_name
-    factory.tags = ("object", "graspable", "industrial", "tool_sort")
-    factory.object_type = ObjectType.RIGID
-    return factory
+        self.collision_mode = CollisionMode.MESH
 
 
-def make_industrial_tool_sort_bin(
-    instance_name: str = "tool_sort_bin",
-    side: str = "destination",
-    appearance: str = "default",
-    initial_pose: Pose | Mapping[str, Sequence[float]] | None = None,
-    **_ignored: Any,
-) -> Object:
-    """Create a kinematic source or compartmented destination bin."""
-    assert side in {"source", "destination"}, f"Invalid tool-sort bin side: {side!r}"
-    assert appearance in _BIN_APPEARANCES, f"Invalid tool-sort bin appearance: {appearance!r}"
-    leaf = "bin1.usda" if side == "source" else f"bin2_{appearance}.usda"
-    bin_object = Object(
-        name=instance_name,
-        prim_path=f"{{ENV_REGEX_NS}}/{instance_name}",
-        object_type=ObjectType.RIGID,
-        usd_path=f"{TOOL_SORT_ASSET_ROOT}/industrial__tool_sort_bin/{leaf}",
-        initial_pose=_normalize_pose(initial_pose),
-        spawn_cfg_addon={
-            "rigid_props": sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-        },
-        tags=["object", "container", "industrial", "tool_sort"],
-    )
-    bin_object.collision_mode = CollisionMode.MESH
-    return bin_object
-
-
-make_industrial_tool_sort_bin.name = "industrial__tool_sort_bin"
-make_industrial_tool_sort_bin.tags = ("object", "container", "industrial", "tool_sort")
-make_industrial_tool_sort_bin.object_type = ObjectType.RIGID
-
-TOOL_SORT_ASSET_ENTRY_POINTS = {
-    **{name: _make_tool_factory(name) for name in TOOL_NAMES},
-    make_industrial_tool_sort_bin.name: make_industrial_tool_sort_bin,
-}
-"""Asset factories registered by the Isaac CAP entry point."""
+TOOL_SORT_ASSET_CLASSES = (
+    IndustrialToolSortAdjustableWrench,
+    IndustrialToolSortBattery,
+    IndustrialToolSortBreadboard,
+    IndustrialToolSortCombinationPliers,
+    IndustrialToolSortCuttingPliers,
+    IndustrialToolSortFlashlight,
+    IndustrialToolSortInsulatingTape,
+    IndustrialToolSortMultimeter,
+    IndustrialToolSortSafetyGlasses,
+    IndustrialToolSortSlottedScrewdriver,
+    IndustrialToolSortTapeMeasure,
+    IndustrialToolSortWireSpool,
+    IndustrialToolSortBin,
+)
+"""Asset classes registered by the Isaac CAP entry point."""

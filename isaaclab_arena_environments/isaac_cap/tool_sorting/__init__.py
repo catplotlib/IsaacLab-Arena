@@ -4,23 +4,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """CAP easy tool-sorting environments."""
-
-from .environment import (
-    ToolSortEnvironmentCfg,
-    ToolSortingEasy1Environment,
-    ToolSortingEasy1EnvironmentCfg,
-    ToolSortingEasy2Environment,
-    ToolSortingEasy2EnvironmentCfg,
-    ToolSortingEasy3Environment,
-    ToolSortingEasy3EnvironmentCfg,
-)
-
-__all__ = [
-    "ToolSortEnvironmentCfg",
-    "ToolSortingEasy1Environment",
-    "ToolSortingEasy1EnvironmentCfg",
-    "ToolSortingEasy2Environment",
-    "ToolSortingEasy2EnvironmentCfg",
-    "ToolSortingEasy3Environment",
-    "ToolSortingEasy3EnvironmentCfg",
-]

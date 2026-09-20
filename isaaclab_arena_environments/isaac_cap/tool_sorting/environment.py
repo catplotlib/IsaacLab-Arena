@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+# TODO(qianl): Move these settings into the graph YAML once it supports full ObjectPlacerParams.
 def configure_tool_sort_placement(arena_env: IsaacLabArenaEnvironment) -> IsaacLabArenaEnvironment:
     """Apply the source layout-sampling policy for easy tool sorting."""
     arena_env.placer_params.random_yaw_init = True

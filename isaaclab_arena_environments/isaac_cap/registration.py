@@ -165,8 +165,8 @@ def _register_syringe_sort_components(asset_registry: AssetRegistry) -> None:
 
 
 def _register_tool_sorting_components(asset_registry: AssetRegistry) -> None:
-    """Register locally staged easy tool-sort assets, task, and environments."""
-    from .tool_sorting.assets import TOOL_SORT_ASSET_ENTRY_POINTS
+    """Register easy tool-sort assets, task, and environments."""
+    from .tool_sorting.assets import TOOL_SORT_ASSET_CLASSES
     from .tool_sorting.embodiment import ToolSortingFr3Robotiq2f85Embodiment
     from .tool_sorting.environment import (
         ToolSortingEasy1Environment,
@@ -179,8 +179,8 @@ def _register_tool_sorting_components(asset_registry: AssetRegistry) -> None:
     from .tool_sorting.task import ObjectsInRegionsTask
 
     _register(asset_registry, ToolSortingFr3Robotiq2f85Embodiment, ToolSortingFr3Robotiq2f85Embodiment.name)
-    for name, factory in TOOL_SORT_ASSET_ENTRY_POINTS.items():
-        _register(asset_registry, factory, name)
+    for asset_class in TOOL_SORT_ASSET_CLASSES:
+        _register(asset_registry, asset_class, asset_class.name)
     _register(TaskRegistry(), ObjectsInRegionsTask, ObjectsInRegionsTask.__name__)
 
     for factory, cfg_type in (
