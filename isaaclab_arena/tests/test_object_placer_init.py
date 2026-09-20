@@ -11,14 +11,16 @@ import pytest
 
 from isaaclab_arena.relations.object_placer import ObjectPlacer
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
-from isaaclab_arena.relations.placement_initializers import AnchorInitializer
+from isaaclab_arena.relations.placement_initializers import AnchorInitializer, OnTreeInitializer
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
-from isaaclab_arena.relations.relations import IsAnchor, NextTo, On, Side
+from isaaclab_arena.relations.relations import IsAnchor, NextTo, On, PositionLimitsBox, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 
-ALL_INITIALIZERS = [AnchorInitializer]
+# Both initializers seed anchors, unparented objects, and On children the same way; the tests
+# that cover those shared rules run against each.
+ALL_INITIALIZERS = [AnchorInitializer, OnTreeInitializer]
 
 
 def _make_desk():
@@ -209,6 +211,86 @@ def test_anchor_init_on_parent_without_on_falls_back_to_anchor():
     assert desk_world.min_point[0, 0] <= x <= desk_world.max_point[0, 0]
     assert desk_world.min_point[0, 1] <= y <= desk_world.max_point[0, 1]
     assert abs(z - float(desk_world.max_point[0, 2] + 0.0 - mug.get_bounding_box().min_point[0, 2])) < 1e-6
+
+
+def test_ontree_init_seeds_child_on_its_real_parent():
+    """OnTreeInitializer places a grandchild on the parent's sampled footprint, not the anchor's."""
+    desk = _make_desk()
+    plate = DummyObject(
+        name="plate",
+        bounding_box=AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.3, 0.3, 0.02)),
+    )
+    plate.add_relation(On(desk, clearance_m=0.01, edge_margin_m=0.0))
+    mug = _make_box("mug", size=0.1, height=0.12)
+    mug.add_relation(On(plate, clearance_m=0.0, edge_margin_m=0.0))
+    generator = torch.Generator().manual_seed(0)
+
+    for _ in range(50):
+        positions = _seed(OnTreeInitializer(), [desk, plate, mug], {desk}, generator=generator)
+        plate_world = plate.get_bounding_box().translated(positions[plate])
+        _assert_footprint_within(positions[mug], mug.get_bounding_box(), plate_world)
+        # Z sits on the plate's top surface, which is above the desk's.
+        expected_z = float(plate_world.max_point[0, 2] - mug.get_bounding_box().min_point[0, 2])
+        assert abs(positions[mug][2] - expected_z) < 1e-6
+
+
+def test_ontree_init_orders_children_after_parents_regardless_of_input_order():
+    """A child listed before its parent is still seeded against the parent's sampled footprint."""
+    desk = _make_desk()
+    plate = DummyObject(
+        name="plate",
+        bounding_box=AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.3, 0.3, 0.02)),
+    )
+    plate.add_relation(On(desk, clearance_m=0.0, edge_margin_m=0.0))
+    mug = _make_box("mug", size=0.1, height=0.12)
+    mug.add_relation(On(plate, clearance_m=0.0, edge_margin_m=0.0))
+
+    objects = [mug, plate, desk]
+    positions = _seed(OnTreeInitializer(), objects, {desk})
+
+    assert list(positions) == objects, "Initializer must return positions in the caller's object order"
+    _assert_footprint_within(
+        positions[mug], mug.get_bounding_box(), plate.get_bounding_box().translated(positions[plate])
+    )
+
+
+def test_ontree_init_respects_position_limits_box():
+    """A PositionLimitsBox narrows the sampled interval so the seed starts inside the limits."""
+    desk = _make_desk()
+    box = _make_box("box")
+    box.add_relation(On(desk, clearance_m=0.0, edge_margin_m=0.0))
+    box.add_relation(PositionLimitsBox(x_min=0.1, x_max=0.2, y_min=0.6, y_max=0.7))
+    generator = torch.Generator().manual_seed(0)
+
+    for _ in range(50):
+        x, y, _ = _seed(OnTreeInitializer(), [desk, box], {desk}, generator=generator)[box]
+        assert 0.1 - 1e-6 <= x <= 0.2 + 1e-6
+        assert 0.6 - 1e-6 <= y <= 0.7 + 1e-6
+
+
+def test_ontree_init_clamps_to_footprint_when_limits_are_unreachable():
+    """Limits that sit off the parent seed the nearest reachable point on the parent instead."""
+    desk = _make_desk()
+    box = _make_box("box")
+    box.add_relation(On(desk, clearance_m=0.0, edge_margin_m=0.0))
+    # Valid origins on the desk span [0.0, 0.8]; these limits sit entirely beyond that.
+    box.add_relation(PositionLimitsBox(x_min=2.0, x_max=3.0))
+
+    x, _, _ = _seed(OnTreeInitializer(), [desk, box], {desk})[box]
+
+    assert abs(x - 0.8) < 1e-6, "Expected the footprint edge closest to the limits"
+
+
+def test_ontree_init_rejects_on_relation_cycle():
+    """A cycle in the On graph is reported rather than silently dropping objects."""
+    desk = _make_desk()
+    left = _make_box("left")
+    right = _make_box("right")
+    left.add_relation(On(right))
+    right.add_relation(On(left))
+
+    with pytest.raises(AssertionError, match="forest rooted at anchors"):
+        _seed(OnTreeInitializer(), [desk, left, right], {desk})
 
 
 @pytest.mark.parametrize("initializer_cls", ALL_INITIALIZERS)
