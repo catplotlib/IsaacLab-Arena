@@ -11,17 +11,15 @@ from typing import Any, Literal
 
 import isaaclab.sim as sim_utils
 
-from isaaclab_arena.assets.nucleus import ARENA_STAGING_NUCLEUS_DIR
+from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.utils.pose import Pose
 
-TOOL_SORT_ASSET_ROOT = (
-    f"{ARENA_STAGING_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
-)
-"""Internal Nucleus asset tree used before the public mirror syncs."""
+TOOL_SORT_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
+"""Published tool-sorting asset tree."""
 
 _BIN_APPEARANCES = frozenset({"default", "bench", "electrical", "wiring"})
 
