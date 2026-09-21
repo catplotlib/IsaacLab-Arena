@@ -48,6 +48,7 @@ def register_components() -> None:
         _register_cable_routing_components()
         _register_syringe_sort_components(asset_registry)
         _register_usbc_insertion_components(asset_registry)
+        _register_tool_hanging_components(asset_registry)
         _registered = True
     finally:
         _registering = False
@@ -161,3 +162,37 @@ def _register_syringe_sort_components(asset_registry: AssetRegistry) -> None:
         (SyringeClutteredEnvironment, SyringeClutteredEnvironmentCfg),
     ):
         _register_environment(factory, cfg)
+
+
+def _register_tool_hanging_components(asset_registry: AssetRegistry) -> None:
+    """Register the tool-hanging assets, embodiment, and task; its scenes are graph YAML files."""
+    from .tool_hanging.assets import (
+        PegboardHook,
+        PegboardRack,
+        Pliers,
+        PlierSupport,
+        Scissors,
+        Screwdriver,
+        ScrewdriverBox,
+        ScrewdriverBoxUpstream,
+        Wrench,
+        YamWorkcellTable,
+    )
+    from .tool_hanging.embodiment import ToolHangingBimanualYamEmbodiment
+    from .tool_hanging.task import ToolHangingTask
+
+    for component in (
+        Wrench,
+        Scissors,
+        Pliers,
+        Screwdriver,
+        PegboardRack,
+        PegboardHook,
+        PlierSupport,
+        ScrewdriverBox,
+        ScrewdriverBoxUpstream,
+        YamWorkcellTable,
+        ToolHangingBimanualYamEmbodiment,
+    ):
+        _register(asset_registry, component, component.name)
+    _register(TaskRegistry(), ToolHangingTask, ToolHangingTask.__name__)
