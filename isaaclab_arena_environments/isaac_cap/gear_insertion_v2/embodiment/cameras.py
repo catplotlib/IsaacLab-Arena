@@ -32,19 +32,34 @@ def _ros_optical_quaternion(eye: tuple[float, float, float], target: tuple[float
     return tuple(quat_from_matrix(rotation).tolist())
 
 
-_EXTERIOR_EYE = (1.25, 0.0, 1.75)
-_EXTERIOR_TARGET = (0.1, 0.015, 0.82)
-_EXTERNAL_EYE = (0.9, 0.75, 1.8)
+_EXTERIOR_EYE = (0.1, 0.015, 1.75)
+_EXTERNAL_EYE = (1.3213, 0.0826, 1.5159)
+_EXTERNAL_LEFT_TARGET = (-0.1495, 0.0711, 1.0465)
 _EXTERNAL_EYE_2 = (0.9, -0.75, 1.8)
 _EXTERNAL_TARGET = (0.1, 0.015, 0.82)
 _WRIST_EYE = (0.0, 0.12, -0.02)
 _WRIST_TARGET = (0.0, 0.12, 0.25)
-_DROID_PINHOLE = dict(
-    focal_length=2.1,
-    focus_distance=28.0,
-    horizontal_aperture=5.376,
-    vertical_aperture=3.024,
-)
+
+
+def _zed_pinhole(horizontal_fov: float, vertical_fov: float):
+    # RTX needs explicit fx/fy to honor both FOVs instead of assuming square pixels.
+    focal_length = 5.0
+    return sim_utils.PinholeCameraCfg(
+        distortion=sim_utils.OpenCvPinholeDistortionCfg(
+            fx=CAMERA_WIDTH / (2 * math.tan(math.radians(horizontal_fov / 2))),
+            fy=CAMERA_HEIGHT / (2 * math.tan(math.radians(vertical_fov / 2))),
+            cx=CAMERA_WIDTH / 2,
+            cy=CAMERA_HEIGHT / 2,
+            image_size=(CAMERA_WIDTH, CAMERA_HEIGHT),
+            apply_lens_distortion=False,
+        ),
+        focal_length=focal_length,
+        focus_distance=28.0,
+        horizontal_aperture=2 * focal_length * math.tan(math.radians(horizontal_fov / 2)),
+        vertical_aperture=2 * focal_length * math.tan(math.radians(vertical_fov / 2)),
+    )
+
+
 _WRIST_PRIM = (
     "{ENV_REGEX_NS}/Robot/Geometry/base/fr3_link0/fr3_link1/"
     "fr3_link2/fr3_link3/fr3_link4/fr3_link5/fr3_link6/"
@@ -60,11 +75,11 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
         prim_path="{ENV_REGEX_NS}/exterior_left_camera",
         height=CAMERA_HEIGHT,
         width=CAMERA_WIDTH,
-        data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(**_DROID_PINHOLE),
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(110.0, 70.0),
         offset=CameraCfg.OffsetCfg(
             pos=_EXTERNAL_EYE,
-            rot=_ros_optical_quaternion(_EXTERNAL_EYE, _EXTERNAL_TARGET),
+            rot=_ros_optical_quaternion(_EXTERNAL_EYE, _EXTERNAL_LEFT_TARGET),
             convention="ros",
         ),
     )
@@ -72,8 +87,8 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
         prim_path="{ENV_REGEX_NS}/exterior_right_camera",
         height=CAMERA_HEIGHT,
         width=CAMERA_WIDTH,
-        data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(**_DROID_PINHOLE),
+        data_types=["rgb", "distance_to_image_plane"],
+        spawn=_zed_pinhole(110.0, 70.0),
         offset=CameraCfg.OffsetCfg(
             pos=_EXTERNAL_EYE_2,
             rot=_ros_optical_quaternion(_EXTERNAL_EYE_2, _EXTERNAL_TARGET),
@@ -89,12 +104,7 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
         height=CAMERA_HEIGHT,
         width=CAMERA_WIDTH,
         data_types=["rgb", "distance_to_image_plane"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=2.8,
-            focus_distance=28.0,
-            horizontal_aperture=5.376,
-            vertical_aperture=3.024,
-        ),
+        spawn=_zed_pinhole(102.0, 57.0),
         offset=CameraCfg.OffsetCfg(
             pos=_WRIST_EYE,
             rot=_ros_optical_quaternion(_WRIST_EYE, _WRIST_TARGET),
@@ -108,32 +118,52 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
         height=CAMERA_HEIGHT,
         width=CAMERA_WIDTH,
         data_types=["rgb", "distance_to_image_plane"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=5.0,
-            focus_distance=28.0,
-            horizontal_aperture=5.376,
-            vertical_aperture=3.024,
-        ),
+        spawn=_zed_pinhole(110.0, 70.0),
         offset=CameraCfg.OffsetCfg(
             pos=_EXTERIOR_EYE,
-            rot=_ros_optical_quaternion(_EXTERIOR_EYE, _EXTERIOR_TARGET),
+            rot=(math.sqrt(0.5), -math.sqrt(0.5), 0.0, 0.0),
             convention="ros",
         ),
     )
 
     def use_overhead_profile(self, profile: str) -> None:
-        """Select a task-calibrated overhead view; retain the other three cameras."""
-        if profile != "tool_sorting":
-            raise ValueError(f"Unknown FR3 overhead profile: {profile!r}")
+        """Select the task's calibrated overhead view; retain the other three cameras."""
         camera = self.top_camera
-        camera.width, camera.height = 1280, 960
-        camera.offset.pos = (0.3, 0.0, 2.5)
-        camera.offset.rot = (math.sqrt(0.5), math.sqrt(0.5), 0.0, 0.0)
-        camera.offset.convention = "ros"
-        camera.spawn = sim_utils.PinholeCameraCfg(
-            focal_length=2.1,
-            focus_distance=28.0,
-            horizontal_aperture=5.376,
-            vertical_aperture=3.024,
-            clipping_range=(0.01, 5.0),
-        )
+        if profile == "syringe":
+            width, height = 1280, 720
+            position = (0.1, 0.015, 1.75)
+            rotation = (math.sqrt(0.5), -math.sqrt(0.5), 0.0, 0.0)
+            spawn = sim_utils.PinholeCameraCfg(
+                focal_length=5.0,
+                focus_distance=28.0,
+                horizontal_aperture=5.376,
+                vertical_aperture=3.024,
+            )
+        elif profile == "gear":
+            width, height = 1280, 960
+            fov_y = 50.0
+            position = (0.0490017409436448, 0.01556502252117765, 1.33)
+            rotation = (1.0, 0.0, 0.0, 0.0)
+            spawn = sim_utils.PinholeCameraCfg(
+                focal_length=3.024 / (2 * math.tan(math.radians(fov_y / 2))),
+                horizontal_aperture=3.024 * width / height,
+                vertical_aperture=3.024,
+                clipping_range=(0.01, 4.0),
+            )
+        elif profile == "tool_sorting":
+            width, height = 1280, 960
+            position = (0.3, 0.0, 2.5)
+            rotation = (math.sqrt(0.5), math.sqrt(0.5), 0.0, 0.0)
+            spawn = sim_utils.PinholeCameraCfg(
+                focal_length=2.1,
+                focus_distance=28.0,
+                horizontal_aperture=5.376,
+                vertical_aperture=3.024,
+                clipping_range=(0.01, 5.0),
+            )
+        else:
+            raise ValueError(f"Unknown FR3 overhead profile: {profile!r}")
+        camera.width, camera.height = width, height
+        camera.offset.pos, camera.offset.rot = position, rotation
+        # Replacing the spawn cfg also clears the shared ZED intrinsics override.
+        camera.spawn = spawn
