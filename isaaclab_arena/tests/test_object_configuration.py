@@ -30,6 +30,39 @@ def _test_object_initial_pose_update(simulation_app):
     return True
 
 
+def _test_default_spawner_cfg_not_shared(simulation_app):
+
+    import copy
+
+    from isaaclab_arena.assets.object_library import DomeLight, Sphere
+
+    # Two objects built from the class default must not share one cfg object.
+    first = Sphere()
+    second = Sphere()
+    assert first.spawner_cfg is not second.spawner_cfg
+    assert first.spawner_cfg is not Sphere.default_spawner_cfg
+
+    # Mutating one must not reach a sibling, the class default, or a later instance.
+    default_radius = Sphere.default_spawner_cfg.radius
+    first.spawner_cfg.radius = default_radius + 1.0
+    assert second.spawner_cfg.radius == default_radius
+    assert Sphere.default_spawner_cfg.radius == default_radius
+    assert Sphere().spawner_cfg.radius == default_radius
+
+    # Lights reach the cfg through their setters, so check that path too.
+    lit = DomeLight()
+    other = DomeLight()
+    lit.set_intensity(DomeLight.default_intensity + 1000.0)
+    assert other.spawner_cfg.intensity == DomeLight.default_intensity
+    assert DomeLight.default_spawner_cfg.intensity == DomeLight.default_intensity
+
+    # An explicitly passed cfg is still stored by reference.
+    own = copy.deepcopy(Sphere.default_spawner_cfg)
+    assert Sphere(spawner_cfg=own).spawner_cfg is own
+
+    return True
+
+
 def test_object_configuration():
     result = run_function_with_persistent_simulation_app(
         _test_object_initial_pose_update,
@@ -38,5 +71,14 @@ def test_object_configuration():
     assert result, "Test failed"
 
 
+def test_default_spawner_cfg_not_shared():
+    result = run_function_with_persistent_simulation_app(
+        _test_default_spawner_cfg_not_shared,
+        headless=HEADLESS,
+    )
+    assert result, "Test failed"
+
+
 if __name__ == "__main__":
     test_object_configuration()
+    test_default_spawner_cfg_not_shared()

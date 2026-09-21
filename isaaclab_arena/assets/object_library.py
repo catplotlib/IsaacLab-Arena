@@ -58,6 +58,9 @@ class LibraryObject(Object):
     ):
         name = instance_name if instance_name is not None else self.name
         scale = scale if scale is not None else self.scale
+        if kwargs.get("spawner_cfg") is None and getattr(self, "default_spawner_cfg", None) is not None:
+            # Copy so instances built from the class default do not share (and mutate) one cfg.
+            kwargs["spawner_cfg"] = copy.deepcopy(self.default_spawner_cfg)
         super().__init__(
             name=name,
             prim_path=prim_path,
@@ -324,10 +327,7 @@ class GroundPlane(LibraryObject):
         spawner_cfg: sim_utils.GroundPlaneCfg | None = None,
     ):
         super().__init__(
-            instance_name=instance_name,
-            prim_path=prim_path,
-            initial_pose=initial_pose,
-            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
+            instance_name=instance_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
         )
 
 
@@ -368,7 +368,7 @@ class Sphere(LibraryObject):
             prim_path=prim_path,
             initial_pose=initial_pose,
             scale=scale,
-            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
+            spawner_cfg=spawner_cfg,
         )
 
 
@@ -462,10 +462,7 @@ class DomeLight(LightBase):
         from isaaclab_arena.variations.light_intensity_variation import LightIntensityVariation
 
         super().__init__(
-            instance_name=instance_name,
-            prim_path=prim_path,
-            initial_pose=initial_pose,
-            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
+            instance_name=instance_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
         )
         if hdr is not None:
             self.add_hdr(hdr)
@@ -521,7 +518,7 @@ class DirectionalLight(LightBase):
             instance_name=instance_name,
             prim_path=prim_path,
             initial_pose=initial_pose if initial_pose is not None else self.default_initial_pose,
-            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
+            spawner_cfg=spawner_cfg,
         )
         self.add_variation(LightDirectionVariation(self))
         self.add_variation(LightIntensityVariation(self))
