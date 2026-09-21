@@ -25,11 +25,8 @@ from isaaclab_arena.metrics.object_moved import ObjectMovedRateMetric
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.common.mimic_default_params import MIMIC_DATAGEN_CONFIG_DEFAULTS
-from isaaclab_arena.tasks.predicates.object_lifted import (
-    DEFAULT_INITIAL_SETTLING_STEPS,
-    ObjectSettledWithReference,
-    object_lifted,
-)
+from isaaclab_arena.tasks.predicates.object_lifted import DEFAULT_INITIAL_SETTLING_STEPS, ObjectLifted
+from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
 from isaaclab_arena.tasks.predicates.spatial import object_on_destination
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
@@ -60,7 +57,7 @@ class PickAndPlaceTask(TaskBase):
         mimic_env_cfg_factory: Optional factory for a custom Mimic environment configuration.
         support_cone_half_angle_rad: Maximum angle in radians between the filtered contact force and
             world +Z. Smaller values require the support force to be more vertical.
-        settling_steps: Consecutive low-velocity control steps before the prerequisite records its reference height.
+        settling_steps: Consecutive low-velocity control steps before the lift predicate captures its reference height.
 
     """
 
@@ -157,10 +154,10 @@ class PickAndPlaceTask(TaskBase):
             },
         )
         settled = TerminationTermCfg(
-            func=ObjectSettledWithReference,
-            params={"object_name": self.pick_up_object.name, "consecutive_steps": self.settling_steps},
+            func=ObjectsSettledForConsecutiveSteps,
+            params={"object_names": [self.pick_up_object.name], "consecutive_steps": self.settling_steps},
         )
-        lifted = TerminationTermCfg(func=object_lifted, params={"settled_reference": settled})
+        lifted = TerminationTermCfg(func=ObjectLifted, params={"object_name": self.pick_up_object.name})
         placed = partial(
             object_on_destination,
             object_cfg=SceneEntityCfg(self.pick_up_object.name),

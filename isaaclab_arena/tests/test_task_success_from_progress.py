@@ -513,7 +513,8 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-    from isaaclab_arena.tasks.predicates.object_lifted import ObjectSettledWithReference, object_lifted
+    from isaaclab_arena.tasks.predicates.object_lifted import ObjectLifted
+    from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
     from isaaclab_arena.tasks.predicates.spatial import object_on_destination
     from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
@@ -532,7 +533,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert isinstance(termination_cfg, TaskTerminationCfg)
     assert termination_cfg.timeout_s == 12.0
     assert len(termination_cfg.success) == 1
-    expected_predicates = [object_lifted, object_on_destination]
+    expected_predicates = [ObjectLifted, object_on_destination]
     assert [predicate.func for predicate in termination_cfg.success[0].predicate_sequence] == expected_predicates
     assert set(termination_cfg.failures) == {"object_dropped"}
     assert termination_cfg.failures["object_dropped"].func is root_height_below_minimum
@@ -554,9 +555,8 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert env_cfg.terminations.time_out.func is time_out
     assert env_cfg.terminations.time_out.time_out
     assert env_cfg.episode_length_s == 12.0
-    assert objectives[0].prerequisites[0].func is ObjectSettledWithReference
+    assert objectives[0].prerequisites[0].func is ObjectsSettledForConsecutiveSteps
     assert objectives[0].prerequisites[0].params["consecutive_steps"] == task.settling_steps
-    assert objectives[0].predicate_sequence[0].params["settled_reference"] is objectives[0].prerequisites[0]
     assert env_cfg.recorders.progress_tracking.class_type is ProgressTrackingRecorder
     assert getattr(env_cfg.events, "reset_progress_objectives", None) is None
     return True

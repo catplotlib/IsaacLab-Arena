@@ -19,6 +19,7 @@ from isaaclab_arena.progress_tracking.progress_objective import ProgressObjectiv
 from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
 from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.object_lifted import ObjectLifted
 
 
 def _initialize_predicate_parameters(value, env) -> None:
@@ -39,7 +40,7 @@ def _initialize_predicate_parameters(value, env) -> None:
             _initialize_predicate_parameters(parameter, env)
 
 
-def _resolve_progress_predicate(predicate, env, configuration_copies=None):
+def _resolve_progress_predicate(predicate, env):
     """Instantiate a managed predicate config when the tracker gains access to the environment."""
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
@@ -53,18 +54,18 @@ def _resolve_progress_predicate(predicate, env, configuration_copies=None):
         return predicate
 
     assert env is not None, "An environment is required to resolve a managed progress predicate."
-    predicate_cfg = copy.deepcopy(predicate, configuration_copies)
+    predicate_cfg = copy.deepcopy(predicate)
     _initialize_predicate_parameters(predicate_cfg, env)
     return functools.partial(predicate_cfg.func, **predicate_cfg.params)
 
 
 def _evaluate_progress_predicate_with_state_update_mask(predicate, env, state_update_mask: torch.Tensor):
-    """Evaluate a predicate without mutating inactive consecutive-predicate environments."""
+    """Evaluate a predicate without mutating inactive stateful-predicate environments."""
 
-    # TODO(cvolk): Revisit ConsecutivePredicate-specific dispatch during the stateful predicate redesign.
+    # TODO(cvolk): Revisit stateful-predicate dispatch during the stateful predicate redesign.
     # Preserve state updates only for environments where the predicate is active.
     predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
-    if isinstance(predicate_func, ConsecutivePredicate):
+    if isinstance(predicate_func, (ConsecutivePredicate, ObjectLifted)):
         return predicate(env, active_mask=state_update_mask)
     return predicate(env)
 
@@ -139,11 +140,8 @@ class ProgressObjectiveRunner:
         self.progress_objective = progress_objective
         self.num_envs = num_envs
         self.device = device
-        # Preserve shared configuration references within this objective only.
-        configuration_copies = {}
         self.prerequisites = [
-            _resolve_progress_predicate(predicate, env, configuration_copies)
-            for predicate in progress_objective.prerequisites
+            _resolve_progress_predicate(predicate, env) for predicate in progress_objective.prerequisites
         ]
         self.prerequisites_met = torch.full((num_envs,), not self.prerequisites, dtype=torch.bool, device=device)
 
@@ -154,9 +152,7 @@ class ProgressObjectiveRunner:
         self.group_score: dict[str, torch.Tensor] = {}
         self.group_complete: dict[str, torch.Tensor] = {}
         self.predicate_chains = {
-            group_name: [
-                (_resolve_progress_predicate(predicate, env, configuration_copies), score) for predicate, score in chain
-            ]
+            group_name: [(_resolve_progress_predicate(predicate, env), score) for predicate, score in chain]
             for group_name, chain in progress_objective.canonical_predicate_sequences.items()
         }
 
@@ -232,7 +228,7 @@ class ProgressObjectiveRunner:
             )
         cached_result, evaluated_envs = predicate_results_this_step[predicate_key]
         predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
-        if not isinstance(predicate_func, ConsecutivePredicate):
+        if not isinstance(predicate_func, (ConsecutivePredicate, ObjectLifted)):
             state_update_mask = torch.ones_like(state_update_mask)
         # Evaluate only requested environments that have no result cached for this update.
         pending_envs = state_update_mask & ~evaluated_envs

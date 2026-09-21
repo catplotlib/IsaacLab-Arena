@@ -25,25 +25,22 @@ Arena comes with an existing collection of predicates under ``isaaclab_arena.tas
 
 * ``objects_settled`` — all selected objects are below linear and angular velocity thresholds.
 * ``object_is_above_height`` — an object is above a fixed reference height.
-* ``ObjectSettledWithReference`` — captures a reference height after consecutive low-velocity steps.
-* ``object_lifted`` — an object has risen above that captured reference height.
+* ``ObjectLifted`` — an object has risen above its height at first activation.
 * ``object_moving`` — an object exceeds a linear velocity threshold.
 * ``objects_in_proximity`` — two objects are within configured axis-aligned distances.
 * ``object_on_destination`` — destination-footprint, upward-support, and velocity checks for a placement goal.
 
 .. note::
 
-    ``ObjectSettledWithReference`` owns its settling counter and reference height per environment.
-    It starts observing when its objective becomes active, including in sequential subtasks.
+    ``ObjectsSettledForConsecutiveSteps`` checks stability as an unscored prerequisite.
     Pick-and-place defaults to five consecutive low-velocity control steps, configurable through
-    ``settling_steps``. It records the height at the end of that window and keeps it until reset.
-    Settling earns no progress. This is a velocity-based reference, not a contact/support check.
-    The progress tracker forwards episode resets to the predicate.
+    ``settling_steps``. Once ready, ``ObjectLifted`` captures the current height on its first active
+    evaluation, in the same tracker update. It keeps this reference until episode reset.
+    The lift predicate performs no settling checks and shares no state with the prerequisite.
 
     The shared ``ObjectInitialRestPoseRecorder`` and ``use_settled_state`` argument have been removed.
-    Use ``ObjectSettledWithReference`` as a prerequisite and ``object_lifted`` for a measured reference;
-    use ``object_is_above_height`` with ``surface_height`` for a fixed reference.
-    The ordinary settling predicates only check stability.
+    Use ``ObjectLifted`` after a settling prerequisite for a measured reference, or
+    ``object_is_above_height`` with ``surface_height`` for a fixed reference.
 
 
 Defining a custom predicate
@@ -95,8 +92,8 @@ managed consecutive predicates receive the active-environment mask and reset thr
 Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exactly one of
 ``predicate_sequence`` for a list of predicates or ``predicate_sequences`` for a dictionary of named lists.
 
-``PickAndPlaceTask`` requires the object to be lifted and then placed. A prerequisite captures
-an initial resting reference, without treating settling as a success milestone:
+``PickAndPlaceTask`` requires the object to be lifted and then placed. A prerequisite waits for
+initial stability, without treating settling as a success milestone:
 
 .. code-block:: python
 
@@ -106,16 +103,17 @@ an initial resting reference, without treating settling as a success milestone:
    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-   from isaaclab_arena.tasks.predicates.object_lifted import ObjectSettledWithReference, object_lifted
+   from isaaclab_arena.tasks.predicates.object_lifted import ObjectLifted
+   from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
    from isaaclab_arena.tasks.predicates.spatial import object_on_destination
    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
    def get_termination_cfg(self) -> TaskTerminationCfg:
        settled = TerminationTermCfg(
-           func=ObjectSettledWithReference,
-           params={"object_name": self.pick_up_object.name, "consecutive_steps": self.settling_steps},
+           func=ObjectsSettledForConsecutiveSteps,
+           params={"object_names": [self.pick_up_object.name], "consecutive_steps": self.settling_steps},
        )
-       lifted = TerminationTermCfg(func=object_lifted, params={"settled_reference": settled})
+       lifted = TerminationTermCfg(func=ObjectLifted, params={"object_name": self.pick_up_object.name})
        return TaskTerminationCfg(
            success=[
                ProgressObjective(
@@ -261,7 +259,7 @@ For example, one entry of the JSONL record may look like:
            "objective": "pick_and_place",
            "group": "default_group",
            "predicate_index": 0,
-           "predicate_name": "object_lifted(...)",
+           "predicate_name": "ObjectLifted(object_name='can')",
            "score_delta": 0.5
          }
        ]
