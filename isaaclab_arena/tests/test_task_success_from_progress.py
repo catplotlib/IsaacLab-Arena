@@ -36,7 +36,6 @@ def _make_environment_and_manager(
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorderCfg
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
-    from isaaclab_arena.tasks.predicates.object_settling import ObjectInitialRestPoseRecorder
 
     env = _ProgressEnvironment(
         num_envs=2,
@@ -48,7 +47,6 @@ def _make_environment_and_manager(
         episode_length_buf=torch.zeros(2, dtype=torch.long),
         predicate_results={name: torch.ones(2, dtype=torch.bool) for name in predicate_names},
         predicate_calls={name: 0 for name in predicate_names},
-        object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(num_envs=2, device="cpu"),
     )
     if success_objectives is None:
         success_objectives = [
@@ -209,10 +207,8 @@ def _test_placement_cannot_bypass_lift(simulation_app):
     return True
 
 
-def _test_manager_reset_clears_only_selected_progress_and_rest_poses(simulation_app):
+def _test_manager_reset_clears_only_selected_progress(simulation_app):
     import torch
-
-    from isaaclab_arena.tasks.predicates.object_settling import get_object_initial_rest_state
 
     for reset_ids, reset_mask in [
         (torch.tensor([0]), [True, False]),
@@ -223,8 +219,6 @@ def _test_manager_reset_clears_only_selected_progress_and_rest_poses(simulation_
         env, manager, recorder = _make_environment_and_manager(["settle", "place"])
         progress_tracker = env.progress_tracker
         assert progress_tracker is not None
-        resting_positions = torch.tensor([[0.0, 0.0, 0.2], [1.0, 0.0, 0.3]])
-        env.object_initial_rest_pose_recorder.record("object", resting_positions, torch.tensor([True, True]))
         for _ in range(2):
             env.episode_length_buf += 1
             manager.compute()
@@ -237,24 +231,10 @@ def _test_manager_reset_clears_only_selected_progress_and_rest_poses(simulation_
         env.episode_length_buf[reset_mask] = 0
         recorder.record_post_step()
         progress = env.extras["progress_tracking"]
-        positions, has_settled = get_object_initial_rest_state(env, "object")
         for environment_index, was_reset in enumerate(reset_mask):
             assert progress["states"][environment_index].all_complete == (not was_reset)
             assert progress["states"][environment_index].overall_score == (0.0 if was_reset else 1.0)
             assert len(progress["events"][environment_index]) == (0 if was_reset else 2)
-            assert bool(has_settled[environment_index]) == (not was_reset)
-            if was_reset:
-                assert torch.isnan(positions[environment_index]).all()
-            else:
-                torch.testing.assert_close(positions[environment_index], resting_positions[environment_index])
-
-        new_resting_positions = resting_positions + 0.5
-        env.object_initial_rest_pose_recorder.record("object", new_resting_positions, torch.tensor([True, True]))
-        positions, has_settled = get_object_initial_rest_state(env, "object")
-        assert has_settled.all()
-        for environment_index, was_reset in enumerate(reset_mask):
-            expected_position = (new_resting_positions if was_reset else resting_positions)[environment_index]
-            torch.testing.assert_close(positions[environment_index], expected_position)
 
         env.episode_length_buf += 1
         manager.compute()
@@ -533,8 +513,8 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-    from isaaclab_arena.tasks.predicates.object_settling import objects_settled
-    from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+    from isaaclab_arena.tasks.predicates.object_lifted import ObjectSettledWithReference, object_lifted
+    from isaaclab_arena.tasks.predicates.spatial import object_on_destination
     from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
     pick_up_object = SimpleNamespace(
@@ -552,7 +532,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert isinstance(termination_cfg, TaskTerminationCfg)
     assert termination_cfg.timeout_s == 12.0
     assert len(termination_cfg.success) == 1
-    expected_predicates = [objects_settled, object_is_above_height, object_on_destination]
+    expected_predicates = [object_lifted, object_on_destination]
     assert [predicate.func for predicate in termination_cfg.success[0].predicate_sequence] == expected_predicates
     assert set(termination_cfg.failures) == {"object_dropped"}
     assert termination_cfg.failures["object_dropped"].func is root_height_below_minimum
@@ -574,6 +554,9 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert env_cfg.terminations.time_out.func is time_out
     assert env_cfg.terminations.time_out.time_out
     assert env_cfg.episode_length_s == 12.0
+    assert objectives[0].prerequisites[0].func is ObjectSettledWithReference
+    assert objectives[0].prerequisites[0].params["consecutive_steps"] == task.settling_steps
+    assert objectives[0].predicate_sequence[0].params["settled_reference"] is objectives[0].prerequisites[0]
     assert env_cfg.recorders.progress_tracking.class_type is ProgressTrackingRecorder
     assert getattr(env_cfg.events, "reset_progress_objectives", None) is None
     return True
@@ -671,8 +654,8 @@ def test_placement_cannot_bypass_lift():
     assert run_function_with_persistent_simulation_app(_test_placement_cannot_bypass_lift)
 
 
-def test_manager_reset_clears_only_selected_progress_and_rest_poses():
-    assert run_function_with_persistent_simulation_app(_test_manager_reset_clears_only_selected_progress_and_rest_poses)
+def test_manager_reset_clears_only_selected_progress():
+    assert run_function_with_persistent_simulation_app(_test_manager_reset_clears_only_selected_progress)
 
 
 def test_success_results_remain_stable_after_updates_and_reset():

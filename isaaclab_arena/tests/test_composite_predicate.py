@@ -19,10 +19,7 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.composite import CompositePredicate
     from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
-    from isaaclab_arena.tasks.predicates.object_settling import (
-        ObjectInitialRestPoseRecorder,
-        ObjectsSettledForConsecutiveSteps,
-    )
+    from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
     from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
     from isaaclab_arena.tasks.terminations import SuccessMode
 
@@ -78,7 +75,6 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
         scene=SimpleNamespace(deformable_objects={}),
         sim=_PlayingSimulation(),
         arena_world=_ArenaWorld(),
-        object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(num_envs=2, device="cpu"),
     )
     settled_cfg = TerminationTermCfg(
         func=ObjectsSettledForConsecutiveSteps,

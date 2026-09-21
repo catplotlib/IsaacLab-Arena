@@ -24,16 +24,26 @@ Included predicates
 Arena comes with an existing collection of predicates under ``isaaclab_arena.tasks.predicates``, including:
 
 * ``objects_settled`` — all selected objects are below linear and angular velocity thresholds.
-* ``object_is_above_height`` — an object is above a fixed height or its recorded resting height.
+* ``object_is_above_height`` — an object is above a fixed reference height.
+* ``ObjectSettledWithReference`` — captures a reference height after consecutive low-velocity steps.
+* ``object_lifted`` — an object has risen above that captured reference height.
 * ``object_moving`` — an object exceeds a linear velocity threshold.
 * ``objects_in_proximity`` — two objects are within configured axis-aligned distances.
 * ``object_on_destination`` — destination-footprint, upward-support, and velocity checks for a placement goal.
 
 .. note::
 
-    ``objects_settled`` records each object's first resting pose. Later predicates can use that
-    environment-specific pose as a reference, which is more robust than assuming every object starts at
-    the same world height. Arena clears the recorded poses for the environments being reset.
+    ``ObjectSettledWithReference`` owns its settling counter and reference height per environment.
+    It starts observing when its objective becomes active, including in sequential subtasks.
+    Pick-and-place defaults to five consecutive low-velocity control steps, configurable through
+    ``settling_steps``. It records the height at the end of that window and keeps it until reset.
+    Settling earns no progress. This is a velocity-based reference, not a contact/support check.
+    The progress tracker forwards episode resets to the predicate.
+
+    The shared ``ObjectInitialRestPoseRecorder`` and ``use_settled_state`` argument have been removed.
+    Use ``ObjectSettledWithReference`` as a prerequisite and ``object_lifted`` for a measured reference;
+    use ``object_is_above_height`` with ``surface_height`` for a fixed reference.
+    The ordinary settling predicates only check stability.
 
 
 Defining a custom predicate
@@ -63,10 +73,30 @@ The arguments after ``env`` are configured when the predicate is added to a prog
 Defining a progress objective
 -----------------------------
 
+Use ``prerequisites`` for preparation conditions that must hold together before an objective's
+predicate sequences begin:
+
+.. code-block:: python
+
+   ProgressObjective(
+       name="pick_and_place",
+       prerequisites=[settled],
+       predicate_sequence=[lifted, placed],
+   )
+
+Prerequisites earn no score or completion events. Readiness is remembered separately per environment
+until reset; the first sequence predicate can run in the same update that establishes readiness.
+The runner's state exposes ``prerequisites_met`` without evaluating the conditions again.
+For sequential subtasks, prerequisites begin when the subtask becomes active.
+Policy actions and the episode clock continue while prerequisites are pending.
+Ordinary callable prerequisites evaluate the full batch and should be free of state updates;
+managed consecutive predicates receive the active-environment mask and reset through the tracker.
+
 Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exactly one of
 ``predicate_sequence`` for a list of predicates or ``predicate_sequences`` for a dictionary of named lists.
 
-``PickAndPlaceTask`` requires the object to settle, be lifted, and be placed, in that order:
+``PickAndPlaceTask`` requires the object to be lifted and then placed. A prerequisite captures
+an initial resting reference, without treating settling as a success milestone:
 
 .. code-block:: python
 
@@ -76,22 +106,23 @@ Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exa
    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-   from isaaclab_arena.tasks.predicates.object_settling import objects_settled
-   from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+   from isaaclab_arena.tasks.predicates.object_lifted import ObjectSettledWithReference, object_lifted
+   from isaaclab_arena.tasks.predicates.spatial import object_on_destination
    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
    def get_termination_cfg(self) -> TaskTerminationCfg:
+       settled = TerminationTermCfg(
+           func=ObjectSettledWithReference,
+           params={"object_name": self.pick_up_object.name, "consecutive_steps": self.settling_steps},
+       )
+       lifted = TerminationTermCfg(func=object_lifted, params={"settled_reference": settled})
        return TaskTerminationCfg(
            success=[
                ProgressObjective(
                    name="pick_and_place",
+                   prerequisites=[settled],
                    predicate_sequence=[
-                       partial(objects_settled, object_names=[self.pick_up_object.name]),
-                       partial(
-                           object_is_above_height,
-                           object_name=self.pick_up_object.name,
-                           use_settled_state=True,
-                       ),
+                       lifted,
                        partial(
                            object_on_destination,
                            object_cfg=SceneEntityCfg(self.pick_up_object.name),
@@ -211,11 +242,11 @@ For example, one entry of the JSONL record may look like:
 
    {
      "progress": {
-       "overall_score": 0.67,
+       "overall_score": 0.5,
        "all_complete": false,
        "objectives": {
          "pick_and_place": {
-           "score": 0.67,
+           "score": 0.5,
            "is_complete": false,
            "completed_groups": 0,
            "total_groups": 1,
@@ -226,24 +257,16 @@ For example, one entry of the JSONL record may look like:
        },
        "events": [
          {
-           "step": 4,
-           "objective": "pick_and_place",
-           "group": "default_group",
-           "predicate_index": 0,
-           "predicate_name": "objects_settled",
-           "score_delta": 0.33
-         },
-         {
            "step": 18,
            "objective": "pick_and_place",
            "group": "default_group",
-           "predicate_index": 1,
-           "predicate_name": "object_is_above_height(object_name='can', use_settled_state=True)",
-           "score_delta": 0.33
+           "predicate_index": 0,
+           "predicate_name": "object_lifted(...)",
+           "score_delta": 0.5
          }
        ]
      }
    }
 
-The object has settled and been lifted: two of three predicates are complete, giving a score of ``0.67``.
-Placement is still required. The two events record when settling and lifting completed.
+The object has been lifted: one of two predicates is complete, giving a score of ``0.5``.
+Placement is still required. The event records when lifting completed; settling earns no progress.

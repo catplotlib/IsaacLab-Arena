@@ -14,6 +14,7 @@ from isaaclab_arena.progress_tracking.progress_tracking_utils import (
     PredicateSequence,
     PredicateSequences,
     _format_predicate_sequences,
+    _is_predicate,
     _normalize_scores,
 )
 
@@ -49,6 +50,7 @@ class ProgressObjective:
         K: Required when logical == "choose". Specifies the number of sequences that must be completed
             to consider the ProgressObjective complete.
         description: An optional description of the ProgressObjective.
+        prerequisites: Conditions that must hold together before sequences start; these earn no progress.
     """
 
     name: str
@@ -68,7 +70,13 @@ class ProgressObjective:
     parent_subtask_idx: int | None = None
     """Subtask index assigned by CompositeTaskBase; None for standalone task objectives."""
 
+    prerequisites: list[Predicate] = field(default_factory=list)
+    """Unscored conditions required together once while this objective is active, before its sequences start."""
+
     def __post_init__(self):
+        assert isinstance(self.prerequisites, list) and all(
+            _is_predicate(predicate) for predicate in self.prerequisites
+        ), "prerequisites must be a list of callables or managed predicate configs, without scores."
         assert 0.0 <= self.score <= 1.0, f"ProgressObjective '{self.name}': score must be in [0, 1], got {self.score}"
         # Accept either a ProgressObjectiveCompletionMode or its string value; normalize to the enum (raises on invalid).
         self.logical = ProgressObjectiveCompletionMode(self.logical)

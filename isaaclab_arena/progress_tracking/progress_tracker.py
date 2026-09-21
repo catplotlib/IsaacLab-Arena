@@ -39,7 +39,7 @@ def _initialize_predicate_parameters(value, env) -> None:
             _initialize_predicate_parameters(parameter, env)
 
 
-def _resolve_progress_predicate(predicate, env):
+def _resolve_progress_predicate(predicate, env, configuration_copies=None):
     """Instantiate a managed predicate config when the tracker gains access to the environment."""
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
@@ -53,7 +53,7 @@ def _resolve_progress_predicate(predicate, env):
         return predicate
 
     assert env is not None, "An environment is required to resolve a managed progress predicate."
-    predicate_cfg = copy.deepcopy(predicate)
+    predicate_cfg = copy.deepcopy(predicate, configuration_copies)
     _initialize_predicate_parameters(predicate_cfg, env)
     return functools.partial(predicate_cfg.func, **predicate_cfg.params)
 
@@ -112,7 +112,10 @@ class ProgressObjectiveState:
     """Whether the objective is complete for this env."""
 
     active_predicates: dict[str, str | None]
-    """Next predicate per group, or None when the group is complete."""
+    """Next predicate per group, or None while prerequisites are pending or the group is complete."""
+
+    prerequisites_met: bool = True
+    """Whether this objective's prerequisites have been satisfied in this episode."""
 
 
 @dataclass
@@ -136,6 +139,13 @@ class ProgressObjectiveRunner:
         self.progress_objective = progress_objective
         self.num_envs = num_envs
         self.device = device
+        # Preserve shared configuration references within this objective only.
+        configuration_copies = {}
+        self.prerequisites = [
+            _resolve_progress_predicate(predicate, env, configuration_copies)
+            for predicate in progress_objective.prerequisites
+        ]
+        self.prerequisites_met = torch.full((num_envs,), not self.prerequisites, dtype=torch.bool, device=device)
 
         #   current_predicate_index: How far each env has advanced through the group's predicate chain.
         #   group_score: Each env's accumulated score for the group, normalized to [0, 1].
@@ -144,7 +154,9 @@ class ProgressObjectiveRunner:
         self.group_score: dict[str, torch.Tensor] = {}
         self.group_complete: dict[str, torch.Tensor] = {}
         self.predicate_chains = {
-            group_name: [(_resolve_progress_predicate(predicate, env), score) for predicate, score in chain]
+            group_name: [
+                (_resolve_progress_predicate(predicate, env, configuration_copies), score) for predicate, score in chain
+            ]
             for group_name, chain in progress_objective.canonical_predicate_sequences.items()
         }
 
@@ -172,6 +184,17 @@ class ProgressObjectiveRunner:
         active_envs = active_envs & ~objective_complete
         if not bool((active_envs | final_check_envs).any().item()):
             return []
+
+        waiting_envs = active_envs & ~self.prerequisites_met
+        if bool(waiting_envs.any().item()):
+            all_prerequisites_hold = waiting_envs.clone()
+            for prerequisite in self.prerequisites:
+                result = self._evaluate_predicate_with_cache(
+                    prerequisite, env, predicate_results_this_step, waiting_envs
+                )
+                all_prerequisites_hold &= result
+            self.prerequisites_met |= all_prerequisites_hold
+        active_envs = active_envs & self.prerequisites_met
 
         events: list[PredicateEvent] = []
         for group_name, predicate_chain in self.predicate_chains.items():
@@ -330,15 +353,16 @@ class ProgressObjectiveRunner:
         """Reset the runner for the provided envs."""
 
         env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
+        self.prerequisites_met[env_ids] = not self.prerequisites
         for group_name in self.progress_objective.group_names:
             self.current_predicate_index[group_name][env_ids] = 0
             self.group_score[group_name][env_ids] = 0.0
             self.group_complete[group_name][env_ids] = False
 
-        reset_managed_predicates(
-            (predicate for predicate_chain in self.predicate_chains.values() for predicate, _score in predicate_chain),
-            env_ids,
-        )
+        predicates_to_reset = list(self.prerequisites)
+        for predicate_chain in self.predicate_chains.values():
+            predicates_to_reset.extend(predicate for predicate, _score in predicate_chain)
+        reset_managed_predicates(predicates_to_reset, env_ids)
 
     def _num_required_groups(self) -> int:
         """Number of groups that must complete for the objective to be complete."""
@@ -380,7 +404,9 @@ class ProgressObjectiveRunner:
         for group_name in objective.group_names:
             predicate_chain = self.predicate_chains[group_name]
             cur_predicate_index = int(self.current_predicate_index[group_name][env_idx].item())
-            if cur_predicate_index >= len(predicate_chain):
+            if not bool(self.prerequisites_met[env_idx].item()):
+                active_predicates[group_name] = None
+            elif cur_predicate_index >= len(predicate_chain):
                 active_predicates[group_name] = None
                 completed_groups += 1
             else:
@@ -392,6 +418,7 @@ class ProgressObjectiveRunner:
             score=float(score),
             is_complete=bool(is_complete),
             active_predicates=active_predicates,
+            prerequisites_met=bool(self.prerequisites_met[env_idx].item()),
         )
 
 

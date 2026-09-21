@@ -24,8 +24,6 @@ class _PlayingSimulation:
 def _make_environment(predicate_values):
     import torch
 
-    from isaaclab_arena.tasks.predicates.object_settling import ObjectInitialRestPoseRecorder
-
     num_envs = len(next(iter(predicate_values.values())))
     return _ProgressEnvironment(
         num_envs=num_envs,
@@ -35,7 +33,6 @@ def _make_environment(predicate_values):
         extras={},
         episode_length_buf=torch.zeros(num_envs, dtype=torch.long),
         predicate_values={name: torch.tensor(values, dtype=torch.bool) for name, values in predicate_values.items()},
-        object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(num_envs, "cpu"),
         _progress_tracker=None,
     )
 

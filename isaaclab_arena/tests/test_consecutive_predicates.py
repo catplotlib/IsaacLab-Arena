@@ -18,10 +18,7 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker, ProgressTrackingRecorderCfg
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
     from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
-    from isaaclab_arena.tasks.predicates.object_settling import (
-        ObjectInitialRestPoseRecorder,
-        ObjectsSettledForConsecutiveSteps,
-    )
+    from isaaclab_arena.tasks.predicates.object_settling import ObjectsSettledForConsecutiveSteps
 
     class _PlayingSimulation:
         def is_playing(self) -> bool:
@@ -57,7 +54,6 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
         extras={},
         _progress_tracker=None,
         episode_length_buf=torch.zeros(2, dtype=torch.long),
-        object_initial_rest_pose_recorder=ObjectInitialRestPoseRecorder(2, "cpu"),
     )
     settled_cfg = TerminationTermCfg(
         func=ObjectsSettledForConsecutiveSteps,
@@ -107,25 +103,10 @@ def _test_consecutive_predicates(_simulation_app) -> bool:
     arena_world.angular_velocity.zero_()
     manager.compute()
     manager.compute()
-    _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
-    assert recorded.tolist() == [True, True]
-    env.object_initial_rest_pose_recorder.record(
-        "unrelated_object",
-        arena_world.position,
-        torch.ones(env.num_envs, dtype=torch.bool),
-    )
     manager.reset(env_ids=[1])
     assert resolved_settled.consecutive_true_steps.tolist() == [2, 0]
-    _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
-    assert recorded.tolist() == [True, True]
-    _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
-    assert unrelated_recorded.tolist() == [True, True]
     manager.reset()
     assert resolved_settled.consecutive_true_steps.tolist() == [0, 0]
-    _, recorded = env.object_initial_rest_pose_recorder.get("sphere")
-    assert recorded.tolist() == [True, True]
-    _, unrelated_recorded = env.object_initial_rest_pose_recorder.get("unrelated_object")
-    assert unrelated_recorded.tolist() == [True, True]
 
     # TaskSuccessTerm evaluates the tracked predicate and reports success on the same step.
     tracked_manager = TerminationManager(

@@ -25,8 +25,12 @@ from isaaclab_arena.metrics.object_moved import ObjectMovedRateMetric
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.common.mimic_default_params import MIMIC_DATAGEN_CONFIG_DEFAULTS
-from isaaclab_arena.tasks.predicates.object_settling import objects_settled
-from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+from isaaclab_arena.tasks.predicates.object_lifted import (
+    DEFAULT_INITIAL_SETTLING_STEPS,
+    ObjectSettledWithReference,
+    object_lifted,
+)
+from isaaclab_arena.tasks.predicates.spatial import object_on_destination
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.task_transition import Relocate, TaskTransition
@@ -39,7 +43,7 @@ from isaaclab_arena.utils.configclass import make_configclass
 class PickAndPlaceTask(TaskBase):
     """Pick an object up and place it on or in a destination.
 
-    Success requires the object to settle, rise above its resting height, then reach its destination
+    Success requires the object to rise above its initial resting height, then reach its destination
     with support and low linear speed. Rigid objects use contact force to check support;
     deformable objects use their geometry. Failure occurs when the object falls below the background.
 
@@ -56,6 +60,7 @@ class PickAndPlaceTask(TaskBase):
         mimic_env_cfg_factory: Optional factory for a custom Mimic environment configuration.
         support_cone_half_angle_rad: Maximum angle in radians between the filtered contact force and
             world +Z. Smaller values require the support force to be more vertical.
+        settling_steps: Consecutive low-velocity control steps before the prerequisite records its reference height.
 
     """
 
@@ -71,6 +76,7 @@ class PickAndPlaceTask(TaskBase):
         velocity_threshold: float = 0.003,
         mimic_env_cfg_factory: Callable[[ArmMode], MimicEnvCfg] | None = None,
         support_cone_half_angle_rad: float = math.pi / 4,
+        settling_steps: int = DEFAULT_INITIAL_SETTLING_STEPS,
     ):
         super().__init__(episode_length_s=episode_length_s)
         assert (
@@ -92,6 +98,8 @@ class PickAndPlaceTask(TaskBase):
             0.0 <= support_cone_half_angle_rad < math.pi / 2
         ), f"support_cone_half_angle_rad must be in [0, pi / 2), got {support_cone_half_angle_rad}"
         self.support_cone_half_angle_rad = support_cone_half_angle_rad
+        assert isinstance(settling_steps, int) and not isinstance(settling_steps, bool) and settling_steps > 0
+        self.settling_steps = settling_steps
         self.mimic_env_cfg_factory = mimic_env_cfg_factory
         self.events_cfg = None
         self.task_description = (
@@ -148,33 +156,27 @@ class PickAndPlaceTask(TaskBase):
                 "asset_cfg": SceneEntityCfg(self.pick_up_object.name),
             },
         )
+        settled = TerminationTermCfg(
+            func=ObjectSettledWithReference,
+            params={"object_name": self.pick_up_object.name, "consecutive_steps": self.settling_steps},
+        )
+        lifted = TerminationTermCfg(func=object_lifted, params={"settled_reference": settled})
+        placed = partial(
+            object_on_destination,
+            object_cfg=SceneEntityCfg(self.pick_up_object.name),
+            destination_cfg=SceneEntityCfg(self.destination_location.name),
+            contact_sensor_cfg=self.contact_sensor_cfg,
+            force_threshold=self.force_threshold,
+            velocity_threshold=self.velocity_threshold,
+            support_cone_half_angle_rad=self.support_cone_half_angle_rad,
+        )
         return TaskTerminationCfg(
             timeout_s=self.episode_length_s,
             success=[
                 ProgressObjective(
                     name="pick_and_place",
-                    predicate_sequence=[
-                        # TODO(cvolk): Record initial rest poses independently of task success before
-                        # removing objects_settled; object_is_above_height still needs that reference.
-                        partial(
-                            objects_settled,
-                            object_names=[self.pick_up_object.name],
-                        ),
-                        partial(
-                            object_is_above_height,
-                            object_name=self.pick_up_object.name,
-                            use_settled_state=True,
-                        ),
-                        partial(
-                            object_on_destination,
-                            object_cfg=SceneEntityCfg(self.pick_up_object.name),
-                            destination_cfg=SceneEntityCfg(self.destination_location.name),
-                            contact_sensor_cfg=self.contact_sensor_cfg,
-                            force_threshold=self.force_threshold,
-                            velocity_threshold=self.velocity_threshold,
-                            support_cone_half_angle_rad=self.support_cone_half_angle_rad,
-                        ),
-                    ],
+                    prerequisites=[settled],
+                    predicate_sequence=[lifted, placed],
                 ),
             ],
             failures={"object_dropped": object_dropped},
