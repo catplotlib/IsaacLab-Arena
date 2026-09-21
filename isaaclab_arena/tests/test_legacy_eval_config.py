@@ -153,7 +153,7 @@ def test_legacy_graph_builder_keeps_namespace_inside_graph_compatibility(monkeyp
     assert captured["builder_cfg"] is run.environment_builder
     assert captured["builder_cfg"].device == "cuda:1"
     assert captured["arena_env"] is expected_arena_env
-    assert captured["hydra_overrides"] == ["light.intensity.enabled=true"]
+    assert captured["hydra_overrides"] == {"light": {"intensity": {"enabled": True}}}
 
 
 def test_registered_environment_rejects_arguments_missing_from_its_typed_config():

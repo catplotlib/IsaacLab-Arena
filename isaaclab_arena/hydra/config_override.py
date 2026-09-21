@@ -51,7 +51,7 @@ def nested_override(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_config_override(config: Any, override: dict[str, Any]) -> Any:
-    """Apply a validated nested override to a configclass, dataclass, or mapping in place.
+    """Apply a validated nested override to a configclass or mapping in place.
 
     Args:
         config: Structured configuration or mapping to update.
@@ -63,19 +63,23 @@ def apply_config_override(config: Any, override: dict[str, Any]) -> Any:
     assert isinstance(override, dict), f"Config override must be a mapping, got {type(override).__name__}"
     values = copy.deepcopy(override)
     _validate_override_syntax(values, path="config")
+
+    # Validate the complete override without exposing partial mutations, then replay it onto the
+    # original config so untouched nested configclass instances retain their identity.
     candidate = copy.deepcopy(config)
-
-    if isinstance(candidate, dict):
-        _apply_mapping_override(candidate, values, path="config")
-    elif callable(getattr(candidate, "from_dict", None)):
-        _apply_configclass_override(candidate, values)
-    elif dataclasses.is_dataclass(candidate):
-        candidate = _apply_omegaconf_override(candidate, values)
-    else:
-        raise TypeError(f"Config override target must be a dataclass or mapping, got {type(config).__name__}")
-
-    _commit_candidate(config, candidate)
+    _apply_override(candidate, copy.deepcopy(values))
+    _apply_override(config, values)
     return config
+
+
+def _apply_override(config: Any, values: dict[str, Any]) -> None:
+    """Apply previously validated values without providing atomicity."""
+    if isinstance(config, dict):
+        _apply_mapping_override(config, values, path="config")
+    elif callable(getattr(config, "from_dict", None)):
+        _apply_configclass_override(config, values)
+    else:
+        raise TypeError(f"Config override target must be a configclass or mapping, got {type(config).__name__}")
 
 
 def _append_dotlist_values(value: Any, prefix: str, dotlist: list[str]) -> None:
@@ -90,18 +94,6 @@ def _append_dotlist_values(value: Any, prefix: str, dotlist: list[str]) -> None:
     dotlist.append(f"{prefix}={json.dumps(value, separators=(',', ':'))}")
 
 
-def _apply_omegaconf_override(config: Any, values: dict[str, Any]) -> Any:
-    """Apply values through an OmegaConf structured copy."""
-    _validate_known_paths(config, values, path="config")
-    try:
-        structured = OmegaConf.structured(config)
-        OmegaConf.set_struct(structured, True)
-        merged = OmegaConf.merge(structured, values)
-        return OmegaConf.to_object(merged)
-    except (OmegaConfBaseException, TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid config override: {exc}") from exc
-
-
 def _apply_mapping_override(target: dict[str, Any], values: dict[str, Any], *, path: str) -> None:
     """Apply values recursively to an existing-key mapping."""
     for key, value in values.items():
@@ -113,46 +105,10 @@ def _apply_mapping_override(target: dict[str, Any], values: dict[str, Any], *, p
             target[key] = value
         elif isinstance(current_value, dict):
             _apply_mapping_override(current_value, value, path=child_path)
-        elif dataclasses.is_dataclass(current_value) or callable(getattr(current_value, "from_dict", None)):
+        elif callable(getattr(current_value, "from_dict", None)):
             apply_config_override(current_value, value)
         else:
             raise ValueError(f"Invalid config override: expected a structured value at '{child_path}'")
-
-
-def _validate_known_paths(target: Any, values: dict[str, Any], *, path: str) -> None:
-    """Reject fields and mapping keys that are absent from the target."""
-    if dataclasses.is_dataclass(target):
-        field_names = {field.name for field in dataclasses.fields(target)}
-        for key, value in values.items():
-            child_path = f"{path}.{key}"
-            if key not in field_names:
-                raise ValueError(f"Invalid config override: Unknown config field '{child_path}'")
-            current_value = getattr(target, key)
-            if isinstance(value, dict) and _is_structured_value(current_value):
-                _validate_known_paths(current_value, value, path=child_path)
-    elif isinstance(target, dict):
-        for key, value in values.items():
-            child_path = f"{path}.{key}"
-            if key not in target:
-                raise ValueError(f"Invalid config override: Unknown config field '{child_path}'")
-            current_value = target[key]
-            if isinstance(value, dict) and _is_structured_value(current_value):
-                _validate_known_paths(current_value, value, path=child_path)
-
-
-def _is_structured_value(value: Any) -> bool:
-    """Return whether nested override paths can be checked against ``value``."""
-    return dataclasses.is_dataclass(value) or isinstance(value, dict)
-
-
-def _commit_candidate(config: Any, candidate: Any) -> None:
-    """Commit a completely validated candidate without changing root identity."""
-    if isinstance(config, dict):
-        config.clear()
-        config.update(candidate)
-        return
-    for field in dataclasses.fields(config):
-        setattr(config, field.name, getattr(candidate, field.name))
 
 
 def _apply_configclass_override(config: Any, values: dict[str, Any]) -> None:

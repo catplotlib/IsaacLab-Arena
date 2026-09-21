@@ -3,29 +3,32 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for shared structured configuration overrides."""
+"""Tests for shared configclass overrides."""
 
-from dataclasses import dataclass, field
+from dataclasses import field
 
 import pytest
+from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.hydra.config_override import apply_config_override, dotlist_to_override, nested_override
 
 
-@dataclass
+@configclass
 class _ChildCfg:
     count: int = 1
     labels: list[str] = field(default_factory=lambda: ["default"])
 
 
-@dataclass
+@configclass
 class _RootCfg:
     child: _ChildCfg = field(default_factory=_ChildCfg)
     runs: dict[str, _ChildCfg] = field(default_factory=lambda: {"baseline": _ChildCfg()})
 
 
-def test_apply_config_override_updates_nested_dataclass_and_mapping():
+def test_apply_config_override_updates_nested_configclass_and_mapping():
     cfg = _RootCfg()
+    child = cfg.child
+    baseline = cfg.runs["baseline"]
 
     result = apply_config_override(
         cfg,
@@ -38,12 +41,14 @@ def test_apply_config_override_updates_nested_dataclass_and_mapping():
     assert result is cfg
     assert cfg.child.count == 3
     assert cfg.runs["baseline"].labels == ["one", "two"]
+    assert cfg.child is child
+    assert cfg.runs["baseline"] is baseline
 
 
 def test_apply_config_override_is_atomic_on_unknown_path():
     cfg = _RootCfg()
 
-    with pytest.raises(ValueError, match="Unknown config field"):
+    with pytest.raises(ValueError, match="Key not found"):
         apply_config_override(cfg, {"child": {"count": 3}, "missing": True})
 
     assert cfg == _RootCfg()

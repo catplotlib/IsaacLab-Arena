@@ -20,8 +20,6 @@ from hydra.errors import HydraException
 from omegaconf import OmegaConf
 from omegaconf.errors import OmegaConfBaseException
 
-from isaaclab_arena.hydra.config_override import apply_config_override, dotlist_to_override
-
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg
     from isaaclab_arena.evaluation.arena_experiment import ArenaExperimentCfg
@@ -90,9 +88,13 @@ def load_arena_experiment_from_yaml(
                 )
                 for index, (run_name, run_values) in enumerate(run_values_by_name.items())
             }
-            experiment_cfg = ArenaExperimentCfg(runs=arena_runs_by_name)
-            if run_overrides:
-                apply_config_override(experiment_cfg, dotlist_to_override(run_overrides))
+            hydra_experiment_config_name = f"{hydra_config_namespace}_root"
+            config_store.store(
+                name=hydra_experiment_config_name,
+                node=ArenaExperimentCfg(runs=arena_runs_by_name),
+            )
+            composed_experiment = compose(config_name=hydra_experiment_config_name, overrides=run_overrides)
+            experiment_cfg = OmegaConf.to_object(composed_experiment)
     except (HydraException, OmegaConfBaseException, TypeError, ValueError) as exc:
         raise ValueError(f"Could not compose Arena Experiment '{yaml_path}': {exc}") from exc
 
@@ -185,18 +187,10 @@ def load_experiment_run_definitions_from_yaml(
     assert raw_experiment_config.runs, "Experiment must define at least one Run"
 
     try:
-        raw_shared_defaults = raw_experiment_config.get("shared")
-        shared_defaults = (
-            OmegaConf.to_container(raw_shared_defaults, resolve=False) if raw_shared_defaults is not None else {}
-        )
-        assert isinstance(shared_defaults, dict)
-        shared_defaults_config = {"shared": shared_defaults}
-        if shared_default_overrides:
-            try:
-                apply_config_override(shared_defaults_config, dotlist_to_override(shared_default_overrides))
-            except AssertionError as exc:
-                raise ValueError(str(exc)) from exc
-        shared_run_defaults = shared_defaults_config["shared"]
+        shared_defaults_config = OmegaConf.create({"shared": raw_experiment_config.get("shared", {})})
+        OmegaConf.set_struct(shared_defaults_config, True)
+        shared_defaults_config.merge_with_dotlist(shared_default_overrides or [])
+        shared_run_defaults = OmegaConf.to_container(shared_defaults_config.shared, resolve=False)
         assert isinstance(shared_run_defaults, dict)
 
         runs: dict[str, dict[str, Any]] = {}

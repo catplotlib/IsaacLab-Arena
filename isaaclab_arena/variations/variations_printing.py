@@ -44,8 +44,8 @@ def get_variations_catalogue_as_string(
           color (ColorVariation, run-time)
             Enable: cracker_box.color.enabled=true  (default: False)
             Fields:
-              cracker_box.color.sampler.low = [0.0,0.0,0.0]
-              cracker_box.color.sampler.high = [1.0,1.0,1.0]
+              cracker_box.color.sampler_cfg.low = [0.0,0.0,0.0]
+              cracker_box.color.sampler_cfg.high = [1.0,1.0,1.0]
 
     Args:
         variations: ``{asset_name: [variation, ...]}`` the variations.

@@ -534,7 +534,7 @@ runs:
 
 
 def test_hydra_override_cannot_add_run():
-    with pytest.raises(ValueError, match="operators are not supported"):
+    with pytest.raises(ValueError, match="Error merging override"):
         _load_experiment(
             GETTING_STARTED_EXPERIMENT_PATH,
             overrides=["+runs.new_run={environment:{type:pick_and_place_maple_table},policy:{type:zero_action}}"],
