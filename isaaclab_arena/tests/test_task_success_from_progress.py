@@ -102,16 +102,19 @@ def _test_flat_subtasks_share_manager_ordering_final_checks_and_reset(simulation
     assert env.predicate_calls["closed"] == 0
 
     env.predicate_results["placed"][0] = True
+    env.episode_length_buf += 1
     manager.compute()
     assert env.progress_tracker.get_subtask_completion().tolist() == [[True, False], [True, True]]
     assert manager.get_term("success").tolist() == [False, True]
     assert env.predicate_calls["closed"] == 1, "Progress and final checks must reuse the same result."
 
     env.predicate_results["placed"][0] = False
+    env.episode_length_buf += 1
     manager.compute()
     assert env.progress_tracker.get_subtask_completion().tolist() == [[True, True], [True, True]]
     assert manager.get_term("success").tolist() == [False, True]
     env.predicate_results["placed"][0] = True
+    env.episode_length_buf += 1
     manager.compute()
     assert manager.get_term("success").tolist() == [True, True]
 
@@ -125,6 +128,7 @@ def _test_flat_subtasks_share_manager_ordering_final_checks_and_reset(simulation
     assert env.progress_tracker.is_complete().tolist() == [False, True]
     manager.compute()
     assert manager.get_term("success").tolist() == [False, True]
+    env.episode_length_buf += 1
     manager.compute()
     assert manager.get_term("success").tolist() == [True, True]
     return True
@@ -152,9 +156,11 @@ def _test_flat_subtask_none_state_skips_history_and_current_condition(simulation
     manager.compute()
     assert not manager.get_term("success").any(), "False still requires a recorded completion first."
     env.predicate_results["required"][:] = True
+    env.episode_length_buf += 1
     manager.compute()
     assert not manager.get_term("success").any()
     env.predicate_results["required"][:] = False
+    env.episode_length_buf += 1
     manager.compute()
     assert manager.get_term("success").all()
     assert env.progress_tracker.get_subtask_completion().tolist() == [[True, False], [True, False]]
@@ -531,6 +537,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorder
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
+    from isaaclab_arena.progress_tracking.true_for_consecutive_steps import TrueForConsecutiveStepsCfg
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
     from isaaclab_arena.tasks.predicates.object_settling import objects_settled
@@ -552,8 +559,14 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert isinstance(termination_cfg, TaskTerminationCfg)
     assert termination_cfg.timeout_s == 12.0
     assert len(termination_cfg.success) == 1
-    expected_predicates = [objects_settled, object_is_above_height, object_on_destination]
-    assert [predicate.func for predicate in termination_cfg.success[0].predicate_sequence] == expected_predicates
+    settled, lifted, placement_requirement = termination_cfg.success[0].predicate_sequence
+    assert settled.func is objects_settled
+    assert settled.keywords == {"object_names": ["object"]}
+    assert lifted.func is object_is_above_height
+    assert lifted.keywords == {"object_name": "object", "use_settled_state": True}
+    assert isinstance(placement_requirement, TrueForConsecutiveStepsCfg)
+    assert placement_requirement.predicate.func is object_on_destination
+    assert placement_requirement.required_steps == 1
     assert set(termination_cfg.failures) == {"object_dropped"}
     assert termination_cfg.failures["object_dropped"].func is root_height_below_minimum
     assert termination_cfg.failures["object_dropped"].params["minimum_height"] == -0.1
@@ -568,7 +581,11 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert env_cfg.terminations.success.func is TaskSuccessTerm
     objectives = env_cfg.terminations.success.params["success_objectives"]
     assert len(objectives) == 1
-    assert [predicate.func for predicate in objectives[0].predicate_sequence] == expected_predicates
+    settled, lifted, placement_requirement = objectives[0].predicate_sequence
+    assert settled.func is objects_settled
+    assert lifted.func is object_is_above_height
+    assert placement_requirement.predicate.func is object_on_destination
+    assert placement_requirement.required_steps == 1
     assert env_cfg.terminations.object_dropped.func is root_height_below_minimum
     assert env_cfg.terminations.object_dropped.params["minimum_height"] == -0.1
     assert env_cfg.terminations.time_out.func is time_out
@@ -576,6 +593,24 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert env_cfg.episode_length_s == 12.0
     assert env_cfg.recorders.progress_tracking.class_type is ProgressTrackingRecorder
     assert getattr(env_cfg.events, "reset_progress_objectives", None) is None
+
+    held_placement_task = PickAndPlaceTask(
+        pick_up_object,
+        SimpleNamespace(name="destination", object_type=ObjectType.RIGID),
+        SimpleNamespace(object_min_z=-0.1),
+        placement_consecutive_steps=10,
+    )
+    held_placement_requirement = held_placement_task.get_termination_cfg().success[0].predicate_sequence[-1]
+    assert isinstance(held_placement_requirement, TrueForConsecutiveStepsCfg)
+    assert held_placement_requirement.required_steps == 10
+    assert held_placement_requirement.predicate.func is object_on_destination
+    placement_parameters = held_placement_requirement.predicate.keywords
+    assert placement_parameters["object_cfg"].name == "object"
+    assert placement_parameters["destination_cfg"].name == "destination"
+    assert placement_parameters["contact_sensor_cfg"].name == held_placement_task.contact_sensor_name
+    assert placement_parameters["force_threshold"] == held_placement_task.force_threshold
+    assert placement_parameters["velocity_threshold"] == held_placement_task.velocity_threshold
+    assert placement_parameters["support_cone_half_angle_rad"] == held_placement_task.support_cone_half_angle_rad
     return True
 
 

@@ -9,7 +9,7 @@ import copy
 import functools
 import torch
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
@@ -17,6 +17,10 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
+from isaaclab_arena.progress_tracking.true_for_consecutive_steps import (
+    TrueForConsecutiveStepsCfg,
+    _TrueForConsecutiveSteps,
+)
 from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
 
@@ -143,10 +147,21 @@ class ProgressObjectiveRunner:
         self.current_predicate_index: dict[str, torch.Tensor] = {}
         self.group_score: dict[str, torch.Tensor] = {}
         self.group_complete: dict[str, torch.Tensor] = {}
-        self.predicate_chains = {
-            group_name: [(_resolve_progress_predicate(predicate, env), score) for predicate, score in chain]
-            for group_name, chain in progress_objective.canonical_predicate_sequences.items()
-        }
+        self.predicate_chains = {}
+        self._consecutive_step_requirements: dict[int, _TrueForConsecutiveSteps] = {}
+        for group_name, chain in progress_objective.canonical_predicate_sequences.items():
+            resolved_chain = []
+            for predicate, score in chain:
+                if isinstance(predicate, TrueForConsecutiveStepsCfg):
+                    # Reusing a declaration must not share counter state between occurrences.
+                    predicate = replace(predicate)
+                    self._consecutive_step_requirements[id(predicate)] = _TrueForConsecutiveSteps(
+                        cfg=predicate, num_envs=num_envs, device=device
+                    )
+                else:
+                    predicate = _resolve_progress_predicate(predicate, env)
+                resolved_chain.append((predicate, score))
+            self.predicate_chains[group_name] = resolved_chain
 
         for group_name in progress_objective.group_names:
             self.current_predicate_index[group_name] = torch.zeros(num_envs, dtype=torch.long, device=device)
@@ -159,6 +174,7 @@ class ProgressObjectiveRunner:
         step_index: torch.Tensor | None,
         active_envs: torch.Tensor,
         predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        updated_envs: torch.Tensor,
         check_final_conditions: bool = False,
     ) -> list[PredicateEvent]:
         """Step the runner for a single env.step.
@@ -168,7 +184,9 @@ class ProgressObjectiveRunner:
         """
 
         objective_complete = self.is_complete()
-        final_check_envs = objective_complete if check_final_conditions else torch.zeros_like(objective_complete)
+        final_check_envs = (
+            objective_complete & updated_envs if check_final_conditions else torch.zeros_like(objective_complete)
+        )
         active_envs = active_envs & ~objective_complete
         if not bool((active_envs | final_check_envs).any().item()):
             return []
@@ -177,7 +195,7 @@ class ProgressObjectiveRunner:
         for group_name, predicate_chain in self.predicate_chains.items():
             group_final_check_envs = final_check_envs
             if check_final_conditions:
-                group_final_check_envs = group_final_check_envs | self.group_complete[group_name]
+                group_final_check_envs = group_final_check_envs | (self.group_complete[group_name] & updated_envs)
             events += self._step_group(
                 env,
                 group_name,
@@ -209,16 +227,23 @@ class ProgressObjectiveRunner:
             )
         cached_result, evaluated_envs = predicate_results_this_step[predicate_key]
         predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
-        if not isinstance(predicate_func, ConsecutivePredicate):
+        if not isinstance(predicate_func, (ConsecutivePredicate, TrueForConsecutiveStepsCfg)):
             state_update_mask = torch.ones_like(state_update_mask)
         # Evaluate only requested environments that have no result cached for this update.
         pending_envs = state_update_mask & ~evaluated_envs
         if bool(pending_envs.any().item()):
-            result = torch.as_tensor(
-                _evaluate_progress_predicate_with_state_update_mask(predicate, env, pending_envs),
-                dtype=torch.bool,
-                device=self.device,
-            )
+            if isinstance(predicate, TrueForConsecutiveStepsCfg):
+                predicate_results = self._evaluate_predicate_with_cache(
+                    predicate.predicate, env, predicate_results_this_step, pending_envs
+                )
+                requirement = self._consecutive_step_requirements[predicate_key]
+                result = requirement.update(predicate_results, active_envs=pending_envs)
+            else:
+                result = torch.as_tensor(
+                    _evaluate_progress_predicate_with_state_update_mask(predicate, env, pending_envs),
+                    dtype=torch.bool,
+                    device=self.device,
+                )
             assert result.shape == (self.num_envs,), (
                 f"Predicate {_predicate_repr(predicate)} returned shape {tuple(result.shape)};"
                 f" expected ({self.num_envs},)"
@@ -335,10 +360,17 @@ class ProgressObjectiveRunner:
             self.group_score[group_name][env_ids] = 0.0
             self.group_complete[group_name][env_ids] = False
 
+        self._reset_consecutive_step_requirements(env_ids)
+
         reset_managed_predicates(
             (predicate for predicate_chain in self.predicate_chains.values() for predicate, _score in predicate_chain),
             env_ids,
         )
+
+    def _reset_consecutive_step_requirements(self, env_ids) -> None:
+        """Clear streaks without erasing completed predicates."""
+        for requirement in self._consecutive_step_requirements.values():
+            requirement.reset(env_ids)
 
     def _num_required_groups(self) -> int:
         """Number of groups that must complete for the objective to be complete."""
@@ -434,6 +466,8 @@ class ProgressTracker:
         self.desired_subtask_success_state = desired_subtask_success_state
         self._task_success = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self._events: list[list[PredicateEvent]] = [[] for _ in range(num_envs)]
+        self._last_processed_step = torch.full((num_envs,), -1, dtype=torch.long, device=device)
+        self._requires_step_index = any(runner._consecutive_step_requirements for runner in self.runners)
 
     @staticmethod
     def _group_runners_by_subtask(runners: list[ProgressObjectiveRunner]) -> list[list[ProgressObjectiveRunner]]:
@@ -455,9 +489,32 @@ class ProgressTracker:
         return torch.stack([runner.is_complete() for runner in runners], dim=1).all(dim=1)
 
     def step(self, env, step_index: torch.Tensor | None = None) -> None:
-        """Advance eligible predicate sequences once and update task success for the current step."""
+        """Advance sequences once per supplied control-step index and update task success.
 
-        active_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        Consecutive-step requirements need a per-environment step_index. Without one,
+        other predicate sequences treat each call as a new step.
+        """
+
+        assert (
+            step_index is not None or not self._requires_step_index
+        ), "TrueForConsecutiveStepsCfg requires a per-environment step_index."
+        updated_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        if step_index is not None:
+            assert step_index.shape == (self.num_envs,), "step_index must contain one index per environment."
+            assert step_index.dtype in (torch.int32, torch.int64), "step_index must contain integer indices."
+            step_index = step_index.to(device=self.device)
+            assert bool((step_index >= 0).all()), "step_index must be non-negative."
+            assert bool(
+                (step_index >= self._last_processed_step).all()
+            ), "Reset progress before restarting step indices."
+            updated_envs = step_index > self._last_processed_step
+            if not bool(updated_envs.any()):
+                return
+            # Unobserved control steps cannot contribute to a consecutive streak.
+            skipped_steps = (self._last_processed_step >= 0) & (step_index > self._last_processed_step + 1)
+            for runner in self.runners:
+                runner._reset_consecutive_step_requirements(skipped_steps)
+        active_envs = updated_envs.clone()
         # Progress advancement and final-condition checks share predicate results.
         # Evaluating a stateful predicate twice could advance its counter twice
         # without another simulation step.
@@ -471,12 +528,15 @@ class ProgressTracker:
             )
             for runner in subtask_runners:
                 for event in runner.step(
-                    env, step_index, active_envs, predicate_results_this_step, check_final_conditions
+                    env, step_index, active_envs, predicate_results_this_step, updated_envs, check_final_conditions
                 ):
                     self._events[event.env_idx].append(event)
             if self.subtasks_are_sequential:
                 active_envs = active_envs & subtask_was_complete
-        self._task_success = self._compute_task_success(env, predicate_results_this_step)
+        current_success = self._compute_task_success(env, predicate_results_this_step)
+        self._task_success = torch.where(updated_envs, current_success, self._task_success)
+        if step_index is not None:
+            self._last_processed_step.copy_(step_index)
 
     def _compute_task_success(
         self, env, predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]]
@@ -518,8 +578,8 @@ class ProgressTracker:
         objective_name: str,
         sequence_name: str = DEFAULT_GROUP_NAME,
         predicate_index: int = 0,
-    ) -> Callable:
-        """Return a predicate instance for reading cached diagnostics without evaluating it.
+    ) -> Callable | TrueForConsecutiveStepsCfg:
+        """Return a predicate or requirement definition without evaluating it.
 
         Args:
             objective_name: Name of the ProgressObjective containing the predicate.
@@ -540,6 +600,7 @@ class ProgressTracker:
         if torch.is_tensor(env_ids):
             env_ids = env_ids.tolist()
         self._task_success[env_ids] = False
+        self._last_processed_step[env_ids] = -1
         for runner in self.runners:
             runner.reset(env_ids)
         for env_idx in env_ids:
