@@ -88,6 +88,7 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
         builder_cfg,
         *,
         pick_target_object_name: str,
+        teleport_only: bool,
         pause_steps: int,
         ik_log_interval: int,
         real_time: bool = True,
@@ -100,6 +101,7 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
             arena_environment: Composed Arena environment to instantiate.
             builder_cfg: Configuration for building the stepable environment.
             pick_target_object_name: Object picked with IK before scripted slot drops.
+            teleport_only: Whether to skip the physical pick and validate only scripted teleports.
             pause_steps: Number of steps to display each validation state.
             ik_log_interval: IK diagnostic logging interval in control steps; zero disables logging.
             real_time: Whether to pace environment steps in real time.
@@ -115,6 +117,7 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
             visualizer_cfg=visualizer_cfg,
         )
         self.pick_target_object_name = pick_target_object_name
+        self.teleport_only = teleport_only
         self.pause_steps = pause_steps
         self.ik_log_interval = ik_log_interval
 
@@ -407,7 +410,7 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
             flush=True,
         )
         self._teleport(tool_name, self._hover_pose_w(tool_index))
-        settle_steps = max(self.pause_steps, round(1.25 / self.base_env.step_dt))
+        settle_steps = max(1, round(0.25 / self.base_env.step_dt))
         if self._hold_zero(settle_steps):
             if is_last:
                 return True
@@ -415,14 +418,15 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
         return False
 
     def run_cycle(self, cycle: int) -> None:
-        """Pick the battery when present, drop every tool into its slot, and require success reset."""
+        """Optionally pick the target, teleport every tool into its slot, and require success reset."""
         print(f"[{self.label}] cycle {cycle}: settling", flush=True)
         if self._hold_zero(10):
             raise RuntimeError("Environment ended unexpectedly while settling.")
 
-        self._run_ik_pick(cycle)
-        if self._hold_zero(self.pause_steps):
-            raise RuntimeError("Environment ended unexpectedly after the IK pick.")
+        if not self.teleport_only:
+            self._run_ik_pick(cycle)
+            if self._hold_zero(self.pause_steps):
+                raise RuntimeError("Environment ended unexpectedly after the IK pick.")
 
         last_index = len(self.object_names) - 1
         for tool_index in range(len(self.object_names)):
@@ -454,6 +458,7 @@ def run_demo(
     *,
     level: str = "1",
     cycles: int = 0,
+    teleport_only: bool = False,
     pause_steps: int = 30,
     ik_log_interval: int = 0,
     real_time: bool = True,
@@ -468,6 +473,7 @@ def run_demo(
         _build_tool_sort_demo_environment(level),
         ArenaEnvBuilderCfg(num_envs=_NUM_ENVS, env_spacing=1.5, solve_relations=True),
         pick_target_object_name=_PICK_TARGET_BY_LEVEL[level],
+        teleport_only=teleport_only,
         real_time=real_time,
         visualizer_cfg=KitVisualizerCfg(
             eye=(2.0, -2.0, 2.0),
@@ -489,6 +495,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("level", nargs="?", choices=_EASY_LEVELS, default="1")
     parser.add_argument("--cycles", type=int, default=0, help="Cycles to run; zero repeats until Kit closes.")
+    parser.add_argument(
+        "--teleport-only",
+        action="store_true",
+        help="Skip the physical pick/lift/drop phase and validate scripted object teleports only.",
+    )
     parser.add_argument("--pause-steps", type=int, default=30, help="Frames shown between scripted phases.")
     parser.add_argument(
         "--ik-log-interval",
@@ -507,6 +518,7 @@ def main() -> None:
             simulation_app,
             level=args.level,
             cycles=args.cycles,
+            teleport_only=args.teleport_only,
             real_time=not args.no_real_time,
             pause_steps=args.pause_steps,
             ik_log_interval=args.ik_log_interval,

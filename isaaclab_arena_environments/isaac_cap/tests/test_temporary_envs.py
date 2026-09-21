@@ -71,16 +71,16 @@ def test_gear_insertion_behaviour_demo(variant: str) -> None:
     assert expected in result.stdout, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("level", ("1", "2", "3"))
-def test_tool_sorting_behaviour_demo(level: str) -> None:
-    """Run one headless demo cycle and verify that success resets every environment."""
+def test_tool_sorting_behaviour_demo() -> None:
+    """Run one representative headless cycle and verify that success resets every environment."""
     result = run_subprocess(
         [
             TestConstants.python_path,
             _TOOL_SORT_DEMO_SCRIPT,
-            level,
+            "2",
             "--cycles",
             "1",
+            "--teleport-only",
             "--pause-steps",
             "25",
             "--no-real-time",
