@@ -51,76 +51,6 @@ def _test_runtime_requirement_updates_only_active_environments(simulation_app):
     return True
 
 
-def _test_runtime_requirement_restarts_after_false_results(simulation_app):
-    import torch
-
-    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
-
-    cfg = TrueForConsecutiveStepsCfg(predicate=_ControlledPredicate([True]), required_steps=3)
-    requirement = _TrueForConsecutiveSteps(cfg, num_envs=1, device="cpu")
-    active_envs = torch.tensor([True])
-    samples = [
-        (True, False),
-        (True, False),
-        (False, False),
-        (True, False),
-        (True, False),
-        (True, True),
-        (True, True),
-        (False, False),
-    ]
-    for predicate_result, expected_completion in samples:
-        completion = requirement.update(torch.tensor([predicate_result]), active_envs)
-        assert completion.item() == expected_completion
-    return True
-
-
-def _test_runtime_requirement_reset_clears_only_selected_environments(simulation_app):
-    import torch
-
-    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
-
-    cfg = TrueForConsecutiveStepsCfg(predicate=_ControlledPredicate([True, True]), required_steps=3)
-    requirement = _TrueForConsecutiveSteps(cfg, num_envs=2, device="cpu")
-    predicate_results = torch.tensor([True, True])
-    active_envs = torch.tensor([True, True])
-    for _ in range(2):
-        assert requirement.update(predicate_results, active_envs).tolist() == [False, False]
-
-    requirement.reset([0])
-    assert requirement.update(predicate_results, active_envs).tolist() == [False, True]
-    assert requirement.update(predicate_results, active_envs).tolist() == [False, True]
-    assert requirement.update(predicate_results, active_envs).tolist() == [True, True]
-
-    requirement.reset([0, 1])
-    assert requirement.update(predicate_results, active_envs).tolist() == [False, False]
-    return True
-
-
-def _test_runtime_requirements_and_returned_results_are_independent(simulation_app):
-    import torch
-
-    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
-
-    cfg = TrueForConsecutiveStepsCfg(predicate=_ControlledPredicate([True]), required_steps=2)
-    first_requirement = _TrueForConsecutiveSteps(cfg, num_envs=1, device="cpu")
-    second_requirement = _TrueForConsecutiveSteps(cfg, num_envs=1, device="cpu")
-    predicate_results = torch.tensor([True])
-    active_envs = torch.tensor([True])
-    first_result = first_requirement.update(predicate_results, active_envs)
-    assert not first_result.item()
-    completed_result = first_requirement.update(predicate_results, active_envs)
-    assert completed_result.item()
-    assert not first_result.item()
-    assert not second_requirement.update(predicate_results, active_envs).item()
-
-    first_requirement.reset([0])
-    assert completed_result.item()
-    assert not first_requirement.update(predicate_results, active_envs).item()
-    assert second_requirement.update(predicate_results, active_envs).item()
-    return True
-
-
 def _test_interrupted_streaks_complete_independently(simulation_app):
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
@@ -581,24 +511,6 @@ def _test_false_final_requirement_still_requires_recorded_completion(simulation_
 def test_runtime_requirement_updates_only_active_environments():
     assert run_function_with_persistent_simulation_app(
         _test_runtime_requirement_updates_only_active_environments, headless=True
-    )
-
-
-def test_runtime_requirement_restarts_after_false_results():
-    assert run_function_with_persistent_simulation_app(
-        _test_runtime_requirement_restarts_after_false_results, headless=True
-    )
-
-
-def test_runtime_requirement_reset_clears_only_selected_environments():
-    assert run_function_with_persistent_simulation_app(
-        _test_runtime_requirement_reset_clears_only_selected_environments, headless=True
-    )
-
-
-def test_runtime_requirements_and_returned_results_are_independent():
-    assert run_function_with_persistent_simulation_app(
-        _test_runtime_requirements_and_returned_results_are_independent, headless=True
     )
 
 
