@@ -27,7 +27,7 @@ def _apply_tool_sort_camera_and_gripper(
     embodiment: IndustrialFr3Robotiq2f85Embodiment | IndustrialFr3Robotiq2f85DifferentialIKEmbodiment,
 ) -> None:
     """Apply easy tool-sort overhead camera and Robotiq actuator tuning."""
-    embodiment.camera_config.use_overhead_profile("tool_sorting")
+    embodiment.camera_config.configure_tool_sorting_overhead()
     driver = embodiment.scene_config.robot.actuators["robotiq_driver"]
     driver.stiffness = _TOOL_SORT_GRIPPER_STIFFNESS
     driver.damping = _TOOL_SORT_GRIPPER_DAMPING

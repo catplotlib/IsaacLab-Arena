@@ -121,10 +121,8 @@ class IndustrialFr3RobotiqCameraCfg(ArenaCameraCfg):
         ),
     )
 
-    def use_overhead_profile(self, profile: str) -> None:
-        """Select a task-calibrated overhead view; retain the other three cameras."""
-        if profile != "tool_sorting":
-            raise ValueError(f"Unknown FR3 overhead profile: {profile!r}")
+    def configure_tool_sorting_overhead(self) -> None:
+        """Apply the tool-sorting overhead view; retain the other three cameras."""
         camera = self.top_camera
         camera.width, camera.height = 1280, 960
         camera.offset.pos = (0.3, 0.0, 2.5)

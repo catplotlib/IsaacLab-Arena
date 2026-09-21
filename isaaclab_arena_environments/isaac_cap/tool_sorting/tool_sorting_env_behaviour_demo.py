@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from isaaclab_arena_environments.isaac_cap.tools import EnvBehaviourDemo
+from isaaclab_arena_environments.isaac_cap.tools.env_behaviour_demo import DifferentialIKEnvBehaviourDemo
 
 _DEMO_START_JOINT_POS = (
     0.07864274298115631,
@@ -68,10 +68,13 @@ def _build_tool_sort_demo_environment(level: str):
     return arena_environment
 
 
-class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
+class ToolSortingEnvBehaviourDemo(DifferentialIKEnvBehaviourDemo):
     """Optionally pick the battery with IK, then drop every tool into its compartment."""
 
     label = "tool-sort-validation"
+    max_translation_per_step_m = _MAX_TRANSLATION_PER_STEP_M
+    move_to_max_steps = _MOVE_TO_MAX_STEPS
+    position_tolerance_m = _PREGRASP_TOLERANCE_M
 
     def __init__(
         self,
@@ -115,30 +118,12 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
 
     def setup_demo(self) -> None:
         """Resolve IK controls, task objects, and compartment bounds."""
-        import torch
-
         from isaaclab_arena_environments.isaac_cap.tool_sorting.task import objects_in_regions
 
-        self.num_envs = self.base_env.num_envs
-        assert self.num_envs == _NUM_ENVS, f"Expected {_NUM_ENVS} environments, got {self.num_envs}."
-        self.torch = torch
+        self.setup_differential_ik(_NUM_ENVS)
         self._objects_in_regions = objects_in_regions
 
-        action_manager = self.base_env.action_manager
-        assert action_manager.active_terms == [
-            "arm_action",
-            "gripper_action",
-        ], f"Unexpected action terms: {action_manager.active_terms}."
-        assert action_manager.total_action_dim == 7, (
-            "The validation demo requires six relative IK commands and one gripper command; "
-            f"got {action_manager.total_action_dim} actions."
-        )
-        self.arm_action = action_manager.get_term("arm_action")
-        self.gripper_action = action_manager.get_term("gripper_action")
-        self.robot = self.base_env.scene["robot"]
-        body_ids, _ = self.robot.find_bodies("robotiq_base")
-        assert len(body_ids) == 1, f"Expected one robotiq_base body, got {body_ids}."
-        self.ee_body_id = int(body_ids[0])
+        self.gripper_action = self.base_env.action_manager.get_term("gripper_action")
         gripper_joint_ids, _ = self.robot.find_joints("left_driver_joint")
         assert len(gripper_joint_ids) == 1, f"Expected one left_driver_joint, got {gripper_joint_ids}."
         self.gripper_joint_id = int(gripper_joint_ids[0])
@@ -160,63 +145,11 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
             device=self.base_env.device,
         )
 
-    def _ee_position(self):
-        return self.robot.data.body_pos_w.torch[:, self.ee_body_id].clone()
-
-    def _ik_action(self, translation_delta_w=None, *, gripper_closed: bool):
-        """Build a relative-IK action, converting world translation into robot-base coordinates."""
-        import isaaclab.utils.math as math_utils
-
-        action = self.torch.zeros(
-            (self.num_envs, self.base_env.action_manager.total_action_dim),
-            device=self.base_env.device,
-        )
-        if translation_delta_w is not None:
-            delta_b = math_utils.quat_apply_inverse(
-                self.robot.data.root_quat_w.torch,
-                translation_delta_w,
-            )
-            distance = self.torch.linalg.vector_norm(delta_b, dim=-1, keepdim=True)
-            fraction = self.torch.clamp(_MAX_TRANSLATION_PER_STEP_M / distance.clamp_min(1.0e-9), max=1.0)
-            scaled_delta_b = delta_b * fraction
-            action[:, :3] = scaled_delta_b / self.arm_action._scale[:, :3]
-        action[:, -1] = float(gripper_closed)
-        return action
-
-    def _step(self, action):
-        """Step once and return the terminated-or-truncated mask."""
-        _, _, terminated, truncated, _ = self.step(action)
-        return terminated | truncated
-
     def _hold_with_action(self, steps: int, action) -> bool:
         return any(bool(self._step(action).any().item()) for _ in range(steps))
 
     def _hold_zero(self, steps: int) -> bool:
         return self._hold_with_action(steps, self._zero_action())
-
-    def _hold_ik(self, steps: int, *, gripper_closed: bool) -> bool:
-        return self._hold_with_action(steps, self._ik_action(gripper_closed=gripper_closed))
-
-    def _move_to(
-        self,
-        target_position_w,
-        *,
-        gripper_closed: bool,
-        label: str,
-        position_tolerance_m: float,
-    ) -> bool:
-        """Drive toward one Cartesian position and return whether the episode ended."""
-        for _ in range(_MOVE_TO_MAX_STEPS):
-            error_w = target_position_w - self._ee_position()
-            errors_m = self.torch.linalg.vector_norm(error_w, dim=-1)
-            if bool((errors_m <= position_tolerance_m).all().item()):
-                return self._hold_ik(10, gripper_closed=gripper_closed)
-            if bool(self._step(self._ik_action(error_w, gripper_closed=gripper_closed)).any().item()):
-                return True
-        errors_m = self.torch.linalg.vector_norm(target_position_w - self._ee_position(), dim=-1)
-        if bool((errors_m <= position_tolerance_m).all().item()):
-            return self._hold_ik(10, gripper_closed=gripper_closed)
-        raise RuntimeError(f"Timed out during {label}; maximum end-effector position error is {errors_m.max():.3f} m.")
 
     def _target_above_object(self, object_name: str, z_offset_m: float):
         object_position = self.base_env.scene[object_name].data.root_link_pos_w.torch.clone()

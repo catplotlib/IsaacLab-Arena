@@ -5,42 +5,6 @@
 
 external_yaml: tool_sorting_env_config.yaml
 env_name: vabar_tool_sorting_easy_2
-embodiment:
-  id: fr3
-  registry_name: tool_sorting_fr3_robotiq_2f85
-  params:
-    initial_pose:
-      position_xyz:
-      - -0.5
-      - -0.1
-      - 0.912
-      rotation_xyzw:
-      - 0.0
-      - 0.0
-      - 0.0
-      - -1.0
-    initial_joint_pose:
-    - 0
-    - 0.19634954084936207
-    - 0
-    - -2.617993877991494
-    - 0
-    - 2.941592653589793
-    - 0.7853981633974483
-background:
-  id: background
-  registry_name: fr3_workcell_table
-  params:
-    initial_pose:
-      position_xyz:
-      - -0.5
-      - -0.1
-      - 0.912
-      rotation_xyzw:
-      - 0.0
-      - 0.0
-      - 0.0
-      - 1.0
 objects:
 - id: hdr_shadow_receiver
   registry_name: hdr_shadow_receiver
@@ -96,12 +60,6 @@ objects:
   registry_name: vabar_tool_sort__insulating_tape
   params:
     instance_name: insulating_tape_0
-object_references:
-- id: table
-  parent_id: background
-  prim_path: placement_surface
-  object_type: base
-  params: {}
 relations:
 - kind: is_anchor
   subject: table

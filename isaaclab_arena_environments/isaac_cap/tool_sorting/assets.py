@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, Literal
 
 import isaaclab.sim as sim_utils
@@ -21,7 +22,14 @@ from isaaclab_arena.utils.pose import Pose
 TOOL_SORT_ASSET_ROOT = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/tool_sorting/assets"
 """Published tool-sorting asset tree."""
 
-_BIN_APPEARANCES = frozenset({"default", "bench", "electrical", "wiring"})
+
+class ToolSortBinAppearance(StrEnum):
+    """Available destination-bin label sets."""
+
+    DEFAULT = "default"
+    BENCH = "bench"
+    ELECTRICAL = "electrical"
+    WIRING = "wiring"
 
 
 def _tool_usd_path(name: str) -> str:
@@ -109,11 +117,11 @@ class IndustrialToolSortBin(Object):
         self,
         instance_name: str = "tool_sort_bin",
         side: Literal["source", "destination"] = "destination",
-        appearance: Literal["default", "bench", "electrical", "wiring"] = "default",
+        appearance: ToolSortBinAppearance | str = ToolSortBinAppearance.DEFAULT,
         initial_pose: Pose | None = None,
     ) -> None:
         assert side in {"source", "destination"}, f"Invalid tool-sort bin side: {side!r}"
-        assert appearance in _BIN_APPEARANCES, f"Invalid tool-sort bin appearance: {appearance!r}"
+        appearance = ToolSortBinAppearance(appearance)
         leaf = "bin1.usda" if side == "source" else f"bin2_{appearance}.usda"
         super().__init__(
             name=instance_name,
