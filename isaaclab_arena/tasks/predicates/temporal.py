@@ -3,9 +3,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""Temporal predicate requirements with runtime state owned by ProgressObjectiveRunner."""
+
 import torch
 from collections.abc import Callable
 from dataclasses import dataclass
+
+from isaaclab.managers import TerminationTermCfg
 
 
 # Isaac Lab prepares nested configuration fields in place, so this dataclass must remain mutable.
@@ -18,16 +22,16 @@ class TrueForConsecutiveStepsCfg:
     The predicate returns one Boolean per environment without maintaining a streak itself.
     """
 
-    predicate: Callable
-    """Configured callable that checks the complete condition for the current step."""
+    predicate: Callable | TerminationTermCfg
+    """Instantaneous check; a callable class in TerminationTermCfg can be initialized with the environment."""
 
     required_steps: int
     """Positive number of consecutive qualifying control steps."""
 
     def __post_init__(self):
-        assert callable(self.predicate) and not isinstance(
-            self.predicate, type
-        ), "predicate must be a configured instantaneous callable."
+        assert isinstance(self.predicate, TerminationTermCfg) or (
+            callable(self.predicate) and not isinstance(self.predicate, type)
+        ), "predicate must be a configured instantaneous callable or TerminationTermCfg."
         assert (
             isinstance(self.required_steps, int)
             and not isinstance(self.required_steps, bool)

@@ -23,7 +23,8 @@ Included predicates
 
 Arena comes with an existing collection of predicates under ``isaaclab_arena.tasks.predicates``, including:
 
-* ``objects_settled`` — all selected objects are below linear and angular velocity thresholds.
+* ``objects_below_velocity_thresholds`` — all selected objects are below linear and angular velocity thresholds.
+* ``objects_settled`` — the same rest check, also recording each object's first resting pose.
 * ``object_is_above_height`` — an object is above a fixed height or its recorded resting height.
 * ``object_moving`` — an object exceeds a linear velocity threshold.
 * ``objects_in_proximity`` — two objects are within configured axis-aligned distances.
@@ -76,9 +77,9 @@ Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exa
    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-   from isaaclab_arena.progress_tracking.true_for_consecutive_steps import TrueForConsecutiveStepsCfg
    from isaaclab_arena.tasks.predicates.object_settling import objects_settled
    from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+   from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
    def get_termination_cfg(self) -> TaskTerminationCfg:
@@ -125,7 +126,11 @@ Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exa
 
 ``functools.partial`` supplies the arguments for a single-step check.
 ``TrueForConsecutiveStepsCfg`` wraps that configured callable when it must remain true for several steps.
-Managed ``TerminationTermCfg`` predicates also remain supported.
+An instantaneous check that needs environment-dependent initialization can also be supplied
+as a ``TerminationTermCfg`` inside the requirement. For a callable class, ``ProgressObjectiveRunner``
+constructs it with ``(cfg, env)``; it does not need to inherit from ``ManagerTermBase``.
+This initialization is separate from counting steps.
+
 ``PickAndPlaceTask`` defaults to ``placement_consecutive_steps=1``. Set it to a larger positive
 integer, such as ``10``, to require placement, support, and low speed to hold together for that
 many consecutive control steps.

@@ -11,18 +11,15 @@ import torch
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
-from isaaclab_arena.progress_tracking.true_for_consecutive_steps import (
-    TrueForConsecutiveStepsCfg,
-    _TrueForConsecutiveSteps,
-)
 from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
 from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
 
 
 def _initialize_predicate_parameters(value, env) -> None:
@@ -30,9 +27,8 @@ def _initialize_predicate_parameters(value, env) -> None:
     if isinstance(value, TerminationTermCfg):
         _initialize_predicate_parameters(value.params, env)
         if isinstance(value.func, type):
-            assert issubclass(value.func, ManagerTermBase), "Managed predicates must inherit ManagerTermBase."
             value.func = value.func(value, env)
-        assert callable(value.func), "Predicate configs must specify a callable or ManagerTermBase class."
+        assert callable(value.func), "Predicate configs must resolve to a callable."
     elif isinstance(value, SceneEntityCfg):
         value.resolve(env.scene)
     elif isinstance(value, dict):
@@ -44,19 +40,19 @@ def _initialize_predicate_parameters(value, env) -> None:
 
 
 def _resolve_progress_predicate(predicate, env):
-    """Instantiate a managed predicate config when the tracker gains access to the environment."""
+    """Prepare a callable for ProgressObjectiveRunner.
+
+    Configured classes accept (cfg, env) and produce callable objects; no manager base class is required.
+    """
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
     # NOTE(cvolk): TaskSuccessTerm creates the tracker while TerminationManager is
     # still being constructed, before env.termination_manager is assigned.
     # We therefore cannot delegate nested predicate initialization to that manager.
-    # TODO(cvolk): Revisit this TerminationTermCfg adapter during the stateful predicate redesign.
-    # Preserve environment-aware construction and nested SceneEntityCfg resolution.
-
     if not isinstance(predicate, TerminationTermCfg):
         return predicate
 
-    assert env is not None, "An environment is required to resolve a managed progress predicate."
+    assert env is not None, "An environment is required to initialize a configured progress predicate."
     predicate_cfg = copy.deepcopy(predicate)
     _initialize_predicate_parameters(predicate_cfg, env)
     return functools.partial(predicate_cfg.func, **predicate_cfg.params)
@@ -154,7 +150,10 @@ class ProgressObjectiveRunner:
             for predicate, score in chain:
                 if isinstance(predicate, TrueForConsecutiveStepsCfg):
                     # Reusing a declaration must not share counter state between occurrences.
-                    predicate = replace(predicate)
+                    predicate = replace(
+                        predicate,
+                        predicate=_resolve_progress_predicate(predicate.predicate, env),
+                    )
                     self._consecutive_step_requirements[id(predicate)] = _TrueForConsecutiveSteps(
                         cfg=predicate, num_envs=num_envs, device=device
                     )
@@ -578,8 +577,8 @@ class ProgressTracker:
         objective_name: str,
         sequence_name: str = DEFAULT_GROUP_NAME,
         predicate_index: int = 0,
-    ) -> Callable | TrueForConsecutiveStepsCfg:
-        """Return a predicate or requirement definition without evaluating it.
+    ) -> Callable:
+        """Return the resolved predicate for reading diagnostics without evaluating it.
 
         Args:
             objective_name: Name of the ProgressObjective containing the predicate.
@@ -589,6 +588,8 @@ class ProgressTracker:
         for runner in self.runners:
             if runner.progress_objective.name == objective_name:
                 predicate = runner.predicate_chains[sequence_name][predicate_index][0]
+                if isinstance(predicate, TrueForConsecutiveStepsCfg):
+                    predicate = predicate.predicate
                 while isinstance(predicate, functools.partial):
                     predicate = predicate.func
                 return predicate
