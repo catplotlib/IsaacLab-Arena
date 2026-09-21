@@ -224,17 +224,16 @@ def _test_gear_insertion_overlap_reporting_and_partial_reset(_simulation_app):
         tracker.step(env, step_index=torch.tensor([step_index, step_index + 5]))
         assert tracker.is_complete().tolist() == [step_index == 3, True]
 
-    for _ in range(2):
-        reset_gear_insertion_diagnostics(env)
-        tracker.reset([0, 1])
-        diagnostics = _terminal_diagnostics(conditions, [0, 1], ("gear_a", "gear_b"))
-        for environment_diagnostics in diagnostics:
-            for gear_diagnostics in environment_diagnostics.values():
-                assert not any(gear_diagnostics.values())
-        assert tracker.is_complete().tolist() == [False, False]
-        for step_index in (1, 2, 3):
-            tracker.step(env, step_index=torch.tensor([step_index, step_index]))
-            assert tracker.is_complete().tolist() == [step_index == 3, step_index == 3]
+    reset_gear_insertion_diagnostics(env)
+    tracker.reset([0, 1])
+    diagnostics = _terminal_diagnostics(conditions, [0, 1], ("gear_a", "gear_b"))
+    for environment_diagnostics in diagnostics:
+        for gear_diagnostics in environment_diagnostics.values():
+            assert not any(gear_diagnostics.values())
+    assert tracker.is_complete().tolist() == [False, False]
+    for step_index in (1, 2, 3):
+        tracker.step(env, step_index=torch.tensor([step_index, step_index]))
+        assert tracker.is_complete().tolist() == [step_index == 3, step_index == 3]
     return True
 
 

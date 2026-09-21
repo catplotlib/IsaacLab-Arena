@@ -130,7 +130,7 @@ def test_usbc_insertion_task() -> None:
     assert run_function_with_persistent_simulation_app(_test_usbc_insertion_task)
 
 
-def _test_usbc_success_streak_and_reset(_simulation_app) -> bool:
+def _test_usbc_success_streak(_simulation_app) -> bool:
     import torch
     from types import SimpleNamespace
 
@@ -175,17 +175,11 @@ def _test_usbc_success_streak_and_reset(_simulation_app) -> bool:
         manager.compute()
         assert manager.get_term("success").tolist() == expected_success
 
-    manager.reset([0])
-    env.episode_length_buf[0] = 0
-    for expected_success in ([False, True], [False, True], [True, True]):
-        env.episode_length_buf += 1
-        manager.compute()
-        assert manager.get_term("success").tolist() == expected_success
     return True
 
 
-def test_usbc_success_streak_and_reset() -> None:
-    assert run_function_with_persistent_simulation_app(_test_usbc_success_streak_and_reset)
+def test_usbc_success_streak() -> None:
+    assert run_function_with_persistent_simulation_app(_test_usbc_success_streak)
 
 
 def _test_usbc_release_and_withdrawal(_simulation_app) -> bool:

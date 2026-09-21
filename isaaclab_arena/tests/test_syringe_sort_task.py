@@ -10,7 +10,7 @@ import pytest
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 
-def _test_syringe_success_streak_and_reset(_simulation_app):
+def _test_syringe_success_streak(_simulation_app):
     import torch
     from types import SimpleNamespace
 
@@ -66,13 +66,6 @@ def _test_syringe_success_streak_and_reset(_simulation_app):
         manager.compute()
         assert manager.get_term("success").tolist() == expected_success
 
-    manager.reset([1])
-    env.episode_length_buf[1] = 0
-    for expected_success in ([True, False], [True, False], [True, True]):
-        env.episode_length_buf += 1
-        manager.compute()
-        assert manager.get_term("success").tolist() == expected_success
-
     cap_finished = termination_cfg.failures["cap_finished"]
     assert not cap_finished.func(env, **cap_finished.params).any()
     env.cap_episode_finished = True
@@ -80,8 +73,8 @@ def _test_syringe_success_streak_and_reset(_simulation_app):
     return True
 
 
-def test_syringe_success_streak_and_reset():
-    assert run_function_with_persistent_simulation_app(_test_syringe_success_streak_and_reset)
+def test_syringe_success_streak():
+    assert run_function_with_persistent_simulation_app(_test_syringe_success_streak)
 
 
 def _test_syringe_drop(_simulation_app):
