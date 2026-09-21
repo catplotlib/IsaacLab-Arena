@@ -46,7 +46,9 @@ class _TrueForConsecutiveSteps:
     and resets this requirement. This class does not evaluate predicates or track step indices.
     """
 
-    def __init__(self, cfg: TrueForConsecutiveStepsCfg, *, num_envs: int, device):
+    def __init__(self, cfg: TrueForConsecutiveStepsCfg, *, predicate: Callable, num_envs: int, device):
+        self.predicate = predicate
+        """Instantaneous callable prepared by ProgressObjectiveRunner."""
         self.required_steps = cfg.required_steps
         self._consecutive_true_steps = torch.zeros(num_envs, dtype=torch.long, device=device)
 

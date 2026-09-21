@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from isaaclab.managers import TerminationTermCfg
 
-from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
 
 Predicate = Callable | TerminationTermCfg | TrueForConsecutiveStepsCfg
 PredicateSequence = list[Predicate] | list[tuple[Predicate, float]]
@@ -21,10 +21,10 @@ PredicateSequences = dict[str, PredicateSequence]
 DEFAULT_GROUP_NAME = "default_group"
 
 
-def _predicate_repr(pred: Predicate) -> str:
+def _predicate_repr(pred: Predicate | _TrueForConsecutiveSteps) -> str:
     """Generate human-readable string representation for a predicate."""
 
-    if isinstance(pred, TrueForConsecutiveStepsCfg):
+    if isinstance(pred, (TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps)):
         return f"TrueForConsecutiveStepsCfg({_predicate_repr(pred.predicate)}, required_steps={pred.required_steps})"
     if isinstance(pred, TerminationTermCfg):
         pred = functools.partial(pred.func, **pred.params)
