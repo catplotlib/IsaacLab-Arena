@@ -321,10 +321,13 @@ class GroundPlane(LibraryObject):
         instance_name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
-        spawner_cfg: sim_utils.GroundPlaneCfg = default_spawner_cfg,
+        spawner_cfg: sim_utils.GroundPlaneCfg | None = None,
     ):
         super().__init__(
-            instance_name=instance_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
+            instance_name=instance_name,
+            prim_path=prim_path,
+            initial_pose=initial_pose,
+            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
         )
 
 
@@ -358,14 +361,14 @@ class Sphere(LibraryObject):
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
         scale: tuple[float, float, float] | None = None,
-        spawner_cfg: sim_utils.SphereCfg = default_spawner_cfg,
+        spawner_cfg: sim_utils.SphereCfg | None = None,
     ):
         super().__init__(
             instance_name=instance_name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             scale=scale,
-            spawner_cfg=spawner_cfg,
+            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
         )
 
 
@@ -450,7 +453,7 @@ class DomeLight(LightBase):
         instance_name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
-        spawner_cfg: sim_utils.DomeLightCfg = default_spawner_cfg,
+        spawner_cfg: sim_utils.DomeLightCfg | None = None,
         hdr: "HDRImage | None" = None,  # noqa: F821
     ):
         from isaaclab_arena.variations.hdr_image_variation import HDRImageVariation
@@ -459,7 +462,10 @@ class DomeLight(LightBase):
         from isaaclab_arena.variations.light_intensity_variation import LightIntensityVariation
 
         super().__init__(
-            instance_name=instance_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
+            instance_name=instance_name,
+            prim_path=prim_path,
+            initial_pose=initial_pose,
+            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
         )
         if hdr is not None:
             self.add_hdr(hdr)
@@ -504,7 +510,7 @@ class DirectionalLight(LightBase):
         instance_name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
-        spawner_cfg: sim_utils.DistantLightCfg = default_spawner_cfg,
+        spawner_cfg: sim_utils.DistantLightCfg | None = None,
     ):
         from isaaclab_arena.variations.light_color_temperature_variation import LightColorTemperatureVariation
         from isaaclab_arena.variations.light_color_variation import LightColorVariation
@@ -515,7 +521,7 @@ class DirectionalLight(LightBase):
             instance_name=instance_name,
             prim_path=prim_path,
             initial_pose=initial_pose if initial_pose is not None else self.default_initial_pose,
-            spawner_cfg=spawner_cfg,
+            spawner_cfg=copy.deepcopy(self.default_spawner_cfg) if spawner_cfg is None else spawner_cfg,
         )
         self.add_variation(LightDirectionVariation(self))
         self.add_variation(LightIntensityVariation(self))
