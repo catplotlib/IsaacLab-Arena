@@ -26,37 +26,24 @@ _GEAR_GATE_NAMES = ("xy", "z", "upright", "support", "velocity")
 def _terminal_diagnostics(success_predicate, env_ids, gear_names: tuple[str, ...]) -> list[dict[str, dict[str, bool]]]:
     """Build per-episode completion and gate diagnostics for each gear."""
 
-    assert success_predicate.results.ndim == 2, "Gear insertion success results must have shape (num_gears, num_envs)."
-    assert success_predicate.results.shape[0] == len(gear_names), (
-        f"Gear insertion success exposes {success_predicate.results.shape[0]} gears, but {len(gear_names)} names were"
-        " provided."
-    )
-    assert len(success_predicate.predicates) == len(gear_names), (
-        f"Gear insertion success configures {len(success_predicate.predicates)} gear predicates, but "
-        f"{len(gear_names)} names were provided."
-    )
-
-    per_gear_completion = success_predicate.results[:, env_ids].transpose(0, 1).tolist()
-    per_gear_gates = []
-    for predicate_cfg in success_predicate.predicates:
-        gear_predicate = predicate_cfg.func
-        assert hasattr(gear_predicate, "results"), "Gear insertion child predicate does not expose gate results."
-        assert gear_predicate.results.ndim == 2, "Gear gate results must have shape (num_gates, num_envs)."
-        assert gear_predicate.results.shape == (len(_GEAR_GATE_NAMES), success_predicate.results.shape[1]), (
-            f"Gear gate results have shape {tuple(gear_predicate.results.shape)}; expected "
-            f"({len(_GEAR_GATE_NAMES)}, {success_predicate.results.shape[1]})."
-        )
-        per_gear_gates.append(gear_predicate.results[:, env_ids].transpose(0, 1).tolist())
-
-    episodes = []
-    for env_index, completion in enumerate(per_gear_completion):
-        episode = {}
-        for gear_index, gear_name in enumerate(gear_names):
-            episode[gear_name] = {
-                "success": bool(completion[gear_index]),
-                **dict(zip(_GEAR_GATE_NAMES, per_gear_gates[gear_index][env_index], strict=True)),
-            }
-        episodes.append(episode)
+    assert set(success_predicate.per_gear_results) == set(
+        gear_names
+    ), "Gear diagnostics must match the requested gears."
+    episodes = [{} for _ in env_ids]
+    for gear_name in gear_names:
+        gear_results = success_predicate.per_gear_results[gear_name]
+        gate_results = success_predicate.per_gear_gate_results[gear_name]
+        assert gear_results.ndim == 1, "Gear completion results must have shape (num_envs,)."
+        assert set(gate_results) == set(_GEAR_GATE_NAMES), "Gear diagnostics must report all five placement gates."
+        completion = gear_results[env_ids].tolist()
+        diagnostics = {}
+        for gate_name, results in gate_results.items():
+            assert results.shape == gear_results.shape, "Gear gate results must have shape (num_envs,)."
+            diagnostics[gate_name] = results[env_ids].tolist()
+        for env_index, episode in enumerate(episodes):
+            episode[gear_name] = {"success": completion[env_index]}
+            for gate_name, values in diagnostics.items():
+                episode[gear_name][gate_name] = values[env_index]
     return episodes
 
 
@@ -78,9 +65,8 @@ class GearInsertionFractionRecorder(RecorderTerm):
         progress_tracker = self._env.progress_tracker
         assert progress_tracker is not None, "Gear insertion diagnostics require task success tracking."
         success_predicate = progress_tracker.get_predicate("gear_insertion")
-        if not hasattr(success_predicate, "results"):
-            raise TypeError("gear insertion success predicate does not expose per-gear completion")
-        per_gear = success_predicate.results[:, env_ids].transpose(0, 1)
+        per_gear_results = [success_predicate.per_gear_results[gear_name][env_ids] for gear_name in self.gear_names]
+        per_gear = torch.stack(per_gear_results, dim=-1)
         assert per_gear.ndim == 2 and per_gear.shape[1] == len(self.gear_names), (
             f"Gear completion results have shape {tuple(per_gear.shape)}; expected "
             f"(num_episodes, {len(self.gear_names)})."

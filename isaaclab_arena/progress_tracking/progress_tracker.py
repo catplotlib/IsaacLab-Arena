@@ -17,60 +17,51 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective, ProgressObjectiveCompletionMode
 from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GROUP_NAME, _predicate_repr
-from isaaclab_arena.progress_tracking.true_for_consecutive_steps import (
-    TrueForConsecutiveStepsCfg,
-    _TrueForConsecutiveSteps,
-)
-from isaaclab_arena.tasks.predicates.composite import reset_managed_predicates
-from isaaclab_arena.tasks.predicates.consecutive import ConsecutivePredicate
+from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
 
 
-def _initialize_predicate_parameters(value, env) -> None:
+def _register_managed_predicate(predicate, managed_predicates: dict[int, ManagerTermBase]) -> None:
+    """Remember each managed callable once for episode resets."""
+    while isinstance(predicate, functools.partial):
+        predicate = predicate.func
+    if isinstance(predicate, ManagerTermBase):
+        managed_predicates[id(predicate)] = predicate
+
+
+def _initialize_predicate_parameters(value, env, managed_predicates: dict[int, ManagerTermBase]) -> None:
     """Resolve scene references and construct nested predicates before their parents."""
     if isinstance(value, TerminationTermCfg):
-        _initialize_predicate_parameters(value.params, env)
+        _initialize_predicate_parameters(value.params, env, managed_predicates)
         if isinstance(value.func, type):
             assert issubclass(value.func, ManagerTermBase), "Managed predicates must inherit ManagerTermBase."
             value.func = value.func(value, env)
         assert callable(value.func), "Predicate configs must specify a callable or ManagerTermBase class."
+        _register_managed_predicate(value.func, managed_predicates)
     elif isinstance(value, SceneEntityCfg):
         value.resolve(env.scene)
     elif isinstance(value, dict):
         for parameter in value.values():
-            _initialize_predicate_parameters(parameter, env)
+            _initialize_predicate_parameters(parameter, env, managed_predicates)
     elif isinstance(value, (list, tuple)):
         for parameter in value:
-            _initialize_predicate_parameters(parameter, env)
+            _initialize_predicate_parameters(parameter, env, managed_predicates)
 
 
-def _resolve_progress_predicate(predicate, env):
+def _resolve_progress_predicate(predicate, env, managed_predicates: dict[int, ManagerTermBase]):
     """Instantiate a managed predicate config when the tracker gains access to the environment."""
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
     # NOTE(cvolk): TaskSuccessTerm creates the tracker while TerminationManager is
     # still being constructed, before env.termination_manager is assigned.
     # We therefore cannot delegate nested predicate initialization to that manager.
-    # TODO(cvolk): Revisit this TerminationTermCfg adapter during the stateful predicate redesign.
-    # Preserve environment-aware construction and nested SceneEntityCfg resolution.
-
     if not isinstance(predicate, TerminationTermCfg):
+        _register_managed_predicate(predicate, managed_predicates)
         return predicate
 
     assert env is not None, "An environment is required to resolve a managed progress predicate."
     predicate_cfg = copy.deepcopy(predicate)
-    _initialize_predicate_parameters(predicate_cfg, env)
+    _initialize_predicate_parameters(predicate_cfg, env, managed_predicates)
     return functools.partial(predicate_cfg.func, **predicate_cfg.params)
-
-
-def _evaluate_progress_predicate_with_state_update_mask(predicate, env, state_update_mask: torch.Tensor):
-    """Evaluate a predicate without mutating inactive consecutive-predicate environments."""
-
-    # TODO(cvolk): Revisit ConsecutivePredicate-specific dispatch during the stateful predicate redesign.
-    # Preserve state updates only for environments where the predicate is active.
-    predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
-    if isinstance(predicate_func, ConsecutivePredicate):
-        return predicate(env, active_mask=state_update_mask)
-    return predicate(env)
 
 
 @dataclass
@@ -149,17 +140,21 @@ class ProgressObjectiveRunner:
         self.group_complete: dict[str, torch.Tensor] = {}
         self.predicate_chains = {}
         self._consecutive_step_requirements: dict[int, _TrueForConsecutiveSteps] = {}
+        self._managed_predicates: dict[int, ManagerTermBase] = {}
         for group_name, chain in progress_objective.canonical_predicate_sequences.items():
             resolved_chain = []
             for predicate, score in chain:
                 if isinstance(predicate, TrueForConsecutiveStepsCfg):
                     # Reusing a declaration must not share counter state between occurrences.
-                    predicate = replace(predicate)
+                    predicate = replace(
+                        predicate,
+                        predicate=_resolve_progress_predicate(predicate.predicate, env, self._managed_predicates),
+                    )
                     self._consecutive_step_requirements[id(predicate)] = _TrueForConsecutiveSteps(
                         cfg=predicate, num_envs=num_envs, device=device
                     )
                 else:
-                    predicate = _resolve_progress_predicate(predicate, env)
+                    predicate = _resolve_progress_predicate(predicate, env, self._managed_predicates)
                 resolved_chain.append((predicate, score))
             self.predicate_chains[group_name] = resolved_chain
 
@@ -226,8 +221,7 @@ class ProgressObjectiveRunner:
                 torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             )
         cached_result, evaluated_envs = predicate_results_this_step[predicate_key]
-        predicate_func = predicate.func if isinstance(predicate, functools.partial) else predicate
-        if not isinstance(predicate_func, (ConsecutivePredicate, TrueForConsecutiveStepsCfg)):
+        if not isinstance(predicate, TrueForConsecutiveStepsCfg):
             state_update_mask = torch.ones_like(state_update_mask)
         # Evaluate only requested environments that have no result cached for this update.
         pending_envs = state_update_mask & ~evaluated_envs
@@ -240,7 +234,7 @@ class ProgressObjectiveRunner:
                 result = requirement.update(predicate_results, active_envs=pending_envs)
             else:
                 result = torch.as_tensor(
-                    _evaluate_progress_predicate_with_state_update_mask(predicate, env, pending_envs),
+                    predicate(env),
                     dtype=torch.bool,
                     device=self.device,
                 )
@@ -362,10 +356,8 @@ class ProgressObjectiveRunner:
 
         self._reset_consecutive_step_requirements(env_ids)
 
-        reset_managed_predicates(
-            (predicate for predicate_chain in self.predicate_chains.values() for predicate, _score in predicate_chain),
-            env_ids,
-        )
+        for predicate in self._managed_predicates.values():
+            predicate.reset(env_ids)
 
     def _reset_consecutive_step_requirements(self, env_ids) -> None:
         """Clear streaks without erasing completed predicates."""
@@ -570,16 +562,13 @@ class ProgressTracker:
         assert self._subtask_runners, "Subtask completion requires objectives with subtask indices."
         return torch.stack([self._all_objectives_complete(runners) for runners in self._subtask_runners], dim=1)
 
-    # TODO(cvolk): Revisit predicate-instance access during the stateful predicate redesign.
-    # Retained for GearInsertionFractionRecorder and GearEnvBehaviourDemo, which read
-    # cached CompositePredicate results.
     def get_predicate(
         self,
         objective_name: str,
         sequence_name: str = DEFAULT_GROUP_NAME,
         predicate_index: int = 0,
-    ) -> Callable | TrueForConsecutiveStepsCfg:
-        """Return a predicate or requirement definition without evaluating it.
+    ) -> Callable:
+        """Return the resolved predicate for reading diagnostics without evaluating it.
 
         Args:
             objective_name: Name of the ProgressObjective containing the predicate.
@@ -589,6 +578,8 @@ class ProgressTracker:
         for runner in self.runners:
             if runner.progress_objective.name == objective_name:
                 predicate = runner.predicate_chains[sequence_name][predicate_index][0]
+                if isinstance(predicate, TrueForConsecutiveStepsCfg):
+                    predicate = predicate.predicate
                 while isinstance(predicate, functools.partial):
                     predicate = predicate.func
                 return predicate

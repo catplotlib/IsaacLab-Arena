@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from isaaclab.managers import TerminationTermCfg
 
-from isaaclab_arena.progress_tracking.true_for_consecutive_steps import TrueForConsecutiveStepsCfg
+from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
 Predicate = Callable | TerminationTermCfg | TrueForConsecutiveStepsCfg
 PredicateSequence = list[Predicate] | list[tuple[Predicate, float]]

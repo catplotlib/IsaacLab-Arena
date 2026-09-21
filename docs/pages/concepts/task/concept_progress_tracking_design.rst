@@ -76,7 +76,7 @@ Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exa
    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-   from isaaclab_arena.progress_tracking.true_for_consecutive_steps import TrueForConsecutiveStepsCfg
+   from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
    from isaaclab_arena.tasks.predicates.object_settling import objects_settled
    from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
    from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
@@ -125,7 +125,8 @@ Add ``ProgressObjective`` entries to ``TaskTerminationCfg.success``. Provide exa
 
 ``functools.partial`` supplies the arguments for a single-step check.
 ``TrueForConsecutiveStepsCfg`` wraps that configured callable when it must remain true for several steps.
-Managed ``TerminationTermCfg`` predicates also remain supported.
+An instantaneous check that needs environment-dependent initialization can also be supplied
+as a ``TerminationTermCfg`` inside the requirement. Its initialization is separate from counting steps.
 ``PickAndPlaceTask`` defaults to ``placement_consecutive_steps=1``. Set it to a larger positive
 integer, such as ``10``, to require placement, support, and low speed to hold together for that
 many consecutive control steps.
@@ -177,6 +178,11 @@ Use ``TrueForConsecutiveStepsCfg`` around a configured callable:
 and active environments to that instance. ``_TrueForConsecutiveSteps`` stores the per-environment
 counts: true adds one; false clears the streak.
 The runner resets it through the existing ``TaskSuccessTerm`` / ``ProgressTracker`` episode-reset path.
+
+This replaces ``ConsecutivePredicate`` and the manager-based ``CompositePredicate``. Combine
+instantaneous conditions first, then wrap their shared result in one consecutive-step requirement.
+``objects_below_velocity_thresholds`` checks rest without recording a pose; the existing
+``objects_settled`` function still records the first resting pose for tasks that need that reference.
 
 To require overlapping conditions, combine them before counting. Here A must rest while B is
 touching for the same ten steps, after lifting and placement:

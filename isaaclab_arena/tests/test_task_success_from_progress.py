@@ -300,23 +300,27 @@ def _test_success_results_remain_stable_after_updates_and_reset(simulation_app):
     return True
 
 
-def _test_nested_predicates_resolve_scene_references(simulation_app):
+def _test_temporal_predicate_resolves_scene_references_and_resets(simulation_app):
     import torch
 
     from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.tasks.predicates.composite import CompositePredicate
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
     class _BodyPredicate(ManagerTermBase):
         def __init__(self, cfg, env):
             super().__init__(cfg, env)
             assert cfg.params["asset_cfg"].body_ids == [1]
+            self.reset_calls = []
 
         def __call__(self, env, asset_cfg):
             assert asset_cfg.body_ids == [1]
             return env.valid
+
+        def reset(self, env_ids=None):
+            self.reset_calls.append(env_ids.clone())
 
     gear = SimpleNamespace(
         body_names=["base", "tip"],
@@ -326,25 +330,35 @@ def _test_nested_predicates_resolve_scene_references(simulation_app):
     env = SimpleNamespace(num_envs=2, device="cpu", scene={"gear": gear}, valid=torch.tensor([True, False]))
     gear_cfg = SceneEntityCfg("gear", body_names=["tip"])
     body_predicate_cfg = TerminationTermCfg(func=_BodyPredicate, params={"asset_cfg": gear_cfg})
-    composite_cfg = TerminationTermCfg(
-        func=CompositePredicate,
-        params={"predicates": [body_predicate_cfg], "consecutive_steps": 2},
-    )
-    objective = ProgressObjective(name="gear_insertion", predicate_sequence=[composite_cfg])
+    requirement = TrueForConsecutiveStepsCfg(predicate=body_predicate_cfg, required_steps=2)
+    objective = ProgressObjective(name="gear_insertion", predicate_sequence=[requirement])
     tracker = ProgressTracker([objective], num_envs=env.num_envs, device=env.device, env=env)
-    tracker.step(env, step_index=None)
+    predicate = tracker.get_predicate("gear_insertion")
+    assert isinstance(predicate, _BodyPredicate)
+    tracker.step(env, step_index=torch.tensor([1, 1]))
     assert tracker.is_complete().tolist() == [False, False]
-    tracker.step(env, step_index=None)
+    tracker.step(env, step_index=torch.tensor([2, 2]))
     assert tracker.is_complete().tolist() == [True, False]
 
-    # Reusing the task definition constructs independent counters and leaves scene references unresolved.
+    # Reusing the declaration constructs a new predicate without changing the original scene reference.
     rebuilt_tracker = ProgressTracker([objective], num_envs=env.num_envs, device=env.device, env=env)
-    rebuilt_tracker.step(env, step_index=None)
+    rebuilt_predicate = rebuilt_tracker.get_predicate("gear_insertion")
+    assert isinstance(rebuilt_predicate, _BodyPredicate)
+    assert rebuilt_predicate is not predicate
+    rebuilt_tracker.step(env, step_index=torch.tensor([1, 1]))
     assert rebuilt_tracker.is_complete().tolist() == [False, False]
     assert tracker.is_complete().tolist() == [True, False]
-    assert composite_cfg.func is CompositePredicate
     assert body_predicate_cfg.func is _BodyPredicate
     assert gear_cfg.body_ids == slice(None)
+
+    tracker.reset(torch.tensor([0]))
+    assert len(predicate.reset_calls) == 1
+    assert predicate.reset_calls[0].tolist() == [0]
+    assert rebuilt_predicate.reset_calls == []
+    tracker.step(env, step_index=torch.tensor([1, 3]))
+    assert tracker.is_complete().tolist() == [False, False]
+    tracker.step(env, step_index=torch.tensor([2, 4]))
+    assert tracker.is_complete().tolist() == [True, False]
     return True
 
 
@@ -537,11 +551,11 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorder
     from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
-    from isaaclab_arena.progress_tracking.true_for_consecutive_steps import TrueForConsecutiveStepsCfg
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
     from isaaclab_arena.tasks.predicates.object_settling import objects_settled
     from isaaclab_arena.tasks.predicates.spatial import object_is_above_height, object_on_destination
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
     from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
     pick_up_object = SimpleNamespace(
@@ -714,8 +728,8 @@ def test_success_results_remain_stable_after_updates_and_reset():
     assert run_function_with_persistent_simulation_app(_test_success_results_remain_stable_after_updates_and_reset)
 
 
-def test_nested_predicates_resolve_scene_references():
-    assert run_function_with_persistent_simulation_app(_test_nested_predicates_resolve_scene_references)
+def test_temporal_predicate_resolves_scene_references_and_resets():
+    assert run_function_with_persistent_simulation_app(_test_temporal_predicate_resolves_scene_references_and_resets)
 
 
 def test_success_requires_objectives_and_one_owner():
