@@ -20,6 +20,17 @@ class TrueForConsecutiveStepsCfg:
     ProgressObjectiveRunner creates and owns a _TrueForConsecutiveSteps runtime instance
     for each configured occurrence.
     The predicate returns one Boolean per environment without maintaining a streak itself.
+
+    Require the cube to remain below the velocity thresholds for ten consecutive control steps::
+
+        from functools import partial
+        from isaaclab_arena.tasks.predicates.object_settling import objects_below_velocity_thresholds
+
+        resting = partial(objects_below_velocity_thresholds, object_names=["cube"])
+        TrueForConsecutiveStepsCfg(
+            predicate=resting,
+            required_steps=10,
+        )
     """
 
     predicate: Callable | TerminationTermCfg

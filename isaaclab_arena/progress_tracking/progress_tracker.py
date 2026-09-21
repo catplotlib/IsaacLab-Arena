@@ -150,7 +150,8 @@ class ProgressObjectiveRunner:
             resolved_chain = []
             for predicate, score in chain:
                 if isinstance(predicate, TrueForConsecutiveStepsCfg):
-                    # Each occurrence owns its counters, even when declarations are reused.
+                    # Prepare the instantaneous check and create independent counters
+                    # for this occurrence, even when the same configuration is reused.
                     predicate = _TrueForConsecutiveSteps(
                         cfg=predicate,
                         predicate=_create_predicate_from_config(predicate.predicate, env),
@@ -159,6 +160,7 @@ class ProgressObjectiveRunner:
                     )
                     self._consecutive_step_requirements.append(predicate)
                 else:
+                    # Prepare an instantaneous check without adding counter state.
                     predicate = _create_predicate_from_config(predicate, env)
                 resolved_chain.append((predicate, score))
             self.predicate_chains[group_name] = resolved_chain
@@ -233,6 +235,8 @@ class ProgressObjectiveRunner:
         pending_envs = state_update_mask & ~evaluated_envs
         if bool(pending_envs.any().item()):
             if isinstance(predicate, _TrueForConsecutiveSteps):
+                # Evaluate or reuse the instantaneous check, then update this occurrence's
+                # counters only for environments that still need an update this step.
                 predicate_results = self._evaluate_predicate_with_cache(
                     predicate.predicate, env, predicate_results_this_step, pending_envs
                 )

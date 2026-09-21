@@ -273,7 +273,7 @@ Arena's episode recorder also serializes the final progress state and predicate 
 episode's JSONL record when an output path is configured. Tasks without progress objectives have
 no success termination or progress-tracking configuration and produce no progress fields.
 
-For example, one entry of the JSONL record may look like this (placement arguments shortened):
+For example, one entry of the JSONL record may look like this (placement predicate name shortened):
 
 .. code-block:: json
 
@@ -288,7 +288,7 @@ For example, one entry of the JSONL record may look like this (placement argumen
            "completed_groups": 0,
            "total_groups": 1,
            "active_predicates": {
-             "default_group": "TrueForConsecutiveStepsCfg(object_on_destination(...), required_steps=1)"
+             "default_group": "object_on_destination"
            }
          }
        },
