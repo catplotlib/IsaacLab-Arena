@@ -33,5 +33,3 @@ env_cfg_override:
         cone: elliptic
         use_mujoco_contacts: true
   decimation: 1
-  scene:
-    replicate_physics: true

@@ -13,7 +13,6 @@ from dataclasses import MISSING
 from typing import Any
 
 import isaaclab.envs.mdp as mdp
-import warp as wp
 from isaaclab.managers import EventTermCfg, TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import quat_apply_inverse
@@ -24,15 +23,6 @@ from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.tasks.task_base import TaskBase
 
 Bounds = tuple[float, float, float, float, float, float]
-
-
-def _as_torch(value) -> torch.Tensor:
-    """Return an Isaac Lab or Warp value as a torch tensor."""
-    if isinstance(value, torch.Tensor):
-        return value
-    if hasattr(value, "torch"):
-        return value.torch
-    return wp.to_torch(value)
 
 
 def objects_in_regions(
@@ -46,9 +36,9 @@ def objects_in_regions(
     for object_name, region_name, bounds in zip(object_names, region_names, bounds_xyzxyz, strict=True):
         object_data = env.scene[object_name].data
         region_data = env.scene[region_name].data
-        object_position_w = _as_torch(object_data.root_pos_w)
-        region_position_w = _as_torch(region_data.root_pos_w)
-        region_quaternion_w = _as_torch(region_data.root_quat_w)
+        object_position_w = object_data.root_pos_w.torch
+        region_position_w = region_data.root_pos_w.torch
+        region_quaternion_w = region_data.root_quat_w.torch
         object_position_r = quat_apply_inverse(
             region_quaternion_w,
             object_position_w - region_position_w,

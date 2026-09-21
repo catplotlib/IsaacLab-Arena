@@ -61,14 +61,6 @@ def _build_tool_sort_demo_environment(level: str):
     configure_tool_sort_placement(arena_environment)
 
     source_embodiment = arena_environment.embodiment
-    original_env_cfg_callback = arena_environment.env_cfg_callback
-
-    def _demo_env_cfg_callback(env_cfg):
-        if original_env_cfg_callback is not None:
-            env_cfg = original_env_cfg_callback(env_cfg)
-        return env_cfg
-
-    arena_environment.env_cfg_callback = _demo_env_cfg_callback
     arena_environment.embodiment = ToolSortingFr3Robotiq2f85DifferentialIKEmbodiment(
         initial_pose=source_embodiment.get_initial_pose(),
         initial_joint_pose=list(_DEMO_START_JOINT_POS),
@@ -401,8 +393,8 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
         ):
             raise RuntimeError("Environment ended unexpectedly during retreat.")
 
-    def _teleport_tool_above_slot(self, cycle: int, tool_index: int, *, is_last: bool) -> bool:
-        """Place one tool above its compartment, settle, and report whether the episode reset."""
+    def _teleport_tool_above_slot(self, cycle: int, tool_index: int, *, is_last: bool):
+        """Place one tool above its compartment and return resets observed while settling."""
         tool_name = self.object_names[tool_index]
         print(
             f"[{self.label}] cycle {cycle}: drop {tool_name} from "
@@ -411,11 +403,13 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
         )
         self._teleport(tool_name, self._hover_pose_w(tool_index))
         settle_steps = max(1, round(0.25 / self.base_env.step_dt))
-        if self._hold_zero(settle_steps):
-            if is_last:
-                return True
+        reset_observed = self.torch.zeros(self.num_envs, device=self.base_env.device, dtype=self.torch.bool)
+        zero_action = self._zero_action()
+        for _ in range(settle_steps):
+            reset_observed |= self._step(zero_action)
+        if not is_last and bool(reset_observed.any().item()):
             raise RuntimeError(f"Environment ended unexpectedly while settling {tool_name}.")
-        return False
+        return reset_observed
 
     def run_cycle(self, cycle: int) -> None:
         """Optionally pick the target, teleport every tool into its slot, and require success reset."""
@@ -431,14 +425,14 @@ class ToolSortingEnvBehaviourDemo(EnvBehaviourDemo):
         last_index = len(self.object_names) - 1
         for tool_index in range(len(self.object_names)):
             is_last = tool_index == last_index
-            if self._teleport_tool_above_slot(cycle, tool_index, is_last=is_last):
-                self._report_success_reset(cycle)
-                return
+            reset_observed = self._teleport_tool_above_slot(cycle, tool_index, is_last=is_last)
 
             if not is_last:
                 continue
 
-            reset_observed = self.torch.zeros(self.num_envs, device=self.base_env.device, dtype=self.torch.bool)
+            if bool(reset_observed.all().item()):
+                self._report_success_reset(cycle)
+                return
             wait_steps = max(self.pause_steps, round(2.0 / self.base_env.step_dt))
             zero_action = self._zero_action()
             for _ in range(wait_steps):
