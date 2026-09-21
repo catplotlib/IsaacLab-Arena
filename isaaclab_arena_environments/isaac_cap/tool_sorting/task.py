@@ -9,18 +9,20 @@ from __future__ import annotations
 
 import torch
 from collections.abc import Sequence
-from dataclasses import MISSING
+from functools import partial
 from typing import Any
 
 import isaaclab.envs.mdp as mdp
-from isaaclab.managers import EventTermCfg, TerminationTermCfg
+from isaaclab.managers import EventTermCfg
 from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import quat_apply_inverse
 
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
 Bounds = tuple[float, float, float, float, float, float]
 
@@ -60,14 +62,6 @@ class EventsCfg:
     )
 
 
-@configclass
-class TerminationsCfg:
-    """Timeout and tool-sort completion terms."""
-
-    time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    success: TerminationTermCfg = MISSING
-
-
 class ObjectsInRegionsTask(TaskBase):
     """Require every object's root position to lie in its paired bin compartment."""
 
@@ -95,22 +89,27 @@ class ObjectsInRegionsTask(TaskBase):
         self.regions = tuple(region_list)
         self.bounds = bounds
         self.events_cfg = EventsCfg()
-        self.termination_cfg = TerminationsCfg(
-            success=TerminationTermCfg(
-                func=objects_in_regions,
-                params={
-                    "object_names": [object_.name for object_ in self.objects],
-                    "region_names": [region.name for region in self.regions],
-                    "bounds_xyzxyz": list(self.bounds),
-                },
-            )
-        )
 
     def get_scene_cfg(self) -> Any:
         return None
 
-    def get_termination_cfg(self) -> Any:
-        return self.termination_cfg
+    def get_termination_cfg(self) -> TaskTerminationCfg:
+        return TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[
+                ProgressObjective(
+                    name="sort_tools",
+                    predicate_sequence=[
+                        partial(
+                            objects_in_regions,
+                            object_names=[object_.name for object_ in self.objects],
+                            region_names=[region.name for region in self.regions],
+                            bounds_xyzxyz=list(self.bounds),
+                        ),
+                    ],
+                ),
+            ],
+        )
 
     def get_events_cfg(self) -> Any:
         return self.events_cfg
