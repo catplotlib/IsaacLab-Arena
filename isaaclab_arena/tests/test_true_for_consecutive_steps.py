@@ -34,7 +34,7 @@ def _test_runtime_requirement_updates_only_active_environments(simulation_app):
 
     predicate = _ControlledPredicate([True, True, True])
     cfg = TrueForConsecutiveStepsCfg(predicate=predicate, required_steps=2)
-    requirement = _TrueForConsecutiveSteps(cfg, num_envs=3, device="cpu")
+    requirement = _TrueForConsecutiveSteps(cfg, predicate=predicate, num_envs=3, device="cpu")
     samples = [
         ([True, True, True], [True, False, True], [False, False, False]),
         # Inactive false results must not clear an existing count.
@@ -166,6 +166,12 @@ def _test_reused_requirement_has_independent_counters(simulation_app):
         ProgressObjective(name="delayed", predicate_sequence=[enabled, requirement]),
     ]
     tracker = ProgressTracker(objectives, num_envs=1, device="cpu")
+    assert requirement.predicate is held
+    assert requirement.required_steps == 2
+    assert tracker.get_predicate("twice") is held
+    assert tracker.get_predicate("twice", predicate_index=1) is held
+    assert tracker.get_predicate("delayed", predicate_index=1) is held
+    assert held.calls == 0
     env = SimpleNamespace(num_envs=1, device="cpu")
     _step(tracker, env, [1])
     enabled.values = [True]

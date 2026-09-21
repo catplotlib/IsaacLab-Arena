@@ -9,7 +9,7 @@ import copy
 import functools
 import torch
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
@@ -131,19 +131,19 @@ class ProgressObjectiveRunner:
         self.group_score: dict[str, torch.Tensor] = {}
         self.group_complete: dict[str, torch.Tensor] = {}
         self.predicate_chains = {}
-        self._consecutive_step_requirements: dict[int, _TrueForConsecutiveSteps] = {}
+        self._consecutive_step_requirements: list[_TrueForConsecutiveSteps] = []
         for group_name, chain in progress_objective.canonical_predicate_sequences.items():
             resolved_chain = []
             for predicate, score in chain:
                 if isinstance(predicate, TrueForConsecutiveStepsCfg):
-                    # Reusing a declaration must not share counter state between occurrences.
-                    predicate = replace(
-                        predicate,
+                    # Each occurrence owns its counters, even when declarations are reused.
+                    predicate = _TrueForConsecutiveSteps(
+                        cfg=predicate,
                         predicate=_resolve_progress_predicate(predicate.predicate, env),
+                        num_envs=num_envs,
+                        device=device,
                     )
-                    self._consecutive_step_requirements[id(predicate)] = _TrueForConsecutiveSteps(
-                        cfg=predicate, num_envs=num_envs, device=device
-                    )
+                    self._consecutive_step_requirements.append(predicate)
                 else:
                     predicate = _resolve_progress_predicate(predicate, env)
                 resolved_chain.append((predicate, score))
@@ -212,17 +212,16 @@ class ProgressObjectiveRunner:
                 torch.zeros(self.num_envs, dtype=torch.bool, device=self.device),
             )
         cached_result, evaluated_envs = predicate_results_this_step[predicate_key]
-        if not isinstance(predicate, TrueForConsecutiveStepsCfg):
+        if not isinstance(predicate, _TrueForConsecutiveSteps):
             state_update_mask = torch.ones_like(state_update_mask)
         # Evaluate only requested environments that have no result cached for this update.
         pending_envs = state_update_mask & ~evaluated_envs
         if bool(pending_envs.any().item()):
-            if isinstance(predicate, TrueForConsecutiveStepsCfg):
+            if isinstance(predicate, _TrueForConsecutiveSteps):
                 predicate_results = self._evaluate_predicate_with_cache(
                     predicate.predicate, env, predicate_results_this_step, pending_envs
                 )
-                requirement = self._consecutive_step_requirements[predicate_key]
-                result = requirement.update(predicate_results, active_envs=pending_envs)
+                result = predicate.update(predicate_results, active_envs=pending_envs)
             else:
                 result = torch.as_tensor(
                     predicate(env),
@@ -349,7 +348,7 @@ class ProgressObjectiveRunner:
 
     def _reset_consecutive_step_requirements(self, env_ids) -> None:
         """Clear streaks without erasing completed predicates."""
-        for requirement in self._consecutive_step_requirements.values():
+        for requirement in self._consecutive_step_requirements:
             requirement.reset(env_ids)
 
     def _num_required_groups(self) -> int:
@@ -566,7 +565,7 @@ class ProgressTracker:
         for runner in self.runners:
             if runner.progress_objective.name == objective_name:
                 predicate = runner.predicate_chains[sequence_name][predicate_index][0]
-                if isinstance(predicate, TrueForConsecutiveStepsCfg):
+                if isinstance(predicate, _TrueForConsecutiveSteps):
                     predicate = predicate.predicate
                 while isinstance(predicate, functools.partial):
                     predicate = predicate.func

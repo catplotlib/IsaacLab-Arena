@@ -386,12 +386,19 @@ def _test_nested_predicate_classes_initialize_without_manager_lifecycle(_simulat
     stable_cfg = TerminationTermCfg(func=_ConfiguredPredicate, params={"predicate_name": "stable"})
     released_cfg = TerminationTermCfg(func=_ConfiguredPredicate, params={"predicate_name": "released"})
     parent_cfg = TerminationTermCfg(func=_AllPredicates, params={"predicates": [stable_cfg, released_cfg]})
+    requirement = TrueForConsecutiveStepsCfg(parent_cfg, required_steps=2)
     objective = ProgressObjective(
         name="stable",
-        predicate_sequence=[TrueForConsecutiveStepsCfg(parent_cfg, required_steps=2)],
+        predicate_sequence=[requirement],
     )
     tracker = ProgressTracker([objective], env.num_envs, env.device, env=env)
+    assert requirement.predicate is parent_cfg
+    assert requirement.required_steps == 2
+    assert parent_cfg.func is _AllPredicates
     assert stable_cfg.func is _ConfiguredPredicate, "Tracker construction must not modify the task's declaration."
+    assert released_cfg.func is _ConfiguredPredicate
+    assert isinstance(tracker.get_predicate("stable"), _AllPredicates)
+    assert env.predicate_calls == {"stable": 0, "released": 0}
 
     _step(tracker, env)
     assert tracker.is_complete().tolist() == [False, False]
