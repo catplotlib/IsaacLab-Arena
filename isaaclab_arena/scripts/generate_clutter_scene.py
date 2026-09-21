@@ -50,6 +50,7 @@ def generate_scene(cfg: ClutterGenerationCfg, device: str = "cuda:0") -> Path:
     """
     from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import (
         build_arena_env_with_assets_from_graph_spec,
+        get_scene_key_to_node_id,
     )
     from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
@@ -87,9 +88,7 @@ def generate_scene(cfg: ClutterGenerationCfg, device: str = "cuda:0") -> Path:
     )
     env = builder.make_registered()
     try:
-        nodes = [spec.background, spec.embodiment, *spec.objects]
-        node_by_key = {assets[node.id].get_scene_key(): node.id for node in nodes}
-        assert len(node_by_key) == len(nodes), "Graph nodes must map to distinct scene keys"
+        node_by_key = get_scene_key_to_node_id(spec, assets)
         keys = dynamic_rigid_object_keys(env.unwrapped.scene)
         unsupported = set(keys) - set(node_by_key)
         assert not unsupported, f"Cannot cache rigid objects without concrete graph nodes: {unsupported}"

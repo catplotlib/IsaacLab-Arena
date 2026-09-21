@@ -1333,3 +1333,56 @@ def test_batched_mesh_loss_matches_test_only_serial_oracle():
     serial_loss.sum().backward()
     serial_grad = state.optimizable_positions.grad.detach().clone()
     torch.testing.assert_close(batched_grad, serial_grad, rtol=1e-4, atol=1e-5)
+
+
+@requires_warp
+def test_measured_collision_poses_preserve_tilt():
+    from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
+    from isaaclab_arena.relations.placement_validators import NoOverlapValidator
+
+    first, second = _make_cylinder("first", height=0.4), _make_cylinder("second", height=0.4)
+    validator = NoOverlapValidator(ObjectPlacerParams())
+    tilted = (0.0, math.sin(math.pi / 8), 0.0, math.cos(math.pi / 8))
+    offset = 0.09 / math.sqrt(2)
+    poses = {first: Pose((0, 0, 0), tilted), second: Pose((offset, 0, -offset), tilted)}
+    assert validator.validate_measured_poses(poses, {}, [], penetration_tolerance_m=0.001)
+    # A horizontal cylinder crosses the vertical one; dropping tilt would miss this collision.
+    horizontal = (0.0, math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4))
+    poses = {first: Pose((0, 0, 0), horizontal), second: Pose((0.15, 0, 0))}
+    assert not validator.validate_measured_poses(poses, {}, [], penetration_tolerance_m=0.001)
+    # Resting contact tolerates 0.5 mm overlap, but rejects 5 mm penetration.
+    for penetration, expected in ((0.0005, True), (0.005, False)):
+        poses = {first: Pose.identity(), second: Pose((0, 0, 0.4 - penetration))}
+        assert validator.validate_measured_poses(poses, {}, [], penetration_tolerance_m=0.001) == expected
+
+
+@requires_warp
+def test_measured_proxy_meshes_do_not_share_usd_cache(monkeypatch):
+    from unittest.mock import Mock
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
+    from isaaclab_arena.relations.placement_validators import NoOverlapValidator
+
+    bounds = AxisAlignedBoundingBox((-0.2, -0.02, -0.02), (0.2, 0.02, 0.02))
+    quarter_turn = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+    objects = []
+    for name, anchor in (("fixed", True), ("movable", False)):
+        asset = Mock(spec=Object)
+        asset.name, asset.usd_path, asset.scale = name, "shared.usd", (1, 1, 1)
+        asset.is_anchor = anchor
+        asset.repair_collision_mesh_non_watertight = True
+        asset.get_relations.return_value = []
+        asset.get_initial_pose.return_value = Pose((0, 0, 0), quarter_turn)
+        asset.get_bounding_box.return_value = bounds
+        asset.get_world_bounding_box.return_value = bounds.rotated_90_around_z(1)
+        objects.append(asset)
+    monkeypatch.setattr(WarpMeshAndSphereCache, "get_collision_mesh_or_raise", lambda self, asset: None)
+    diagonal = (0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8))
+    gap = 0.06 / math.sqrt(2)
+    poses = {objects[0]: Pose((0, 0, 0), diagonal), objects[1]: Pose((-gap, gap, 0), diagonal)}
+    # Parallel 4 cm wide rods, separated by 6 cm; their world AABBs overlap.
+    validator = NoOverlapValidator(ObjectPlacerParams())
+    assert validator.validate_measured_poses(poses, {}, [], penetration_tolerance_m=0.001)
+    poses[objects[1]] = Pose((0, 0, 0), diagonal)
+    assert not validator.validate_measured_poses(poses, {}, [], penetration_tolerance_m=0.001)

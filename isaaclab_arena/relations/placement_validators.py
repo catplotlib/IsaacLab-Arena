@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import math
 import torch
 import trimesh
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar, cast
+
+from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_conjugate, quat_mul
 
 from isaaclab_arena.relations.collision_mode import CollisionMode, get_object_collision_mode, object_uses_mesh_collision
 from isaaclab_arena.relations.placement_validation import PlacementCheck
@@ -22,8 +25,9 @@ from isaaclab_arena.relations.relation_loss_strategies import (
 )
 from isaaclab_arena.relations.relations import FaceTo, NextTo, NotNextTo, On, get_relation
 from isaaclab_arena.relations.warp_sdf_kernels import has_sdf_sentinel, mesh_sdf
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.utils.yaw import centers_in_target_frame, yaw_from_quat_xyzw, yaw_toward_positions
+from isaaclab_arena.utils.yaw import centers_in_target_frame, wrap_angle_to_pi, yaw_from_quat_xyzw, yaw_toward_positions
 
 if TYPE_CHECKING:
     from isaaclab_arena.relations.collision_object import CollisionObject
@@ -31,7 +35,6 @@ if TYPE_CHECKING:
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
     from isaaclab_arena.relations.placement_visualizer import PlacementRerunVisualizer
     from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
-    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 
 class PlacementValidator(ABC):
@@ -78,6 +81,20 @@ class PlacementValidator(ABC):
             collision_objects: Fixed background obstacles shared across candidates.
         """
         pass
+
+    def validate_measured_poses(
+        self,
+        poses: dict[PlaceableAsset, Pose],
+        bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox],
+        collision_objects: list[CollisionObject],
+    ) -> bool:
+        """Check measured positions, headings and world-axis bounds in one environment frame.
+
+        Validators that reconstruct rotations from solver layouts must override this method.
+        """
+        positions = {asset: pose.position_xyz for asset, pose in poses.items()}
+        orientations = {asset: yaw_from_quat_xyzw(pose.rotation_xyzw) for asset, pose in poses.items()}
+        return self.validate_batch([positions], [orientations], [bboxes], collision_objects)[0]
 
 
 def get_build_time_checks() -> tuple[str, ...]:
@@ -144,17 +161,30 @@ class OnRelationValidator(PlacementValidator):
             for relation in obj.get_relations():
                 if not isinstance(relation, On) or relation.parent not in positions:
                     continue
-                child_world = env_bboxes[obj].translated(positions[obj])
-                parent_world = relation.support_bbox(env_bboxes[relation.parent].translated(positions[relation.parent]))
-                # Preserve scalar height arithmetic at the strict On contact boundary.
-                bottom = positions[obj][2] + float(env_bboxes[obj].min_point[0, 2])
-                top = positions[relation.parent][2] + float(env_bboxes[relation.parent].max_point[0, 2])
-                height_fits = relation.accepts_child_bottom(bottom, top, self._params.on_relation_z_tolerance_m)
-                if not height_fits or not self._validate_footprint(relation, child_world, parent_world):
+                if not self.validate_relation(
+                    relation, positions[obj], positions[relation.parent], env_bboxes[obj], env_bboxes[relation.parent]
+                ):
                     if self._params.verbose:
                         print(f"{type(relation).__name__}: '{obj.name}' outside support footprint or height range")
                     return False
         return True
+
+    def validate_relation(
+        self,
+        relation: On,
+        child_position: tuple[float, float, float],
+        parent_position: tuple[float, float, float],
+        child_bounds: AxisAlignedBoundingBox,
+        parent_bounds: AxisAlignedBoundingBox,
+    ) -> bool:
+        """Check one support relation using rotation-adjusted bounds about each object origin."""
+        child_world = child_bounds.translated(child_position)
+        parent_world = relation.support_bbox(parent_bounds.translated(parent_position))
+        # Preserve scalar height arithmetic at the strict On contact boundary.
+        bottom = child_position[2] + float(child_bounds.min_point[0, 2])
+        top = parent_position[2] + float(parent_bounds.max_point[0, 2])
+        height_fits = relation.accepts_child_bottom(bottom, top, self._params.on_relation_z_tolerance_m)
+        return height_fits and self._validate_footprint(relation, child_world, parent_world)
 
     def _validate_footprint(self, relation: On, child: AxisAlignedBoundingBox, parent: AxisAlignedBoundingBox) -> bool:
         """Check feasible margins and containment or overlap within the support footprint."""
@@ -302,7 +332,7 @@ class NotNextToValidator(PlacementValidator):
 
 @register_validator
 class FaceToValidator(PlacementValidator):
-    """Validate every FaceTo subject has a defined target direction and a computed facing yaw."""
+    """Validate that each FaceTo subject points toward its target in XY."""
 
     check = PlacementCheck.FACE_TO
 
@@ -313,21 +343,22 @@ class FaceToValidator(PlacementValidator):
         bboxes: list[dict[PlaceableAsset, AxisAlignedBoundingBox]],
         collision_objects: list[CollisionObject],
     ) -> list[bool]:
-        return [self._validate(positions[i], orientations[i]) for i in range(len(positions))]
+        return [self.validate_facing(positions[i], orientations[i], tolerance_rad=1e-4) for i in range(len(positions))]
 
-    def _validate(
+    def validate_facing(
         self,
         positions: dict[PlaceableAsset, tuple[float, float, float]],
         orientations: dict[PlaceableAsset, float] | None,
+        tolerance_rad: float,
     ) -> bool:
-        """Validate that every FaceTo subject has a defined direction and computed yaw."""
+        """Require headings within tolerance_rad of the direction to each FaceTo target."""
         for obj in positions:
             face_to = get_relation(obj, FaceTo)
             if face_to is None:
                 continue
             subject_position = torch.tensor([positions[obj]])
             target_position = torch.tensor([positions[face_to.parent]])
-            _, direction_is_defined = yaw_toward_positions(subject_position, target_position)
+            target_yaw, direction_is_defined = yaw_toward_positions(subject_position, target_position)
             if not direction_is_defined.item():
                 if self._params.verbose:
                     print(f"  FaceTo: '{obj.name}' is too close to its target in XY")
@@ -335,6 +366,14 @@ class FaceToValidator(PlacementValidator):
             if orientations is None or obj not in orientations:
                 if self._params.verbose:
                     print(f"  FaceTo: '{obj.name}' has no computed facing yaw")
+                return False
+            measured_yaw = orientations[obj]
+            if (
+                not math.isfinite(measured_yaw)
+                or abs(wrap_angle_to_pi(measured_yaw - float(target_yaw.item()))) > tolerance_rad
+            ):
+                if self._params.verbose:
+                    print(f"  FaceTo: '{obj.name}' exceeds the facing tolerance ({tolerance_rad:g} rad)")
                 return False
         return True
 
@@ -352,6 +391,7 @@ class NoOverlapValidator(PlacementValidator):
     def __init__(self, params: ObjectPlacerParams, visualizer: PlacementRerunVisualizer | None = None) -> None:
         super().__init__(params, visualizer)
         self._cpu_mesh_manager: WarpMeshAndSphereCache | None = None
+        self._settled_mesh_manager: WarpMeshAndSphereCache | None = None
 
     def validate_batch(
         self,
@@ -382,6 +422,86 @@ class NoOverlapValidator(PlacementValidator):
         if no_overlap and use_mesh:
             no_overlap = self._validate_no_overlap_mesh(positions, env_bboxes, orientations, collision_objects)
         return no_overlap
+
+    def validate_measured_poses(
+        self,
+        poses: dict[PlaceableAsset, Pose],
+        bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox],
+        collision_objects: list[CollisionObject],
+        *,
+        penetration_tolerance_m: float = 0.0,
+    ) -> bool:
+        """Check measured full rotations against collision meshes, allowing resting contact.
+
+        Final contact checks use mesh geometry regardless of the solver's collision mode.
+        Assets without meshes use conservative box proxies; extraction errors propagate.
+        On-linked support pairs are checked by support validation instead.
+        """
+        from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
+        from isaaclab_arena.utils.usd.helpers import NoCollisionMeshError
+
+        if self._settled_mesh_manager is None:
+            # Solver spheres include an extra 1 cm clearance, which would reject resting contact.
+            self._settled_mesh_manager = WarpMeshAndSphereCache(
+                num_spheres=self._params.solver_params.num_spheres, sphere_radius=0.0, device="cpu"
+            )
+        mesh_manager = self._settled_mesh_manager
+        mesh_manager.reset_sentinel_warning()
+        all_poses = dict(poses)
+        for obstacle in collision_objects:
+            pose = obstacle.get_initial_pose()
+            assert isinstance(pose, Pose), f"Collision obstacle '{obstacle.name}' needs a fixed pose"
+            all_poses[obstacle] = pose
+        rotations = {asset: pose.rotation_xyzw for asset, pose in all_poses.items()}
+        meshes, world_bounds, mesh_cache_objects = {}, {}, {}
+        for asset, pose in all_poses.items():
+            try:
+                mesh = mesh_manager.get_collision_mesh_or_raise(asset)
+            except NoCollisionMeshError:
+                mesh = None
+            mesh_cache_objects[asset] = asset if mesh is not None else None
+            proxy_bounds = asset.get_bounding_box()
+            if mesh is None and (asset.is_anchor or asset in collision_objects):
+                initial = asset.get_initial_pose()
+                assert isinstance(initial, Pose), f"Fixed collision object '{asset.name}' needs a Pose"
+                # Fixed bounds may use parent USD axes, as for ObjectReference.
+                proxy_bounds = asset.get_world_bounding_box().translated(tuple(-v for v in initial.position_xyz))
+                rotations[asset] = tuple(
+                    quat_mul(
+                        torch.tensor(pose.rotation_xyzw), quat_conjugate(torch.tensor(initial.rotation_xyzw))
+                    ).tolist()
+                )
+            meshes[asset] = self._collision_mesh_or_aabb_proxy(mesh, proxy_bounds)
+            bounds = AxisAlignedBoundingBox(tuple(meshes[asset].bounds[0]), tuple(meshes[asset].bounds[1]))
+            world_bounds[asset] = bounds.rotated_by_quat(rotations[asset]).translated(pose.position_xyz)
+        positions = {asset: pose.position_xyz for asset, pose in poses.items()}
+        pairs = list(self._non_skip_pairs(positions))
+        for asset in poses:
+            if not asset.is_anchor:
+                pairs.extend((asset, obstacle) for obstacle in collision_objects)
+        for first, second in pairs:
+            if not world_bounds[first].overlaps(world_bounds[second], margin=-penetration_tolerance_m).item():
+                continue
+            for source, target in ((first, second), (second, first)):
+                if self._spheres_penetrate_mesh(
+                    source,
+                    meshes[source],
+                    mesh_cache_objects[source],
+                    True,
+                    True,
+                    torch.tensor(all_poses[source].position_xyz, dtype=torch.float32),
+                    target,
+                    meshes[target],
+                    torch.tensor(all_poses[target].position_xyz, dtype=torch.float32),
+                    True,
+                    mesh_manager,
+                    -penetration_tolerance_m,
+                    None,
+                    rotations=rotations,
+                    target_mesh_is_proxy=mesh_cache_objects[target] is None,
+                ):
+                    return False
+        return True
 
     def _should_validate_mesh(
         self,
@@ -633,6 +753,8 @@ class NoOverlapValidator(PlacementValidator):
         mesh_manager: WarpMeshAndSphereCache,
         tolerance: float,
         orientations: dict[PlaceableAsset, float] | None,
+        rotations: dict[CollisionObject, tuple[float, float, float, float]] | None = None,
+        target_mesh_is_proxy: bool = False,
     ) -> bool:
         """True if source's spheres penetrate target's mesh or if BVH returns no-face sentinel.
 
@@ -640,7 +762,7 @@ class NoOverlapValidator(PlacementValidator):
         *_uses_pose_yaw controls whether fixed anchors/passive obstacles contribute pose yaw.
         """
         spheres = mesh_manager.get_query_spheres(source_mesh, obj=source_sphere_cache_obj)
-        warp_mesh = mesh_manager.get_warp_mesh(target_mesh, obj=target)
+        warp_mesh = mesh_manager.get_warp_mesh(target_mesh, obj=None if target_mesh_is_proxy else target)
         centers = self._centers_in_target_frame(
             spheres[:, :3],
             source,
@@ -651,6 +773,7 @@ class NoOverlapValidator(PlacementValidator):
             source_applies_yaw=source_applies_yaw,
             source_uses_pose_yaw=source_uses_pose_yaw,
             target_uses_pose_yaw=target_uses_pose_yaw,
+            rotations=rotations,
         )
         sdf = mesh_sdf(centers, warp_mesh)
         mesh_manager.warn_sdf_sentinel(sdf)
@@ -708,8 +831,19 @@ class NoOverlapValidator(PlacementValidator):
         source_applies_yaw: bool = True,
         source_uses_pose_yaw: bool = True,
         target_uses_pose_yaw: bool = True,
+        rotations: dict[CollisionObject, tuple[float, float, float, float]] | None = None,
     ) -> torch.Tensor:
-        """Transform source sphere centers into the target's local frame (Z-yaw only)."""
+        """Transform sphere centers using full rotations when supplied, otherwise solver yaws."""
+        if rotations is not None:
+            assert source_applies_yaw and source_uses_pose_yaw and target_uses_pose_yaw and orientations is None
+            source_rotation = torch.tensor(rotations[source_obj], dtype=centers_local.dtype).expand(
+                len(centers_local), 4
+            )
+            target_rotation = torch.tensor(rotations[target_obj], dtype=centers_local.dtype).expand(
+                len(centers_local), 4
+            )
+            centers_world = quat_apply(source_rotation, centers_local) + source_pos - target_pos
+            return quat_apply_inverse(target_rotation, centers_world)
         src_yaw = (
             NoOverlapValidator._effective_yaw(source_obj, orientations, source_uses_pose_yaw)
             if source_applies_yaw

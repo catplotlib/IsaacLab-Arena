@@ -350,3 +350,16 @@ def test_mesh_validation_receives_final_face_to_yaw(monkeypatch):
 
     assert received[pair.subject] == pytest.approx(math.pi / 2)
     assert result.orientations[pair.subject] == pytest.approx(math.pi / 2)
+
+
+def test_face_to_rejects_measured_heading_away_from_target():
+    from isaaclab_arena.relations.placement_validators import FaceToValidator
+
+    pair = _face_to_pair()
+    positions = {pair.subject: (0.0, 0.0, 0.0), pair.target: (1.0, 0.0, 0.0)}
+    validator = FaceToValidator(ObjectPlacerParams())
+    assert validator.validate_batch([positions], [{pair.subject: 0.0}], [{}], []) == [True]
+    assert validator.validate_batch([positions], [{pair.subject: math.radians(10)}], [{}], []) == [False]
+    positions[pair.target] = (1.0, 0.001, 0.0)
+    assert validator.validate_facing(positions, {pair.subject: 0.0}, math.radians(2))
+    assert not validator.validate_facing(positions, {pair.subject: math.radians(10)}, math.radians(2))

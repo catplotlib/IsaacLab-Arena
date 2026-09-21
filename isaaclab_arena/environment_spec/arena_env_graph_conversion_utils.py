@@ -109,6 +109,14 @@ def build_arena_env_with_assets_from_graph_spec(
     return arena_env, assets_by_node_id
 
 
+def get_scene_key_to_node_id(spec: ArenaEnvGraphSpec, assets: dict[str, Asset]) -> dict[str, str]:
+    """Map concrete runtime scene keys to their environment graph node IDs."""
+    nodes = [spec.background, spec.embodiment, *spec.objects, *(spec.object_references or [])]
+    node_by_key = {assets[node.id].get_scene_key(): node.id for node in nodes}
+    assert len(node_by_key) == len(nodes), "Graph nodes must have distinct scene keys"
+    return node_by_key
+
+
 def _load_placement_layouts(
     graph_spec: ArenaEnvGraphSpec,
     assets_by_node_id: dict[str, PlaceableAsset],

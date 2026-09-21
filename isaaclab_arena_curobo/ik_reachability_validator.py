@@ -143,13 +143,29 @@ class ReachabilityValidator(PlacementValidator):
             layout_index_within_batch: Position of this layout in the batch given to ``validate_batch``.
         """
         objects = list(positions.keys())
-        anchors = set(get_anchor_objects(objects))
         base_rotations = get_base_rotation_per_asset(objects)
 
         world_poses = {
             obj: get_object_world_pose_from_layout(positions, orientations, obj, base_rotations) for obj in objects
         }
-        # non-anchor objects with a RequiresReachability relation
+        return self._validate_world_poses(world_poses, layout_index_within_batch)
+
+    def validate_measured_poses(
+        self,
+        poses: dict[ObjectBase, Pose],
+        bboxes: dict[ObjectBase, AxisAlignedBoundingBox],
+        collision_objects: list[CollisionObject],
+    ) -> bool:
+        """Check IK using measured object and robot root poses, including full rotations."""
+        assert self._embodiment in poses, "Measured IK requires the recorded robot root pose"
+        return self._validate_world_poses(poses)
+
+    def _validate_world_poses(
+        self, world_poses: dict[ObjectBase, Pose], layout_index_within_batch: int | None = None
+    ) -> bool:
+        """Check top-down grasps against obstacles at their supplied poses."""
+        objects = list(world_poses)
+        anchors = set(get_anchor_objects(objects))
         targets = self._select_reachability_targets(objects, anchors)
         robot_base_pose_w = world_poses.get(self._embodiment, self._configured_robot_base_pose_w)
         # The robot's own body is not an obstacle: cuRobo already carries it as collision spheres.
@@ -184,7 +200,7 @@ class ReachabilityValidator(PlacementValidator):
             for obj in targets
         ])
         ik = self._solve_grasp_per_target(targets, grasp_poses, cuboid_per_object, robot_base_pose_w)
-        if self._rerun_layer is not None:
+        if self._rerun_layer is not None and layout_index_within_batch is not None:
             layout_index_across_batch = self._visualizer.get_layout_index_across_batch(layout_index_within_batch)
             self._rerun_layer.log_layout(
                 layout_index_across_batch=layout_index_across_batch,

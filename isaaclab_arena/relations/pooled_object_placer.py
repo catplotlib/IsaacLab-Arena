@@ -18,6 +18,7 @@ from isaaclab_arena.utils.random import get_rngs
 if TYPE_CHECKING:
     from isaaclab_arena.relations.collision_object import CollisionObject
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
+    from isaaclab_arena.relations.placement_validators import PlacementValidator
 
 
 @dataclass
@@ -317,6 +318,21 @@ class PooledObjectPlacer:
     def objects(self) -> list[PlaceableAsset]:
         """All objects (including anchors) participating in relation solving."""
         return self._objects
+
+    @property
+    def placer_params(self) -> ObjectPlacerParams:
+        """Effective validation and solver settings for the stored layouts."""
+        return replace(self._placer.params)
+
+    @property
+    def validators(self) -> list[PlacementValidator]:
+        """Shared initialized validators; the returned list is a copy, the instances are not."""
+        return self._placer.validators
+
+    @property
+    def collision_objects(self) -> list[CollisionObject]:
+        """Fixed obstacles considered when solving the stored layouts."""
+        return list(self._collision_objects)
 
     def layouts_per_env(self) -> list[list[PlacementResult]]:
         """Flattened list of every stored layout, grouped by env pool index."""

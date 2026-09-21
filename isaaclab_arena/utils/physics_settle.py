@@ -51,3 +51,21 @@ def are_all_objects_settled_per_env(
     )
     environment_ids = torch.as_tensor(env_ids, device=arena_env.device)
     return settled_mask[environment_ids].tolist()
+
+
+def pose_drift_reason(
+    initial: torch.Tensor, current: torch.Tensor, max_translation_m: float, max_rotation_deg: float
+) -> str | None:
+    """Report non-finite or excessive motion between xyz/xyzw poses shaped (..., 7)."""
+    from isaaclab.utils.math import quat_error_magnitude
+
+    if not torch.isfinite(initial).all() or not torch.isfinite(current).all():
+        return "non-finite pose"
+    distance = float((current[..., :3] - initial[..., :3]).norm(dim=-1).max())
+    angle = float(torch.rad2deg(quat_error_magnitude(current[..., 3:], initial[..., 3:])).max())
+    if distance > max_translation_m or angle > max_rotation_deg:
+        return (
+            f"moved {distance:.6f} m and rotated {angle:.3f} deg; limits {max_translation_m:g} m,"
+            f" {max_rotation_deg:g} deg"
+        )
+    return None

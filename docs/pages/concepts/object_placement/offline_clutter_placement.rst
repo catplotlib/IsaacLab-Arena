@@ -3,6 +3,8 @@ Offline Clutter Placement
 
 Use ``ClutterOn`` to generate piles without choosing drop heights manually.
 The offline generator saves settled poses for reproducible starting layouts.
+For scenes combining movable ``On`` objects and ``ClutterOn`` piles, use
+:doc:`offline_placement_recording` to record the complete layout.
 
 Declare and generate clutter
 ----------------------------

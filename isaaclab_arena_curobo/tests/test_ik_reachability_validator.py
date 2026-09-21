@@ -95,6 +95,7 @@ def _patch_curobo(monkeypatch, feasible_fn):
         captured["num_grasps"] = num
         captured["total_grasps"] = captured.get("total_grasps", 0) + num
         captured["ik_kwargs"] = kwargs
+        captured["target_poses"] = target_poses.clone()
         # The world in force at solve time, one entry per solve: what this grasp was checked against.
         captured.setdefault("worlds_per_solve", []).append([cuboid.name for cuboid in solver.world_cuboids])
         return IKFeasibility(feasible, torch.zeros(num), torch.zeros(num), torch.zeros(num, DOF))
@@ -424,3 +425,35 @@ def test_validator_passes_trivially_and_warns_when_no_targets(monkeypatch, capsy
     # No grasp was ever solved (the IK path is skipped entirely when there are no targets).
     assert "num_grasps" not in captured
     assert capsys.readouterr().out.count("resolved zero reachability targets") == 1
+
+
+@pytest.mark.curobo_deps
+def test_validator_checks_measured_rotations(monkeypatch):
+    import math
+
+    from isaaclab_arena.relations.relations import IsAnchor, RequiresReachability
+    from isaaclab_arena.tests.dummy_object import DummyObject
+    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena_curobo.utils.frame_utils import top_down_grasp_pose_from_world_poses
+
+    feasible = True
+    captured = _patch_curobo(monkeypatch, feasible_fn=lambda n: [feasible] * n)
+    bounds = AxisAlignedBoundingBox((-0.1, -0.1, -0.1), (0.1, 0.1, 0.1))
+    robot = DummyObject("robot", bounds, initial_pose=Pose((9, 9, 0)))
+    target = DummyObject("target", bounds, relations=[RequiresReachability()])
+    obstacle = DummyObject("obstacle", bounds, initial_pose=Pose.identity(), relations=[IsAnchor()])
+    tilt = (math.sin(math.pi / 8), 0.0, 0.0, math.cos(math.pi / 8))
+    poses = {robot: Pose((0, -1, 0), tilt), target: Pose((0.3, 0.2, 0.4), tilt), obstacle: Pose((1, 0, 0), tilt)}
+    validator = _make_reachability_validator(robot)
+    assert validator.validate_measured_poses(poses, {}, [])
+    base_position, base_rotation = captured["base_poses_per_world_update"][0]
+    assert base_position == poses[robot].position_xyz
+    assert base_rotation == tilt
+    assert captured["solver"].world_cuboids[0].pose_W_O.rotation_xyzw == tilt
+    expected_grasp = top_down_grasp_pose_from_world_poses(
+        poses[target].position_xyz, tilt, poses[robot].position_xyz, tilt, validator._grasp_z_offset, device="cpu"
+    )
+    torch.testing.assert_close(captured["target_poses"][0], expected_grasp)
+    feasible = False
+    assert not validator.validate_measured_poses(poses, {}, [])

@@ -678,6 +678,11 @@ class ObjectPlacer:
             return float((parent_min + parent_max) / 2.0)
         return float(low + (high - low) * torch.rand(1, generator=generator).item())
 
+    @property
+    def validators(self) -> list[PlacementValidator]:
+        """Validators initialized for this placer's enabled checks."""
+        return list(self._validators)
+
     def _validate_candidates(
         self,
         positions: list[dict[PlaceableAsset, tuple[float, float, float]]],
