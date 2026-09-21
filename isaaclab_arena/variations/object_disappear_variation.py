@@ -54,14 +54,14 @@ class ObjectDisappearVariationCfg(VariationBaseCfg):
     """Probability that the object disappears, drawn per environment on every reset."""
 
 
-def hold_object_away(
+def set_object_poses_with_probability(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg,
     pose: Pose,
     sampler: BernoulliSampler,
 ) -> None:
-    """Reset event that parks the resetting envs which drew "gone" at ``pose``."""
+    """Reset event that moves the object to ``pose`` in the resetting envs whose draw says so."""
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = torch.as_tensor(env_ids, device=env.device).reshape(-1)
@@ -99,7 +99,7 @@ class ObjectDisappearVariation(RunTimeVariationBase):
         return (
             f"{self.asset_name}_{self.name}",
             EventTermCfg(
-                func=hold_object_away,
+                func=set_object_poses_with_probability,
                 mode="reset",
                 params={
                     "asset_cfg": SceneEntityCfg(self.asset_name),

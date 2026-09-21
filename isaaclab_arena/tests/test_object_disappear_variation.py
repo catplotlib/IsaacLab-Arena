@@ -7,17 +7,6 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 
 HEADLESS = True
 
-TEST_ASSET_NAME = "sphere"
-TEST_EVENT_NAME = f"{TEST_ASSET_NAME}_disappear"
-
-# Relation-placement regression case: a rigid object placed on an anchored table.
-TEST_TABLE_NAME = "table"
-TEST_BOX_NAME = "cracker_box"
-
-# Far past anything a scene places, but far short of the 1000 m park position, so this cleanly
-# distinguishes "parked away" from "placed in the scene".
-PARKED_DISTANCE_FLOOR_M = 100.0
-
 
 def get_env_local_distances(env, asset_name):
     """Return the asset's per-env horizontal distance from its environment origin."""
@@ -35,7 +24,7 @@ def get_test_environment(*, enabled: bool, probability: float):
     from isaaclab_arena.variations.bernoulli_sampler import BernoulliSamplerCfg
     from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariationCfg
 
-    sphere = AssetRegistry().get_asset_by_name(TEST_ASSET_NAME)()
+    sphere = AssetRegistry().get_asset_by_name("sphere")()
     sphere.get_variation("disappear").apply_cfg(
         ObjectDisappearVariationCfg(
             enabled=enabled,
@@ -54,9 +43,9 @@ def _test_object_disappear_variation_registration(simulation_app):
 
     registry = AssetRegistry()
     # Rigid objects carry the variation; non-rigid assets have nothing to teleport.
-    assert "disappear" in registry.get_asset_by_name(TEST_ASSET_NAME)().variations
+    assert "disappear" in registry.get_asset_by_name("sphere")().variations
     assert "disappear" not in registry.get_asset_by_name("light")().variations
-    assert "disappear" not in registry.get_asset_by_name(TEST_TABLE_NAME)().variations
+    assert "disappear" not in registry.get_asset_by_name("table")().variations
     return True
 
 
@@ -68,8 +57,8 @@ def _test_disabled_disappear_variation_not_in_events_cfg(simulation_app):
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
     env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
 
-    assert not hasattr(env_cfg.events, TEST_EVENT_NAME), (
-        f"Disabled variation must not add '{TEST_EVENT_NAME}' to env_cfg.events; "
+    assert not hasattr(env_cfg.events, "sphere_disappear"), (
+        "Disabled variation must not add 'sphere_disappear' to env_cfg.events; "
         f"got event fields: {sorted(vars(env_cfg.events))}."
     )
     return True
@@ -87,8 +76,9 @@ def _test_envs_draw_independently(simulation_app):
     ).make_registered()
     try:
         env.reset()
-        distances = get_env_local_distances(env, TEST_ASSET_NAME)
-        gone = distances > PARKED_DISTANCE_FLOOR_M
+        distances = get_env_local_distances(env, "sphere")
+        # 100 m is far past any scene layout but short of the 1000 m park position.
+        gone = distances > 100.0
         # P(all envs agree) = 2 * 0.5^16, so a split is essentially certain if draws are independent.
         assert bool(gone.any()) and not bool(
             gone.all()
@@ -111,8 +101,8 @@ def _test_disappeared_object_survives_relation_placement(simulation_app):
     from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariationCfg
 
     asset_registry = AssetRegistry()
-    table = asset_registry.get_asset_by_name(TEST_TABLE_NAME)()
-    box = asset_registry.get_asset_by_name(TEST_BOX_NAME)()
+    table = asset_registry.get_asset_by_name("table")()
+    box = asset_registry.get_asset_by_name("cracker_box")()
     table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
     table.add_relation(IsAnchor())
     box.add_relation(On(table))
@@ -134,9 +124,9 @@ def _test_disappeared_object_survives_relation_placement(simulation_app):
             env.unwrapped.cfg.events, "placement_reset"
         ), "Test setup is wrong: relation solving did not register a placement reset event."
         env.reset()
-        distance = get_env_local_distances(env, TEST_BOX_NAME)[0]
+        distance = get_env_local_distances(env, "cracker_box")[0]
         assert (
-            distance > PARKED_DISTANCE_FLOOR_M
+            distance > 100.0
         ), f"Relation placement must not put a disappeared object back into the scene; got {float(distance)} m."
     finally:
         env.close()
@@ -152,16 +142,16 @@ def _test_hydra_override_enables_disappear(simulation_app):
         get_test_environment(enabled=False, probability=0.0),
         arena_env_builder_cfg_from_argparse(args_cli),
         hydra_overrides=[
-            f"{TEST_ASSET_NAME}.disappear.enabled=true",
-            f"{TEST_ASSET_NAME}.disappear.sampler_cfg.probability=1.0",
+            "sphere.disappear.enabled=true",
+            "sphere.disappear.sampler_cfg.probability=1.0",
         ],
     ).make_registered()
     try:
         env.reset()
-        distance = get_env_local_distances(env, TEST_ASSET_NAME)[0]
-        assert distance > PARKED_DISTANCE_FLOOR_M, f"Hydra override must enable the variation; got {float(distance)} m."
+        distance = get_env_local_distances(env, "sphere")[0]
+        assert distance > 100.0, f"Hydra override must enable the variation; got {float(distance)} m."
 
-        record = env.unwrapped.variation_recorder[f"{TEST_ASSET_NAME}.disappear"]
+        record = env.unwrapped.variation_recorder["sphere.disappear"]
         episode_idx = env.unwrapped.get_episode_index(0)
         assert record.sample_for_episode(0, episode_idx) is True
     finally:
