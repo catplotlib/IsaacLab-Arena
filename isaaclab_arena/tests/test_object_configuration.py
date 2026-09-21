@@ -34,27 +34,32 @@ def _test_default_spawner_cfg_not_shared(simulation_app):
 
     import copy
 
-    from isaaclab_arena.assets.object_library import DomeLight, Sphere
+    from isaaclab_arena.assets.object_library import DirectionalLight, DomeLight, GroundPlane, Sphere
 
-    # Two objects built from the class default must not share one cfg object.
-    first = Sphere()
-    second = Sphere()
-    assert first.spawner_cfg is not second.spawner_cfg
-    assert first.spawner_cfg is not Sphere.default_spawner_cfg
+    # No library object built from its class default may share (or alias) that cfg.
+    for cls in (GroundPlane, Sphere, DomeLight, DirectionalLight):
+        first = cls()
+        second = cls()
+        assert first.spawner_cfg is not second.spawner_cfg, cls.__name__
+        assert first.spawner_cfg is not cls.default_spawner_cfg, cls.__name__
+        assert type(first.spawner_cfg) is type(cls.default_spawner_cfg), cls.__name__
 
-    # Mutating one must not reach a sibling, the class default, or a later instance.
+    # Mutating one instance must not reach a sibling, the class default, or a later instance.
     default_radius = Sphere.default_spawner_cfg.radius
-    first.spawner_cfg.radius = default_radius + 1.0
-    assert second.spawner_cfg.radius == default_radius
+    mutated = Sphere()
+    sibling = Sphere()
+    mutated.spawner_cfg.radius = default_radius + 1.0
+    assert sibling.spawner_cfg.radius == default_radius
     assert Sphere.default_spawner_cfg.radius == default_radius
     assert Sphere().spawner_cfg.radius == default_radius
 
-    # Lights reach the cfg through their setters, so check that path too.
-    lit = DomeLight()
-    other = DomeLight()
-    lit.set_intensity(DomeLight.default_intensity + 1000.0)
-    assert other.spawner_cfg.intensity == DomeLight.default_intensity
-    assert DomeLight.default_spawner_cfg.intensity == DomeLight.default_intensity
+    # Lights reach the cfg through their setters, so check that path for both light classes.
+    for light_cls in (DomeLight, DirectionalLight):
+        lit = light_cls()
+        other = light_cls()
+        lit.set_intensity(light_cls.default_intensity + 1000.0)
+        assert other.spawner_cfg.intensity == light_cls.default_intensity, light_cls.__name__
+        assert light_cls.default_spawner_cfg.intensity == light_cls.default_intensity, light_cls.__name__
 
     # An explicitly passed cfg is still stored by reference.
     own = copy.deepcopy(Sphere.default_spawner_cfg)
