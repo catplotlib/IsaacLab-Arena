@@ -300,27 +300,22 @@ def _test_success_results_remain_stable_after_updates_and_reset(simulation_app):
     return True
 
 
-def _test_temporal_predicate_resolves_scene_references_and_resets(simulation_app):
+def _test_temporal_requirement_resolves_scene_references_and_resets(simulation_app):
     import torch
 
-    from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
-    class _BodyPredicate(ManagerTermBase):
+    class _BodyPredicate:
         def __init__(self, cfg, env):
-            super().__init__(cfg, env)
             assert cfg.params["asset_cfg"].body_ids == [1]
-            self.reset_calls = []
 
         def __call__(self, env, asset_cfg):
             assert asset_cfg.body_ids == [1]
             return env.valid
-
-        def reset(self, env_ids=None):
-            self.reset_calls.append(env_ids.clone())
 
     gear = SimpleNamespace(
         body_names=["base", "tip"],
@@ -352,9 +347,6 @@ def _test_temporal_predicate_resolves_scene_references_and_resets(simulation_app
     assert gear_cfg.body_ids == slice(None)
 
     tracker.reset(torch.tensor([0]))
-    assert len(predicate.reset_calls) == 1
-    assert predicate.reset_calls[0].tolist() == [0]
-    assert rebuilt_predicate.reset_calls == []
     tracker.step(env, step_index=torch.tensor([1, 3]))
     assert tracker.is_complete().tolist() == [False, False]
     tracker.step(env, step_index=torch.tensor([2, 4]))
@@ -728,8 +720,8 @@ def test_success_results_remain_stable_after_updates_and_reset():
     assert run_function_with_persistent_simulation_app(_test_success_results_remain_stable_after_updates_and_reset)
 
 
-def test_temporal_predicate_resolves_scene_references_and_resets():
-    assert run_function_with_persistent_simulation_app(_test_temporal_predicate_resolves_scene_references_and_resets)
+def test_temporal_requirement_resolves_scene_references_and_resets():
+    assert run_function_with_persistent_simulation_app(_test_temporal_requirement_resolves_scene_references_and_resets)
 
 
 def test_success_requires_objectives_and_one_owner():

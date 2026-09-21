@@ -310,33 +310,27 @@ def _test_completed_all_sequence_keeps_monitoring_streak(_simulation_app):
     return True
 
 
-def _test_reused_managed_predicate_resets_once_per_environment_selection(_simulation_app):
+def _test_tracker_resets_temporal_requirements_not_predicate_objects(_simulation_app):
     import torch
-
-    from isaaclab.managers import ManagerTermBase, TerminationTermCfg
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
-    class _ResetTrackingPredicate(ManagerTermBase):
-        def __init__(self, cfg, env):
-            super().__init__(cfg, env)
-            self.reset_calls = []
-
+    class _InstantaneousPredicate:
         def __call__(self, env):
             return env.predicate_values["stable"]
 
         def reset(self, env_ids=None):
-            self.reset_calls.append(env_ids.clone())
+            raise AssertionError("ProgressTracker must not call arbitrary predicate reset methods.")
 
     env = _make_environment({"stable": [True, True]})
-    predicate = _ResetTrackingPredicate(TerminationTermCfg(func=_ResetTrackingPredicate), env)
+    predicate = _InstantaneousPredicate()
     configured_predicate = partial(predicate)
     objective = ProgressObjective(
         name="shared",
         predicate_sequences={
-            "first": [TrueForConsecutiveStepsCfg(configured_predicate, required_steps=2)],
+            "first": [TrueForConsecutiveStepsCfg(predicate, required_steps=2)],
             "second": [TrueForConsecutiveStepsCfg(configured_predicate, required_steps=3)],
         },
     )
@@ -345,55 +339,70 @@ def _test_reused_managed_predicate_resets_once_per_environment_selection(_simula
         _step(tracker, env)
     assert tracker.is_complete().tolist() == [True, True]
 
-    tracker.reset(torch.tensor([0]))
-    assert len(predicate.reset_calls) == 1
-    assert predicate.reset_calls[0].tolist() == [0]
-    assert tracker.is_complete().tolist() == [False, True]
-    for _ in range(2):
+    for env_index in (0, 1, 0):
+        tracker.reset(torch.tensor([env_index]))
+        expected_completion = [True, True]
+        expected_completion[env_index] = False
+        assert tracker.is_complete().tolist() == expected_completion
+        for _ in range(2):
+            _step(tracker, env)
+            assert tracker.is_complete().tolist() == expected_completion
         _step(tracker, env)
-        assert tracker.is_complete().tolist() == [False, True]
-    _step(tracker, env)
-    assert tracker.is_complete().tolist() == [True, True]
+        assert tracker.is_complete().tolist() == [True, True]
     return True
 
 
-def _test_configured_partial_managed_predicate_receives_reset(_simulation_app):
+def _test_nested_predicate_classes_initialize_without_manager_lifecycle(_simulation_app):
     import torch
 
-    from isaaclab.managers import ManagerTermBase, TerminationTermCfg
+    from isaaclab.managers import TerminationTermCfg
 
     from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
-    class _ResetTrackingPredicate(ManagerTermBase):
+    class _ConfiguredPredicate:
         def __init__(self, cfg, env):
-            super().__init__(cfg, env)
-            self.reset_calls = []
+            self.predicate_name = cfg.params["predicate_name"]
+            self.num_envs = env.num_envs
 
-        def __call__(self, env):
-            return env.predicate_values["stable"]
+        def __call__(self, env, predicate_name):
+            assert predicate_name == self.predicate_name
+            return _predicate_value(env, predicate_name)
 
-        def reset(self, env_ids=None):
-            self.reset_calls.append(env_ids.clone())
+    class _AllPredicates:
+        def __init__(self, cfg, env):
+            for predicate_cfg in cfg.params["predicates"]:
+                assert isinstance(predicate_cfg.func, _ConfiguredPredicate), "Construct children before their parent."
+                assert predicate_cfg.func.num_envs == env.num_envs
 
-    env = _make_environment({"stable": [True, True]})
-    original = _ResetTrackingPredicate(TerminationTermCfg(func=_ResetTrackingPredicate), env)
-    managed_cfg = TerminationTermCfg(func=partial(original))
+        def __call__(self, env, predicates):
+            results = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+            for predicate_cfg in predicates:
+                results &= predicate_cfg.func(env, **predicate_cfg.params)
+            return results
+
+    env = _make_environment({"stable": [True, True], "released": [True, False]})
+    stable_cfg = TerminationTermCfg(func=_ConfiguredPredicate, params={"predicate_name": "stable"})
+    released_cfg = TerminationTermCfg(func=_ConfiguredPredicate, params={"predicate_name": "released"})
+    parent_cfg = TerminationTermCfg(func=_AllPredicates, params={"predicates": [stable_cfg, released_cfg]})
     objective = ProgressObjective(
-        name="stable", predicate_sequence=[TrueForConsecutiveStepsCfg(managed_cfg, required_steps=2)]
+        name="stable",
+        predicate_sequence=[TrueForConsecutiveStepsCfg(parent_cfg, required_steps=2)],
     )
     tracker = ProgressTracker([objective], env.num_envs, env.device, env=env)
-    resolved = tracker.get_predicate("stable")
-    assert resolved is not original
-    _step(tracker, env)
-    _step(tracker, env)
-    assert tracker.is_complete().tolist() == [True, True]
+    assert stable_cfg.func is _ConfiguredPredicate, "Tracker construction must not modify the task's declaration."
 
-    tracker.reset(torch.tensor([1]))
-    assert len(resolved.reset_calls) == 1
-    assert resolved.reset_calls[0].tolist() == [1]
-    assert original.reset_calls == []
+    _step(tracker, env)
+    assert tracker.is_complete().tolist() == [False, False]
+    _step(tracker, env)
+    assert tracker.is_complete().tolist() == [True, False]
+
+    predicate_calls = dict(env.predicate_calls)
+    tracker.get_state()
+    assert env.predicate_calls == predicate_calls
+
+    env.predicate_values["released"][1] = True
     _step(tracker, env)
     assert tracker.is_complete().tolist() == [True, False]
     _step(tracker, env)
@@ -401,8 +410,10 @@ def _test_configured_partial_managed_predicate_receives_reset(_simulation_app):
     return True
 
 
-def test_configured_partial_managed_predicate_receives_reset():
-    assert run_function_with_persistent_simulation_app(_test_configured_partial_managed_predicate_receives_reset)
+def test_nested_predicate_classes_initialize_without_manager_lifecycle():
+    assert run_function_with_persistent_simulation_app(
+        _test_nested_predicate_classes_initialize_without_manager_lifecycle
+    )
 
 
 def test_sequential_subtasks_count_only_active_environments():
@@ -437,7 +448,5 @@ def test_completed_all_sequence_keeps_monitoring_streak():
     assert run_function_with_persistent_simulation_app(_test_completed_all_sequence_keeps_monitoring_streak)
 
 
-def test_reused_managed_predicate_resets_once_per_environment_selection():
-    assert run_function_with_persistent_simulation_app(
-        _test_reused_managed_predicate_resets_once_per_environment_selection
-    )
+def test_tracker_resets_temporal_requirements_not_predicate_objects():
+    assert run_function_with_persistent_simulation_app(_test_tracker_resets_temporal_requirements_not_predicate_objects)

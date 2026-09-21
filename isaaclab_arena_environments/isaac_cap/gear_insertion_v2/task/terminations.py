@@ -21,6 +21,17 @@ if TYPE_CHECKING:
     from isaaclab_arena.embodiments.gripper import Gripper
 
 
+def reset_gear_mesh_state(env, env_ids=None) -> None:
+    """Clear gear_mesh_success state for standalone or composite tasks."""
+    # TODO(cvolk): Separate motor control and rotation history from success before removing this task-local reset.
+    progress_tracker = env.progress_tracker
+    for objective in progress_tracker.progress_objectives:
+        # CompositeTaskBase prefixes objective names with the subtask index.
+        if objective.name.rsplit("/", 1)[-1] == "gear_mesh":
+            gear_mesh_predicate = progress_tracker.get_predicate(objective.name)
+            gear_mesh_predicate.reset(env_ids)
+
+
 def _torch(value):
     return value.torch if hasattr(value, "torch") else value
 

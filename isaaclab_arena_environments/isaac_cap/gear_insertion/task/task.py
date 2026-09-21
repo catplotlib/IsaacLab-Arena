@@ -24,17 +24,21 @@ from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 
 from .metrics import GearInsertionFractionMetric
-from .predicates import GearInsertionConditions
+from .predicates import GearInsertionConditions, reset_gear_insertion_diagnostics
 
 
 @configclass
 class EventsCfg:
-    """Standard scene reset only."""
+    """Reset the scene and gear insertion diagnostics."""
 
     reset_all: EventTermCfg = EventTermCfg(
         func=mdp.reset_scene_to_default,
         mode="reset",
         params={"reset_joint_targets": True},
+    )
+    reset_gear_insertion_diagnostics: EventTermCfg = EventTermCfg(
+        func=reset_gear_insertion_diagnostics,
+        mode="reset",
     )
 
 

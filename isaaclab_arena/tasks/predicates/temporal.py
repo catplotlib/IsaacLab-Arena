@@ -23,7 +23,7 @@ class TrueForConsecutiveStepsCfg:
     """
 
     predicate: Callable | TerminationTermCfg
-    """Instantaneous check; a managed config may supply environment-dependent initialization."""
+    """Instantaneous check; a callable class in TerminationTermCfg can be initialized with the environment."""
 
     required_steps: int
     """Positive number of consecutive qualifying control steps."""

@@ -11,7 +11,7 @@ import torch
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
 from isaaclab.utils.configclass import configclass
 
@@ -20,47 +20,39 @@ from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_GRO
 from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg, _TrueForConsecutiveSteps
 
 
-def _register_managed_predicate(predicate, managed_predicates: dict[int, ManagerTermBase]) -> None:
-    """Remember each managed callable once for episode resets."""
-    while isinstance(predicate, functools.partial):
-        predicate = predicate.func
-    if isinstance(predicate, ManagerTermBase):
-        managed_predicates[id(predicate)] = predicate
-
-
-def _initialize_predicate_parameters(value, env, managed_predicates: dict[int, ManagerTermBase]) -> None:
+def _initialize_predicate_parameters(value, env) -> None:
     """Resolve scene references and construct nested predicates before their parents."""
     if isinstance(value, TerminationTermCfg):
-        _initialize_predicate_parameters(value.params, env, managed_predicates)
+        _initialize_predicate_parameters(value.params, env)
         if isinstance(value.func, type):
-            assert issubclass(value.func, ManagerTermBase), "Managed predicates must inherit ManagerTermBase."
             value.func = value.func(value, env)
-        assert callable(value.func), "Predicate configs must specify a callable or ManagerTermBase class."
-        _register_managed_predicate(value.func, managed_predicates)
+        assert callable(value.func), "Predicate configs must resolve to a callable."
     elif isinstance(value, SceneEntityCfg):
         value.resolve(env.scene)
     elif isinstance(value, dict):
         for parameter in value.values():
-            _initialize_predicate_parameters(parameter, env, managed_predicates)
+            _initialize_predicate_parameters(parameter, env)
     elif isinstance(value, (list, tuple)):
         for parameter in value:
-            _initialize_predicate_parameters(parameter, env, managed_predicates)
+            _initialize_predicate_parameters(parameter, env)
 
 
-def _resolve_progress_predicate(predicate, env, managed_predicates: dict[int, ManagerTermBase]):
-    """Instantiate a managed predicate config when the tracker gains access to the environment."""
+def _resolve_progress_predicate(predicate, env):
+    """Prepare a callable for ProgressObjectiveRunner.
+
+    Configured classes accept (cfg, env) and produce callable objects; no manager base class is required.
+    """
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
     # NOTE(cvolk): TaskSuccessTerm creates the tracker while TerminationManager is
     # still being constructed, before env.termination_manager is assigned.
     # We therefore cannot delegate nested predicate initialization to that manager.
     if not isinstance(predicate, TerminationTermCfg):
-        _register_managed_predicate(predicate, managed_predicates)
         return predicate
 
-    assert env is not None, "An environment is required to resolve a managed progress predicate."
+    assert env is not None, "An environment is required to initialize a configured progress predicate."
     predicate_cfg = copy.deepcopy(predicate)
-    _initialize_predicate_parameters(predicate_cfg, env, managed_predicates)
+    _initialize_predicate_parameters(predicate_cfg, env)
     return functools.partial(predicate_cfg.func, **predicate_cfg.params)
 
 
@@ -140,7 +132,6 @@ class ProgressObjectiveRunner:
         self.group_complete: dict[str, torch.Tensor] = {}
         self.predicate_chains = {}
         self._consecutive_step_requirements: dict[int, _TrueForConsecutiveSteps] = {}
-        self._managed_predicates: dict[int, ManagerTermBase] = {}
         for group_name, chain in progress_objective.canonical_predicate_sequences.items():
             resolved_chain = []
             for predicate, score in chain:
@@ -148,13 +139,13 @@ class ProgressObjectiveRunner:
                     # Reusing a declaration must not share counter state between occurrences.
                     predicate = replace(
                         predicate,
-                        predicate=_resolve_progress_predicate(predicate.predicate, env, self._managed_predicates),
+                        predicate=_resolve_progress_predicate(predicate.predicate, env),
                     )
                     self._consecutive_step_requirements[id(predicate)] = _TrueForConsecutiveSteps(
                         cfg=predicate, num_envs=num_envs, device=device
                     )
                 else:
-                    predicate = _resolve_progress_predicate(predicate, env, self._managed_predicates)
+                    predicate = _resolve_progress_predicate(predicate, env)
                 resolved_chain.append((predicate, score))
             self.predicate_chains[group_name] = resolved_chain
 
@@ -355,9 +346,6 @@ class ProgressObjectiveRunner:
             self.group_complete[group_name][env_ids] = False
 
         self._reset_consecutive_step_requirements(env_ids)
-
-        for predicate in self._managed_predicates.values():
-            predicate.reset(env_ids)
 
     def _reset_consecutive_step_requirements(self, env_ids) -> None:
         """Clear streaks without erasing completed predicates."""

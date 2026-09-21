@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
-from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
@@ -28,15 +28,25 @@ if TYPE_CHECKING:
     from pxr import Usd
 
 
-class GearInsertionConditions(ManagerTermBase):
+def reset_gear_insertion_diagnostics(env: ManagerBasedEnv, env_ids=None) -> None:
+    """Clear GearInsertionConditions diagnostics for standalone or composite tasks."""
+    # TODO(cvolk): Move cached diagnostics out of predicates before removing this task-local reset.
+    progress_tracker = env.progress_tracker
+    for objective in progress_tracker.progress_objectives:
+        # CompositeTaskBase prefixes objective names with the subtask index.
+        if objective.name.rsplit("/", 1)[-1] == "gear_insertion":
+            gear_insertion_conditions = progress_tracker.get_predicate(objective.name)
+            gear_insertion_conditions.reset(env_ids)
+
+
+class GearInsertionConditions:
     """Check every gear's current placement and cache named diagnostics.
 
-    ManagerTermBase provides environment-aware collision-geometry initialization.
-    ProgressObjectiveRunner owns the consecutive-step counters, not this class.
+    ProgressObjectiveRunner owns the consecutive-step counters.
+    GearInsertionTask clears diagnostics through reset_gear_insertion_diagnostics.
     """
 
     def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedEnv):
-        super().__init__(cfg, env)
         self._support_checks = {}
         self.per_gear_results: dict[str, torch.Tensor] = {}
         self.per_gear_gate_results: dict[str, dict[str, torch.Tensor]] = {}
@@ -112,11 +122,10 @@ class GearInsertionConditions(ManagerTermBase):
                 results[env_ids] = False
 
 
-class GearIsSupported(ManagerTermBase):
+class GearIsSupported:
     """Check that one gear bottom remains near the plate support surface."""
 
     def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedEnv):
-        super().__init__(cfg, env)
         self.plate_asset_cfg: SceneEntityCfg = cfg.params["plate_asset_cfg"]
         self.gear_asset_cfg: SceneEntityCfg = cfg.params["gear_asset_cfg"]
         plate_asset = env.scene[self.plate_asset_cfg.name]

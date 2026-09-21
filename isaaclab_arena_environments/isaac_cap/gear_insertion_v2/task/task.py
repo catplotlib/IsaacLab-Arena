@@ -24,7 +24,7 @@ from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
 
-from .terminations import gear_mesh_success
+from .terminations import gear_mesh_success, reset_gear_mesh_state
 
 __all__ = ["EventsCfg", "GearInsertionTask", "GearMeshTask"]
 
@@ -40,6 +40,10 @@ class EventsCfg:
         func=mdp.reset_scene_to_default,
         mode="reset",
         params={"reset_joint_targets": True},
+    )
+    reset_gear_mesh_state: EventTermCfg = EventTermCfg(
+        func=reset_gear_mesh_state,
+        mode="reset",
     )
 
 

@@ -13,7 +13,10 @@ def _test_gear_insertion_requirement_configuration(_simulation_app):
 
     from isaaclab_arena.assets.asset import Asset
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
-    from isaaclab_arena_environments.isaac_cap.gear_insertion.task.predicates import GearInsertionConditions
+    from isaaclab_arena_environments.isaac_cap.gear_insertion.task.predicates import (
+        GearInsertionConditions,
+        reset_gear_insertion_diagnostics,
+    )
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
     from isaaclab_arena_environments.isaac_cap.gear_insertion_v2.task.task import (
         GearInsertionTask as LegacyGearInsertionTask,
@@ -34,6 +37,9 @@ def _test_gear_insertion_requirement_configuration(_simulation_app):
         target_offsets_xyz=[(0.1, 0.0, 0.2), (-0.1, 0.0, 0.2)],
         consecutive_success_steps=3,
     )
+    diagnostic_reset = task.get_events_cfg().reset_gear_insertion_diagnostics
+    assert diagnostic_reset.func is reset_gear_insertion_diagnostics
+    assert diagnostic_reset.mode == "reset"
     success_objectives = task.get_termination_cfg().success
     assert len(success_objectives) == 1
     assert success_objectives[0].name == "gear_insertion"
@@ -122,6 +128,7 @@ def _test_gear_insertion_overlap_reporting_and_partial_reset(_simulation_app):
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.predicates import (
         GearInsertionConditions,
         GearIsSupported,
+        reset_gear_insertion_diagnostics,
     )
 
     class _ArenaWorld:
@@ -204,14 +211,30 @@ def _test_gear_insertion_overlap_reporting_and_partial_reset(_simulation_app):
         assert env.arena_world.pose_reads == pose_reads
         assert tracker.is_complete().tolist() == [step_index == 5, True]
 
+    unchanged_diagnostics = _terminal_diagnostics(conditions, [1], ("gear_a", "gear_b"))[0]
+    reset_gear_insertion_diagnostics(env, env_ids=[0])
+    assert tracker.is_complete().tolist() == [True, True], "The task callback clears diagnostics, not progress."
     tracker.reset([0])
     diagnostics = _terminal_diagnostics(conditions, [0, 1], ("gear_a", "gear_b"))
-    assert not any(diagnostics[0]["gear_a"].values())
-    assert all(diagnostics[1]["gear_a"].values())
+    for gear_name in ("gear_a", "gear_b"):
+        assert not any(diagnostics[0][gear_name].values())
+    assert diagnostics[1] == unchanged_diagnostics
     assert tracker.is_complete().tolist() == [False, True]
     for step_index in (1, 2, 3):
         tracker.step(env, step_index=torch.tensor([step_index, step_index + 5]))
         assert tracker.is_complete().tolist() == [step_index == 3, True]
+
+    for _ in range(2):
+        reset_gear_insertion_diagnostics(env)
+        tracker.reset([0, 1])
+        diagnostics = _terminal_diagnostics(conditions, [0, 1], ("gear_a", "gear_b"))
+        for environment_diagnostics in diagnostics:
+            for gear_diagnostics in environment_diagnostics.values():
+                assert not any(gear_diagnostics.values())
+        assert tracker.is_complete().tolist() == [False, False]
+        for step_index in (1, 2, 3):
+            tracker.step(env, step_index=torch.tensor([step_index, step_index]))
+            assert tracker.is_complete().tolist() == [step_index == 3, step_index == 3]
     return True
 
 
