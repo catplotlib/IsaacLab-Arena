@@ -37,10 +37,11 @@ def _initialize_predicate_parameters(value, env) -> None:
             _initialize_predicate_parameters(parameter, env)
 
 
-def _resolve_progress_predicate(predicate, env):
-    """Prepare a callable for ProgressObjectiveRunner.
+def _create_predicate_from_config(predicate, env):
+    """Create the callable that ProgressObjectiveRunner evaluates.
 
-    Configured classes accept (cfg, env) and produce callable objects; no manager base class is required.
+    Resolve scene references, construct configured predicate classes, and supply
+    their configured arguments. Return existing callables unchanged.
     """
 
     # Isaac Lab does not resolve configs inside ProgressObjective dataclasses.
@@ -139,13 +140,13 @@ class ProgressObjectiveRunner:
                     # Each occurrence owns its counters, even when declarations are reused.
                     predicate = _TrueForConsecutiveSteps(
                         cfg=predicate,
-                        predicate=_resolve_progress_predicate(predicate.predicate, env),
+                        predicate=_create_predicate_from_config(predicate.predicate, env),
                         num_envs=num_envs,
                         device=device,
                     )
                     self._consecutive_step_requirements.append(predicate)
                 else:
-                    predicate = _resolve_progress_predicate(predicate, env)
+                    predicate = _create_predicate_from_config(predicate, env)
                 resolved_chain.append((predicate, score))
             self.predicate_chains[group_name] = resolved_chain
 
